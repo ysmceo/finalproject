@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CEO UNISEX SALON - Admin Dashboard</title>
+  <link rel="stylesheet" href="css/admin.css">
+</head>
+<body>
+  <div class="admin-container">
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <h1>CEO UNISEX SALON</h1>
+        <p>Admin Dashboard</p>
+        <div class="header-info">
+          <div class="header-time">
+            <span id="adminTimeDisplay" class="admin-time">00:00:00</span>
+            <span id="adminDateDisplay" class="admin-date">Loading...</span>
+          </div>
+          <div class="header-weather">
+            <span id="adminWeatherIcon" class="weather-icon">🌤️</span>
+            <span id="adminWeatherInfo" class="weather-info">--°C</span>
+          </div>
+        </div>
+      </div>
+      
+      <nav class="sidebar-menu">
+        <a href="#" class="menu-item active" data-tab="bookings">
+          <span class="icon">📅</span> Bookings
+        </a>
+        <a href="#" class="menu-item" data-tab="messages">
+          <span class="icon">💬</span> Messages
+        </a>
+        <a href="#" class="menu-item" data-tab="images">
+          <span class="icon">🖼️</span> Style Images
+        </a>
+        <a href="#" class="menu-item" data-tab="reports">
+          <span class="icon">📋</span> Service Reports
+        </a>
+        <a href="/" class="menu-item">
+          <span class="icon">🏠</span> Back to Website
+        </a>
+        <button id="adminDarkModeToggle" class="menu-item dark-mode-btn" title="Toggle Dark Mode">
+          <span class="icon">🌙</span> Dark Mode
+        </button>
+        <button id="adminLogoutBtn" class="menu-item logout-btn" onclick="logoutAdmin()" title="Logout">
+          <span class="icon">🚪</span> Logout
+        </button>
+      </nav>
+    </aside>
+
+    <!-- Main Content -->
+    <main class="main-content">
+      <!-- Header -->
+      <header class="admin-header">
+        <h2 id="pageTitle">Bookings Management</h2>
+        <div class="header-stats">
+          <div class="stat-box">
+            <span class="stat-label">Total Bookings</span>
+            <span class="stat-value" id="totalBookings">0</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Pending</span>
+            <span class="stat-value" id="pendingBookings">0</span>
+          </div>
+          <div class="stat-box">
+            <span class="stat-label">Unread Messages</span>
+            <span class="stat-value" id="unreadMessages">0</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Bookings Tab -->
+      <section id="bookingsTab" class="tab-content active">
+        <div class="section-header">
+          <h3>Customer Bookings</h3>
+          <div class="filters">
+            <select id="statusFilter" title="Filter bookings by status" aria-label="Filter bookings by status">
+              <option value="">All Status</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="cancelled">Cancelled</option>
+              <option value="completed">Completed</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="bookingsList" class="bookings-list">
+          <div class="loading">Loading bookings...</div>
+        </div>
+      </section>
+
+      <!-- Messages Tab -->
+      <section id="messagesTab" class="tab-content">
+        <div class="section-header">
+          <h3>Customer Messages</h3>
+          <div class="filters">
+            <select id="messageFilter" title="Filter messages by status" aria-label="Filter messages by status">
+              <option value="">All Messages</option>
+              <option value="unread">Unread</option>
+              <option value="read">Read</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="messagesList" class="messages-list">
+          <div class="loading">Loading messages...</div>
+        </div>
+      </section>
+
+      <!-- Style Images Approval Tab -->
+      <section id="imagesTab" class="tab-content">
+        <div class="section-header">
+          <h3>Style Reference Images - Approval Report</h3>
+          <div class="filters">
+            <select id="imageFilter" title="Filter images by approval status" aria-label="Filter images by approval status">
+              <option value="">All Images</option>
+              <option value="pending">Pending Approval</option>
+              <option value="approved">Approved</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="imagesList" class="images-list">
+          <div class="loading">Loading images...</div>
+        </div>
+      </section>
+
+      <!-- Service Reports Tab -->
+      <section id="reportsTab" class="tab-content">
+        <div class="section-header">
+          <h3>Customer Service Reports</h3>
+          <div class="filters">
+            <select id="reportFilter" title="Filter reports by type" aria-label="Filter reports by type">
+              <option value="">All Reports</option>
+              <option value="service_feedback">Service Feedback</option>
+              <option value="complaint">Complaints</option>
+              <option value="suggestion">Suggestions</option>
+              <option value="experience">Experience</option>
+              <option value="general_message">General Messages</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="reportsList" class="reports-list">
+          <div class="loading">Loading reports...</div>
+        </div>
+      </section>
+
+      <!-- Booking Modal -->
+      <div id="bookingModal" class="modal">
+        <div class="modal-content">
+          <span class="close" onclick="closeBookingModal()">&times;</span>
+          <h3>Booking Details</h3>
+          <div id="modalBody" class="modal-body">
+            <!-- Booking details loaded here -->
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-accept" id="acceptBtn">Approve Booking</button>
+            <button class="btn btn-decline" id="declineBtn">Cancel Booking</button>
+            <button class="btn btn-cancel" onclick="closeBookingModal()">Close</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Message Modal -->
+      <div id="messageModal" class="modal">
+        <div class="modal-content">
+          <span class="close" onclick="closeMessageModal()">&times;</span>
+          <h3>Message Details</h3>
+          <div id="messageModalBody" class="modal-body">
+            <!-- Message details loaded here -->
+          </div>
+          <div class="modal-actions">
+            <button class="btn btn-delete" id="deleteMessageBtn">Delete Message</button>
+            <button class="btn btn-cancel" onclick="closeMessageModal()">Close</button>
+          </div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script src="js/admin.js"></script>
+</body>
+</html>

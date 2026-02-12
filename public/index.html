@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CEO UNISEX SALON - Professional Hair & Beauty Services</title>
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Navigation -->
+  <nav class="navbar">
+    <div class="container">
+      <div class="logo" data-i18n="hero_title">CEO UNISEX SALON</div>
+      <div class="nav-center">
+        <div class="info-section">
+          <div class="time-date-weather">
+            <div class="clock-date">
+              <span id="timeDisplay" class="time">00:00:00</span>
+              <span id="dateDisplay" class="date">Loading...</span>
+            </div>
+            <div class="weather-widget">
+              <span id="weatherIcon" class="weather-icon">🌤️</span>
+              <span id="weatherInfo" class="weather-info">--°C</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <ul class="nav-menu">
+        <li><a href="#home" data-i18n="nav_home">Home</a></li>
+        <li><a href="#services" data-i18n="nav_services">Services</a></li>
+        <li><a href="#ceo">CEOs</a></li>
+        <li><a href="#gallery" data-i18n="nav_gallery">Gallery</a></li>
+        <li><a href="#team" data-i18n="nav_team">Team</a></li>
+        <li><a href="#contact" data-i18n="nav_contact">Contact</a></li>
+        <li>
+          <button id="languageSelectorBtn" class="lang-btn-nav" title="Change Language">
+            🌐 <span data-i18n="nav_language">Language</span>
+          </button>
+        </li>
+        <li><button id="adminLoginBtn" class="admin-btn" title="Admin Login/Register" data-i18n="nav_admin">Admin</button></li>
+        <li><button id="darkModeToggle" class="dark-mode-btn" title="Toggle Dark Mode">🌙</button></li>
+      </ul>
+    </div>
+  </nav>
+
+  <!-- Hero Section -->
+  <section id="home" class="hero">
+    <div class="hero-content">
+      <h1 data-i18n="hero_title">CEO UNISEX SALON</h1>
+      <p data-i18n="hero_subtitle">Where Beauty Meets Excellence</p>
+      <p class="subtitle" data-i18n="hero_description">Transform Your Look with Our Professional Stylists</p>
+      <button class="cta-btn" onclick="scrollToBooking()" data-i18n="hero_cta">Book Your Appointment</button>
+    </div>
+  </section>
+
+  <!-- CEO Spotlight Section -->
+  <section id="ceo" class="ceo-section">
+    <div class="container">
+      <h2>Meet Our CEOs</h2>
+      <p class="section-subtitle">Leadership behind CEO Unisex Salon</p>
+
+      <div class="ceo-grid">
+        <div class="ceo-card">
+          <img src="/images/ysmceo.jpeg" alt="Okonta Victor - CEO of CEO Unisex Salon">
+          <h3>Okonta Victor</h3>
+          <p class="ceo-role">The CEO of CEO Unisex Salon</p>
+        </div>
+
+        <div class="ceo-card">
+          <img src="/images/ysmwife.jpeg" alt="Okonta Lizzy - CEO of CEO Unisex Salon">
+          <h3>Okonta Lizzy</h3>
+          <p class="ceo-role">The CEO of CEO Unisex Salon</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Services Section -->
+  <section id="services" class="services">
+    <div class="container">
+      <h2 data-i18n="services_title">Our Services</h2>
+      <p class="section-subtitle" data-i18n="services_subtitle">Premium Hair & Beauty Services</p>
+      
+      <div class="services-grid" id="servicesGrid">
+        <!-- Services loaded from API -->
+      </div>
+    </div>
+  </section>
+
+  <!-- Booking Section -->
+  <section id="booking" class="booking-section">
+    <div class="container">
+      <h2 data-i18n="booking_title">Book Your Appointment</h2>
+      <form id="bookingForm" class="booking-form">
+        <div class="form-group">
+          <label for="name"><span data-i18n="booking_fullname">Full Name</span> *</label>
+          <input type="text" id="name" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="email"><span data-i18n="booking_email">Email Address</span> *</label>
+          <input type="email" id="email" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="phone"><span data-i18n="booking_phone">Phone Number</span> *</label>
+          <input type="tel" id="phone" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="service"><span data-i18n="booking_service">Select Service</span> *</label>
+          <select id="service" required>
+            <option value="" data-i18n="booking_choose_service">Choose a service...</option>
+          </select>
+        </div>
+        
+        <div class="form-group">
+          <label for="date"><span data-i18n="booking_date">Preferred Date</span> *</label>
+          <input type="date" id="date" required>
+        </div>
+        
+        <div class="form-group">
+          <label for="time"><span data-i18n="booking_time">Preferred Time</span> *</label>
+          <input type="time" id="time" required>
+        </div>
+
+        <div class="form-group">
+          <label for="language" data-i18n="booking_language">Preferred Language</label>
+          <select id="language">
+            <option value="" data-i18n="booking_select_language">Select a language...</option>
+            <option value="English">English</option>
+            <option value="Spanish">Spanish</option>
+            <option value="French">French</option>
+            <option value="German">German</option>
+            <option value="Chinese">Chinese</option>
+            <option value="Japanese">Japanese</option>
+            <option value="Korean">Korean</option>
+            <option value="Arabic">Arabic</option>
+            <option value="Hindi">Hindi</option>
+            <option value="Portuguese">Portuguese</option>
+            <option value="Russian">Russian</option>
+            <option value="Italian">Italian</option>
+            <option value="Dutch">Dutch</option>
+            <option value="Swedish">Swedish</option>
+            <option value="Norwegian">Norwegian</option>
+            <option value="Danish">Danish</option>
+            <option value="Finnish">Finnish</option>
+            <option value="Turkish">Turkish</option>
+            <option value="Greek">Greek</option>
+            <option value="Hebrew">Hebrew</option>
+            <option value="Thai">Thai</option>
+            <option value="Vietnamese">Vietnamese</option>
+            <option value="Indonesian">Indonesian</option>
+            <option value="Malay">Malay</option>
+            <option value="Filipino">Filipino</option>
+            <option value="Swahili">Swahili</option>
+            <option value="Zulu">Zulu</option>
+            <option value="Xhosa">Xhosa</option>
+            <option value="Afrikaans">Afrikaans</option>
+            <option value="Amharic">Amharic</option>
+            <option value="Somali">Somali</option>
+            <option value="Hausa">Hausa</option>
+            <option value="Yoruba">Yoruba</option>
+            <option value="Igbo">Igbo</option>
+            <option value="Fulani">Fulani</option>
+            <option value="Twi">Twi</option>
+            <option value="Wolof">Wolof</option>
+            <option value="Berber">Berber</option>
+            <option value="Persian">Persian</option>
+            <option value="Urdu">Urdu</option>
+            <option value="Bengali">Bengali</option>
+            <option value="Punjabi">Punjabi</option>
+            <option value="Tamil">Tamil</option>
+            <option value="Telugu">Telugu</option>
+            <option value="Kannada">Kannada</option>
+            <option value="Malayalam">Malayalam</option>
+            <option value="Sinhala">Sinhala</option>
+            <option value="Burmese">Burmese</option>
+            <option value="Khmer">Khmer</option>
+            <option value="Lao">Lao</option>
+            <option value="Mongolian">Mongolian</option>
+            <option value="Tibetan">Tibetan</option>
+            <option value="Nepali">Nepali</option>
+            <option value="Pashto">Pashto</option>
+            <option value="Kurdish">Kurdish</option>
+            <option value="Armenian">Armenian</option>
+            <option value="Georgian">Georgian</option>
+            <option value="Azerbaijani">Azerbaijani</option>
+            <option value="Kazakh">Kazakh</option>
+            <option value="Uzbek">Uzbek</option>
+            <option value="Turkmen">Turkmen</option>
+            <option value="Kyrgyz">Kyrgyz</option>
+            <option value="Tajik">Tajik</option>
+            <option value="Czech">Czech</option>
+            <option value="Slovak">Slovak</option>
+            <option value="Polish">Polish</option>
+            <option value="Hungarian">Hungarian</option>
+            <option value="Romanian">Romanian</option>
+            <option value="Bulgarian">Bulgarian</option>
+            <option value="Serbian">Serbian</option>
+            <option value="Croatian">Croatian</option>
+            <option value="Bosnian">Bosnian</option>
+            <option value="Slovenian">Slovenian</option>
+            <option value="Macedonian">Macedonian</option>
+            <option value="Albanian">Albanian</option>
+            <option value="Latvian">Latvian</option>
+            <option value="Lithuanian">Lithuanian</option>
+            <option value="Estonian">Estonian</option>
+            <option value="Ukrainian">Ukrainian</option>
+            <option value="Belarusian">Belarusian</option>
+            <option value="Moldovan">Moldovan</option>
+            <option value="Irish">Irish</option>
+            <option value="Welsh">Welsh</option>
+            <option value="Scottish Gaelic">Scottish Gaelic</option>
+            <option value="Breton">Breton</option>
+            <option value="Catalan">Catalan</option>
+            <option value="Basque">Basque</option>
+            <option value="Galician">Galician</option>
+            <option value="Occitan">Occitan</option>
+            <option value="Corsican">Corsican</option>
+            <option value="Sardinian">Sardinian</option>
+            <option value="Sicilian">Sicilian</option>
+            <option value="Ligurian">Ligurian</option>
+            <option value="Piedmontese">Piedmontese</option>
+            <option value="Venetian">Venetian</option>
+            <option value="Friulian">Friulian</option>
+            <option value="Romansh">Romansh</option>
+            <option value="Luxembourgish">Luxembourgish</option>
+            <option value="Faroese">Faroese</option>
+            <option value="Icelandic">Icelandic</option>
+            <option value="Greenlandic">Greenlandic</option>
+            <option value="Inuktitut">Inuktitut</option>
+            <option value="Cherokee">Cherokee</option>
+            <option value="Navajo">Navajo</option>
+            <option value="Apache">Apache</option>
+            <option value="Sioux">Sioux</option>
+            <option value="Cree">Cree</option>
+            <option value="Ojibwe">Ojibwe</option>
+            <option value="Blackfoot">Blackfoot</option>
+            <option value="Crow">Crow</option>
+            <option value="Shoshone">Shoshone</option>
+            <option value="Paiute">Paiute</option>
+            <option value="Hopi">Hopi</option>
+            <option value="Zuni">Zuni</option>
+            <option value="Pueblo">Pueblo</option>
+            <option value="Mayan">Mayan</option>
+            <option value="Nahuatl">Nahuatl</option>
+            <option value="Quechua">Quechua</option>
+            <option value="Aymara">Aymara</option>
+            <option value="Guarani">Guarani</option>
+            <option value="Tupi">Tupi</option>
+            <option value="Mapudungun">Mapudungun</option>
+            <option value="Rapa Nui">Rapa Nui</option>
+            <option value="Maori">Maori</option>
+            <option value="Samoan">Samoan</option>
+            <option value="Tongan">Tongan</option>
+            <option value="Fijian">Fijian</option>
+            <option value="Hawaiian">Hawaiian</option>
+            <option value="Tahitian">Tahitian</option>
+            <option value="Marshallese">Marshallese</option>
+            <option value="Chamorro">Chamorro</option>
+            <option value="Palauan">Palauan</option>
+            <option value="Yapese">Yapese</option>
+            <option value="Trukese">Trukese</option>
+            <option value="Pohnpeian">Pohnpeian</option>
+            <option value="Kosraean">Kosraean</option>
+            <option value="Chuukese">Chuukese</option>
+            <option value="Nauruan">Nauruan</option>
+            <option value="Kiribati">Kiribati</option>
+            <option value="Tuvaluan">Tuvaluan</option>
+            <option value="Tokelauan">Tokelauan</option>
+            <option value="Niuean">Niuean</option>
+            <option value="Cook Islands Maori">Cook Islands Maori</option>
+            <option value="Pitcairn-Norfolk">Pitcairn-Norfolk</option>
+            <option value="Rotuman">Rotuman</option>
+            <option value="Austronesian">Austronesian</option>
+            <option value="Papuan">Papuan</option>
+            <option value="Aboriginal Australian">Aboriginal Australian</option>
+            <option value="Torres Strait Creole">Torres Strait Creole</option>
+            <option value="Kriol">Kriol</option>
+            <option value="Pidgin">Pidgin</option>
+            <option value="Creole">Creole</option>
+            <option value="Lingala">Lingala</option>
+            <option value="Kikongo">Kikongo</option>
+            <option value="Tshiluba">Tshiluba</option>
+            <option value="Kimbundu">Kimbundu</option>
+            <option value="Umbundu">Umbundu</option>
+            <option value="Chokwe">Chokwe</option>
+            <option value="Ovambo">Ovambo</option>
+            <option value="Herero">Herero</option>
+            <option value="Nama">Nama</option>
+            <option value="Damara">Damara</option>
+            <option value="Khoekhoe">Khoekhoe</option>
+            <option value="Sandawe">Sandawe</option>
+            <option value="Hadza">Hadza</option>
+            <option value="Khoisan">Khoisan</option>
+            <option value="Tswana">Tswana</option>
+            <option value="Sotho">Sotho</option>
+            <option value="Pedi">Pedi</option>
+            <option value="Tsonga">Tsonga</option>
+            <option value="Venda">Venda</option>
+            <option value="Shona">Shona</option>
+            <option value="Ndebele">Ndebele</option>
+            <option value="Chewa">Chewa</option>
+            <option value="Tumbuka">Tumbuka</option>
+            <option value="Yao">Yao</option>
+            <option value="Makonde">Makonde</option>
+            <option value="Makua">Makua</option>
+            <option value="Sena">Sena</option>
+            <option value="Ndau">Ndau</option>
+            <option value="Kalanga">Kalanga</option>
+            <option value="Tonga">Tonga</option>
+            <option value="Lozi">Lozi</option>
+            <option value="Luyana">Luyana</option>
+            <option value="Subiya">Subiya</option>
+            <option value="Mbunda">Mbunda</option>
+            <option value="Nkangala">Nkangala</option>
+            <option value="Yeyi">Yeyi</option>
+            <option value="Fwe">Fwe</option>
+            <option value="Kwanyama">Kwanyama</option>
+            <option value="Ndonga">Ndonga</option>
+            <option value="Kwaluudhi">Kwaluudhi</option>
+            <option value="Mbalanhu">Mbalanhu</option>
+            <option value="Thimbukushu">Thimbukushu</option>
+            <option value="Gciriku">Gciriku</option>
+            <option value="Mbukushu">Mbukushu</option>
+            <option value="Kuvale">Kuvale</option>
+            <option value="Mashco-Piro">Mashco-Piro</option>
+            <option value="Yanomami">Yanomami</option>
+            <option value="Aweti">Aweti</option>
+            <option value="Enawene Nawe">Enawene Nawe</option>
+            <option value="Kayapo">Kayapo</option>
+            <option value="Xavante">Xavante</option>
+            <option value="Bororo">Bororo</option>
+            <option value="Tupi-Guarani">Tupi-Guarani</option>
+            <option value="Munduruku">Munduruku</option>
+            <option value="Sateré-Mawé">Sateré-Mawé</option>
+            <option value="Tikuna">Tikuna</option>
+            <option value="Cubeo">Cubeo</option>
+            <option value="Desano">Desano</option>
+            <option value="Tucano">Tucano</option>
+            <option value="Barasana">Barasana</option>
+            <option value="Macuna">Macuna</option>
+            <option value="Pirahã">Pirahã</option>
+            <option value="Awá">Awá</option>
+            <option value="Yanomamö">Yanomamö</option>
+            <option value="Sanumá">Sanumá</option>
+            <option value="Makuxi">Makuxi</option>
+            <option value="Wapishana">Wapishana</option>
+            <option value="Patamona">Patamona</option>
+            <option value="Akawaio">Akawaio</option>
+            <option value="Arekuna">Arekuna</option>
+            <option value="Pemon">Pemon</option>
+            <option value="Kapon">Kapon</option>
+            <option value="Ikpeng">Ikpeng</option>
+            <option value="Kalapalo">Kalapalo</option>
+            <option value="Kuikuro">Kuikuro</option>
+            <option value="Matipu">Matipu</option>
+            <option value="Nahukwá">Nahukwá</option>
+            <option value="Wauja">Wauja</option>
+            <option value="Yanomami">Yanomami</option>
+            <option value="Yekuana">Yekuana</option>
+            <option value="Piaroa">Piaroa</option>
+            <option value="Hotï">Hotï</option>
+            <option value="Yabarana">Yabarana</option>
+            <option value="Warekena">Warekena</option>
+            <option value="Baniwa">Baniwa</option>
+            <option value="Kurripako">Kurripako</option>
+            <option value="Tariana">Tariana</option>
+            <option value="Tatuyo">Tatuyo</option>
+            <option value="Tuyuka">Tuyuka</option>
+            <option value="Kubeo">Kubeo</option>
+            <option value="Siriano">Siriano</option>
+            <option value="Wanano">Wanano</option>
+            <option value="Piraparaná">Piraparaná</option>
+            <option value="Maku">Maku</option>
+            <option value="Nadëb">Nadëb</option>
+            <option value="Hupda">Hupda</option>
+            <option value="Yuhup">Yuhup</option>
+            <option value="Dâw">Dâw</option>
+            <option value="Kamã">Kamã</option>
+            <option value="Kakua">Kakua</option>
+            <option value="Nukak">Nukak</option>
+            <option value="Koreguaje">Koreguaje</option>
+            <option value="Tanimuca">Tanimuca</option>
+            <option value="Letuama">Letuama</option>
+            <option value="Miraña">Miraña</option>
+            <option value="Bora">Bora</option>
+            <option value="Muinane">Muinane</option>
+            <option value="Andoque">Andoque</option>
+            <option value="Resígaro">Resígaro</option>
+            <option value="Ocaina">Ocaina</option>
+            <option value="Nonuya">Nonuya</option>
+            <option value="Witoto">Witoto</option>
+            <option value="Murui">Murui</option>
+            <option value="Minica">Minica</option>
+            <option value="Maco">Maco</option>
+            <option value="Carapana">Carapana</option>
+            <option value="Tatuyo">Tatuyo</option>
+            <option value="Cabiyarí">Cabiyarí</option>
+            <option value="Siona">Siona</option>
+            <option value="Secoya">Secoya</option>
+            <option value="Kofán">Kofán</option>
+            <option value="Awa">Awa</option>
+            <option value="Emberá">Emberá</option>
+            <option value="Wounaan">Wounaan</option>
+            <option value="Kuna">Kuna</option>
+            <option value="Emberá-Catío">Emberá-Catío</option>
+            <option value="Waunana">Waunana</option>
+            <option value="Chocó">Chocó</option>
+            <option value="Epena">Epena</option>
+            <option value="Catio">Catio</option>
+            <option value="Chami">Chami</option>
+            <option value="Kogui">Kogui</option>
+            <option value="Arhuaco">Arhuaco</option>
+            <option value="Wiwa">Wiwa</option>
+            <option value="Damana">Damana</option>
+            <option value="Atanque">Atanque</option>
+            <option value="Malayo">Malayo</option>
+            <option value="Wayuu">Wayuu</option>
+            <option value="Guajiro">Guajiro</option>
+            <option value="Arawak">Arawak</option>
+            <option value="Lokono">Lokono</option>
+            <option value="Garifuna">Garifuna</option>
+            <option value="Taíno">Taíno</option>
+            <option value="Carib">Carib</option>
+            <option value="Kalinago">Kalinago</option>
+            <option value="Galibi">Galibi</option>
+            <option value="Palikur">Palikur</option>
+            <option value="Apalaí">Apalaí</option>
+            <option value="Waiwai">Waiwai</option>
+            <option value="Tiriyó">Tiriyó</option>
+            <option value="Akuriyó">Akuriyó</option>
+            <option value="Kaxuyana">Kaxuyana</option>
+            <option value="Tunayana">Tunayana</option>
+            <option value="Saramaccan">Saramaccan</option>
+            <option value="Ndyuka">Ndyuka</option>
+            <option value="Aluku">Aluku</option>
+            <option value="Paramaccan">Paramaccan</option>
+            <option value="Kwinti">Kwinti</option>
+            <option value="Matawai">Matawai</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="paymentMethod"><span data-i18n="booking_payment">Payment Method</span> *</label>
+          <select id="paymentMethod" required>
+            <option value="" data-i18n="booking_select_payment">Select payment method...</option>
+            <option value="Credit Card">💳 Credit Card</option>
+            <option value="Debit Card">💳 Debit Card</option>
+            <option value="Bank Transfer">🏦 Bank Transfer</option>
+            <option value="USSD">📱 USSD (Mobile Money)</option>
+            <option value="Cash">💵 Cash Payment</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="refreshment" data-i18n="booking_refreshment">Would you like refreshment during your appointment?</label>
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" name="refreshment" value="Yes" id="refreshmentYes">
+              <span data-i18n="booking_yes">Yes, please</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="refreshment" value="No" id="refreshmentNo" checked>
+              <span data-i18n="booking_no">No, thank you</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="specialRequests" data-i18n="booking_requests">Special Requests or Notes</label>
+          <textarea id="specialRequests" rows="4" placeholder="Let us know any special requests, allergies, or preferences you may have..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label for="styleImage" data-i18n="booking_image">📸 Upload Style Reference Image (Optional)</label>
+          <input type="file" id="styleImage" accept="image/*" style="padding: 8px; cursor: pointer;">
+          <small style="display: block; margin-top: 5px; color: #666;" data-i18n="booking_image_help">Upload a photo of the hairstyle you want. This helps our stylists understand your vision better.</small>
+          <div id="imagePreview" style="margin-top: 10px;"></div>
+        </div>
+
+        <button type="submit" class="submit-btn" data-i18n="booking_submit">Book Appointment</button>
+      </form>
+      <div id="bookingMessage" class="message"></div>
+    </div>
+  </section>
+
+  <!-- Gallery Section -->
+  <section id="gallery" class="gallery">
+    <div class="container">
+      <h2 data-i18n="gallery_title">Gallery</h2>
+      <p class="section-subtitle" data-i18n="gallery_subtitle">Our Portfolio</p>
+      
+      <div class="gallery-grid">
+        <div class="gallery-item">
+          <img src="/p1.webp" alt="Professional Hair Cuts">
+          <h3 data-i18n="gallery_haircuts">Professional Hair Cuts</h3>
+        </div>
+        <div class="gallery-item">
+          <img src="/p2.jpg" alt="Hair Color">
+          <h3 data-i18n="gallery_coloring">Hair Coloring</h3>
+        </div>
+        <div class="gallery-item">
+          <img src="/p3.jpg" alt="Facial">
+          <h3 data-i18n="gallery_facial">Facial Treatments</h3>
+        </div>
+        <div class="gallery-item">
+          <img src="/p4.jpg" alt="Nails">
+          <h3 data-i18n="gallery_nails">Nail Services</h3>
+        </div>
+        <div class="gallery-item">
+          <img src="/p5.jpg" alt="Massage">
+          <h3 data-i18n="gallery_relaxation">Relaxation Services</h3>
+        </div>
+        <div class="gallery-item">
+          <img src="/p6.jpg" alt="Professional Styling">
+          <h3 data-i18n="gallery_styling">Professional Styling</h3>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Team Section -->
+  <section id="team" class="team">
+    <div class="container">
+      <h2 data-i18n="team_title">Our Professional Team</h2>
+      <p class="section-subtitle" data-i18n="team_subtitle">Expert Stylists Dedicated to Your Beauty</p>
+      
+      <div class="team-grid">
+        <div class="team-member">
+          <img src="/images/female%20sytlsit%201.jpeg" alt="Chioma Eze - Senior Hair Stylist">
+          <h3>Chioma Eze</h3>
+          <p class="role" data-i18n="team_role_senior_stylist">Senior Hair Stylist</p>
+          <p class="bio" data-i18n="team_bio_15_years">15+ years of professional experience</p>
+        </div>
+        <div class="team-member">
+          <img src="/images/female%20stylsit%202.jpeg" alt="Amara Johnson - Color Specialist">
+          <h3>Amara Johnson</h3>
+          <p class="role" data-i18n="team_role_color_specialist">Color Specialist</p>
+          <p class="bio" data-i18n="team_bio_color_expert">Expert in hair coloring & treatments</p>
+        </div>
+        <div class="team-member">
+          <img src="/male-stylist.jpg" alt="Kola Adeyemi - Male Stylist" class="kola-photo">
+          <h3>Kola Adeyemi</h3>
+          <p class="role" data-i18n="team_role_master_barber">Master Barber</p>
+          <p class="bio" data-i18n="team_bio_precision_cuts">Precision cuts & grooming specialist</p>
+        </div>
+        <div class="team-member">
+          <img src="/images/female%20stylst%203.jpeg" alt="Ngozi Okonkwo - Beauty Therapist">
+          <h3>Ngozi Okonkwo</h3>
+          <p class="role" data-i18n="team_role_beauty_therapist">Beauty Therapist</p>
+          <p class="bio" data-i18n="team_bio_facial_wellness">Facial & wellness treatments expert</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Contact Section -->
+  <section id="contact" class="contact">
+    <div class="container">
+      <h2 data-i18n="contact_title">Get In Touch</h2>
+      <p class="section-subtitle" data-i18n="contact_subtitle">Send us a message</p>
+      
+      <div class="contact-content">
+        <form id="contactForm" class="contact-form">
+          <div class="form-group">
+            <label for="contactName"><span data-i18n="contact_name">Full Name</span> *</label>
+            <input type="text" id="contactName" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="contactEmail"><span data-i18n="contact_email">Email Address</span> *</label>
+            <input type="email" id="contactEmail" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="contactSubject"><span data-i18n="contact_subject">Subject</span> *</label>
+            <input type="text" id="contactSubject" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="contactMessage"><span data-i18n="contact_message">Message</span> *</label>
+            <textarea id="contactMessage" rows="5" required></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="reportType" data-i18n="contact_reporttype">Report Type (Optional)</label>
+            <select id="reportType">
+              <option value="" data-i18n="contact_general">General Message</option>
+              <option value="service_feedback" data-i18n="contact_feedback">Service Feedback Report</option>
+              <option value="complaint" data-i18n="contact_complaint">Complaint Report</option>
+              <option value="suggestion" data-i18n="contact_suggestion">Suggestion Report</option>
+              <option value="experience" data-i18n="contact_experience">Experience Report</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="reportFile" data-i18n="contact_file">📎 Attach Report Evidence/Images (Optional)</label>
+            <input type="file" id="reportFile" accept="image/*,.pdf,.doc,.docx" style="padding: 8px; cursor: pointer;">
+            <small style="display: block; margin-top: 5px; color: #666;" data-i18n="contact_file_help">You can upload images, PDF, or documents as proof/evidence for your report.</small>
+            <div id="reportFilePreview" style="margin-top: 10px;"></div>
+          </div>
+
+          <button type="submit" class="submit-btn" data-i18n="contact_submit">Send Message</button>
+        </form>
+        
+        <div class="contact-info">
+          <h3 data-i18n="contact_info_title">Contact Information</h3>
+          <p><strong data-i18n="contact_address">Address</strong>: 24 kfarm estate ikeja lagos state</p>
+          <p><strong data-i18n="contact_phone">Phone</strong>: 07036939125</p>
+          <p><strong data-i18n="contact_email_label">Email</strong>: okontaysm@gmail.com</p>
+          <p><strong data-i18n="contact_hours">Hours</strong>:</p>
+          <p data-i18n="contact_hours_weekday">Monday - Friday: 9:00 AM - 7:00 PM</p>
+          <p data-i18n="contact_hours_saturday">Saturday: 10:00 AM - 6:00 PM</p>
+          <p data-i18n="contact_hours_sunday">Sunday: Closed</p>
+        </div>
+      </div>
+      
+      <div id="contactMessage" class="message"></div>
+    </div>
+  </section>
+
+  <!-- Admin Login/Register Modal -->
+  <div id="adminModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeAdminModal()">&times;</span>
+      
+      <div id="loginForm" class="auth-form">
+        <h3 data-i18n="admin_login">Admin Login</h3>
+        <form id="adminLoginForm">
+          <div class="form-group">
+            <label for="loginEmail"><span data-i18n="admin_email">Email Address</span> *</label>
+            <input type="email" id="loginEmail" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="loginPassword"><span data-i18n="admin_password">Password</span> *</label>
+            <input type="password" id="loginPassword" required>
+          </div>
+
+          <div class="form-group">
+            <label for="loginSecretPasscode">Admin Secret Passcode *</label>
+            <input type="password" id="loginSecretPasscode" required>
+            <small>Enter this passcode to login directly. You can also use it to generate a one-time access code.</small>
+          </div>
+
+          <div class="form-group">
+            <button type="button" class="submit-btn secondary-action-btn" id="requestAccessCodeBtn">Generate One-Time Access Code</button>
+            <label for="loginAccessCode">One-Time Access Code (Optional)</label>
+            <input type="text" id="loginAccessCode" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit code (optional)">
+          </div>
+          
+          <button type="submit" class="submit-btn" data-i18n="admin_login_btn">Login</button>
+        </form>
+        
+        <p class="toggle-text">
+          <span data-i18n="admin_no_account">Don't have an account?</span> <a href="#" onclick="toggleAuthForm()" data-i18n="admin_register_here">Register here</a>
+        </p>
+        <div id="loginMessage" class="message"></div>
+      </div>
+      
+      <div id="registerForm" class="auth-form" style="display: none;">
+        <h3 data-i18n="admin_register">Admin Registration</h3>
+        <form id="adminRegisterForm">
+          <div class="form-group">
+            <label for="registerName"><span data-i18n="admin_name">Full Name</span> *</label>
+            <input type="text" id="registerName" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="registerEmail"><span data-i18n="admin_email">Email Address</span> *</label>
+            <input type="email" id="registerEmail" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="registerPassword"><span data-i18n="admin_password">Password</span> *</label>
+            <input type="password" id="registerPassword" required>
+          </div>
+
+          <div class="form-group">
+            <label for="registerSecretPasscode">Admin Secret Passcode *</label>
+            <input type="password" id="registerSecretPasscode" required>
+            <small>Required for one-time initial admin registration.</small>
+          </div>
+          
+          <button type="submit" class="submit-btn" data-i18n="admin_register_btn">Register</button>
+        </form>
+        
+        <p class="toggle-text">
+          <span data-i18n="admin_have_account">Already have an account?</span> <a href="#" onclick="toggleAuthForm()" data-i18n="admin_login_here">Login here</a>
+        </p>
+        <div id="registerMessage" class="message"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer class="footer">
+    <div class="container">
+      <p data-i18n="footer_copyright">&copy; 2024 CEO UNISEX SALON. All rights reserved.</p>
+      <p data-i18n="footer_tagline">Professional Hair & Beauty Services | Lagos, Nigeria</p>
+    </div>
+  </footer>
+
+  <!-- Language Selection Modal -->
+  <div id="languageModal" class="modal">
+    <div class="modal-content">
+      <span class="close" onclick="closeLanguageModal()">&times;</span>
+      <h3>🌍 Select Your Language <br><small>Choose your preferred language</small></h3>
+      <div class="language-selector">
+        <button class="lang-btn" onclick="setLanguageAndClose('en')">
+          <span class="lang-flag">🇺🇸</span>
+          <span class="lang-name">English</span>
+        </button>
+        <button class="lang-btn" onclick="setLanguageAndClose('es')">
+          <span class="lang-flag">🇪🇸</span>
+          <span class="lang-name">Español</span>
+        </button>
+        <button class="lang-btn" onclick="setLanguageAndClose('fr')">
+          <span class="lang-flag">🇫🇷</span>
+          <span class="lang-name">Français</span>
+        </button>
+        <button class="lang-btn" onclick="setLanguageAndClose('de')">
+          <span class="lang-flag">🇩🇪</span>
+          <span class="lang-name">Deutsch</span>
+        </button>
+        <div class="language-group-label">Nigerian Languages</div>
+        <button class="lang-btn" onclick="setLanguageAndClose('yo')">
+          <span class="lang-flag">🇳🇬</span>
+          <span class="lang-name">Yorùbá</span>
+        </button>
+        <button class="lang-btn" onclick="setLanguageAndClose('ha')">
+          <span class="lang-flag">🇳🇬</span>
+          <span class="lang-name">Hausa</span>
+        </button>
+        <button class="lang-btn" onclick="setLanguageAndClose('ig')">
+          <span class="lang-flag">🇳🇬</span>
+          <span class="lang-name">Igbo</span>
+        </button>
+        <button class="lang-btn" onclick="setLanguageAndClose('pcm')">
+          <span class="lang-flag">🇳🇬</span>
+          <span class="lang-name">Pidgin</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="js/languages.js"></script>
+  <script src="js/main.js"></script>
+</body>
+</html>

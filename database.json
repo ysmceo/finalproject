@@ -1,0 +1,127 @@
+{
+  "bookings": [
+    {
+      "id": "c9632ea1-fd33-439d-bab2-b573115d942b",
+      "name": "Okonta victor",
+      "email": "ysmceo1@gmail.com",
+      "phone": "07036939125",
+      "serviceId": 8,
+      "serviceName": "Full Body Massage",
+      "price": 18000,
+      "date": "2026-11-22",
+      "time": "09:00",
+      "language": "Igbo",
+      "status": "approved",
+      "createdAt": "2026-02-11T23:47:45.980Z",
+      "updatedAt": "2026-02-12T20:56:38.954Z"
+    },
+    {
+      "id": "28d19230-e7e5-4f4f-95fe-a2555295d9cb",
+      "name": "Okonta victor",
+      "email": "ysm@creativehub.com",
+      "phone": "07036939125",
+      "serviceId": 2,
+      "serviceName": "Hair Coloring",
+      "price": 15000,
+      "date": "2026-02-20",
+      "time": "09:59",
+      "language": "English",
+      "paymentMethod": "Cash",
+      "refreshment": "Yes",
+      "specialRequests": "special vip treatment ",
+      "styleImage": "/uploads/1770929894569-f14f2d99-811f-4ae0-9c62-3eb24ba1473e-ysm ceo.jpeg",
+      "imageApproved": false,
+      "status": "pending",
+      "createdAt": "2026-02-12T20:58:14.580Z"
+    }
+  ],
+  "messages": [
+    {
+      "id": "0122d67c-ac86-43c1-8c5e-703392471ce1",
+      "name": "ysm ceoi",
+      "email": "ysm@creativehub.com",
+      "subject": "wrong hair",
+      "message": "didnt get sastified",
+      "reportType": "complaint",
+      "reportFile": "/uploads/1770929955394-6c97294d-6157-4f64-bdbf-bf55a2afc180-ysmceo unisex.jpeg",
+      "status": "unread",
+      "createdAt": "2026-02-12T20:59:15.397Z"
+    }
+  ],
+  "admins": [
+    {
+      "id": "1",
+      "email": "admin@ceosaloon.com",
+      "password": "admin123",
+      "name": "CEO Saloon Admin",
+      "createdAt": "2024-02-10"
+    },
+    {
+      "id": "b0d0d098-3e11-4b47-b1cf-fb3319baeb8c",
+      "email": "ysm1@gmail.com",
+      "password": "Madridking1@",
+      "name": "ysmceo",
+      "createdAt": "2026-02-10T15:12:08.863Z"
+    }
+  ],
+  "services": [
+    {
+      "id": 1,
+      "name": "Hair Cut",
+      "price": 5000,
+      "duration": 30
+    },
+    {
+      "id": 2,
+      "name": "Hair Coloring",
+      "price": 15000,
+      "duration": 60
+    },
+    {
+      "id": 3,
+      "name": "Facial Treatment",
+      "price": 8000,
+      "duration": 45
+    },
+    {
+      "id": 4,
+      "name": "Manicure",
+      "price": 4000,
+      "duration": 30
+    },
+    {
+      "id": 5,
+      "name": "Pedicure",
+      "price": 5000,
+      "duration": 40
+    },
+    {
+      "id": 6,
+      "name": "Hair Spa",
+      "price": 12000,
+      "duration": 60
+    },
+    {
+      "id": 7,
+      "name": "Beard Trim",
+      "price": 3000,
+      "duration": 20
+    },
+    {
+      "id": 8,
+      "name": "Full Body Massage",
+      "price": 18000,
+      "duration": 60
+    }
+  ],
+  "adminAccessCodes": [
+    {
+      "id": "65676209-86ca-41a0-bbd2-754cda9d60ea",
+      "email": "admin@ceosaloon.com",
+      "code": "972014",
+      "used": false,
+      "createdAt": "2026-02-12T20:49:37.179Z",
+      "expiresAt": "2026-02-12T20:59:37.179Z"
+    }
+  ]
+}
