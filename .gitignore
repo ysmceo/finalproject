@@ -4,6 +4,7 @@ node_modules/
 # environment variables / secrets
 .env
 .env.*
+!.env.example
 
 # local uploads and generated files
 public/uploads/
