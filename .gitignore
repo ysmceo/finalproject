@@ -9,6 +9,9 @@ node_modules/
 # local uploads and generated files
 public/uploads/
 
+# local data store (contains real bookings/admins)
+database.json
+
 # logs
 npm-debug.log*
 yarn-debug.log*
