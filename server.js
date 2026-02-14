@@ -3,6 +3,7 @@ const bodyParser = require('body-parser');
 const cors = require('cors');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 require('dotenv').config();
@@ -14,9 +15,21 @@ const ONE_TIME_CODE_TTL_MS = 10 * 60 * 1000;
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || '';
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
 
+// Monnify (card/transfer/ussd) configuration
+const MONNIFY_API_KEY = process.env.MONNIFY_API_KEY || '';
+const MONNIFY_SECRET_KEY = process.env.MONNIFY_SECRET_KEY || '';
+const MONNIFY_CONTRACT_CODE = process.env.MONNIFY_CONTRACT_CODE || '';
+const MONNIFY_ENV = String(process.env.MONNIFY_ENV || 'live').trim().toLowerCase();
+const MONNIFY_BASE_URL = process.env.MONNIFY_BASE_URL || (MONNIFY_ENV === 'sandbox' ? 'https://sandbox.monnify.com' : 'https://api.monnify.com');
+
 const SALON_BANK_ACCOUNT_NUMBER = process.env.SALON_BANK_ACCOUNT_NUMBER || '0204661552';
 const SALON_BANK_NAME = process.env.SALON_BANK_NAME || 'GTBank';
 const SALON_BANK_ACCOUNT_NAME = process.env.SALON_BANK_ACCOUNT_NAME || 'CEO Saloon';
+
+let monnifyAccessTokenCache = {
+  token: '',
+  expiresAtMs: 0
+};
 
 function getDefaultProducts() {
   return [
@@ -102,7 +115,12 @@ const uploadReceipt = multer({
 
 // Middleware
 app.use(cors());
-app.use(bodyParser.json());
+app.use(bodyParser.json({
+  verify: (req, res, buf) => {
+    // Keep raw body for providers that validate webhook signatures.
+    req.rawBody = buf;
+  }
+}));
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static('public'));
 app.use('/images', express.static(path.join(__dirname, 'images')));
@@ -210,6 +228,117 @@ function buildBankTransferReference(bookingId) {
 
 function isPaystackConfigured() {
   return Boolean(String(PAYSTACK_SECRET_KEY || '').trim());
+}
+
+function isMonnifyConfigured() {
+  return Boolean(String(MONNIFY_API_KEY || '').trim()) &&
+    Boolean(String(MONNIFY_SECRET_KEY || '').trim()) &&
+    Boolean(String(MONNIFY_CONTRACT_CODE || '').trim());
+}
+
+function getMonnifyBasicAuthHeader() {
+  const apiKey = String(MONNIFY_API_KEY || '').trim();
+  const secret = String(MONNIFY_SECRET_KEY || '').trim();
+  const basicToken = Buffer.from(`${apiKey}:${secret}`).toString('base64');
+  return `Basic ${basicToken}`;
+}
+
+async function monnifyGetAccessToken() {
+  if (!isMonnifyConfigured()) {
+    const err = new Error('Monnify credentials are not configured');
+    err.code = 'MONNIFY_NOT_CONFIGURED';
+    throw err;
+  }
+
+  const now = Date.now();
+  // Keep a small buffer so we don't race with expiry.
+  if (monnifyAccessTokenCache.token && monnifyAccessTokenCache.expiresAtMs > now + 30_000) {
+    return monnifyAccessTokenCache.token;
+  }
+
+  const response = await fetch(`${MONNIFY_BASE_URL}/api/v1/auth/login`, {
+    method: 'POST',
+    headers: {
+      Authorization: getMonnifyBasicAuthHeader(),
+      'Content-Type': 'application/json'
+    }
+  });
+
+  const data = await response.json().catch(() => null);
+  if (!response.ok || !data || data.requestSuccessful !== true || !data.responseBody || !data.responseBody.accessToken) {
+    const err = new Error('Failed to authenticate with Monnify');
+    err.code = 'MONNIFY_AUTH_FAILED';
+    err.details = data;
+    throw err;
+  }
+
+  const expiresInSeconds = Number(data.responseBody.expiresIn || 0);
+  monnifyAccessTokenCache = {
+    token: String(data.responseBody.accessToken),
+    expiresAtMs: now + Math.max(0, expiresInSeconds) * 1000
+  };
+
+  return monnifyAccessTokenCache.token;
+}
+
+async function monnifyApiRequest(method, pathname, payload) {
+  const token = await monnifyGetAccessToken();
+  const url = `${MONNIFY_BASE_URL}${pathname}`;
+
+  const response = await fetch(url, {
+    method,
+    headers: {
+      Authorization: `Bearer ${token}`,
+      'Content-Type': 'application/json'
+    },
+    body: payload ? JSON.stringify(payload) : undefined
+  });
+
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    return { ok: false, status: response.status, data };
+  }
+
+  return { ok: true, status: response.status, data };
+}
+
+async function monnifyQueryTransaction({ paymentReference, transactionReference }) {
+  const token = await monnifyGetAccessToken();
+
+  const ref = String(paymentReference || '').trim();
+  const txRef = String(transactionReference || '').trim();
+  if (!ref && !txRef) {
+    const err = new Error('paymentReference or transactionReference is required');
+    err.code = 'MONNIFY_MISSING_REFERENCE';
+    throw err;
+  }
+
+  const query = ref
+    ? `paymentReference=${encodeURIComponent(ref)}`
+    : `transactionReference=${encodeURIComponent(txRef)}`;
+
+  const response = await fetch(`${MONNIFY_BASE_URL}/api/v2/merchant/transactions/query?${query}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
+
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    return { ok: false, status: response.status, data };
+  }
+
+  return { ok: true, status: response.status, data };
+}
+
+function computeMonnifyWebhookSignature(rawBodyBuffer) {
+  const secret = String(MONNIFY_SECRET_KEY || '').trim();
+  const raw = Buffer.isBuffer(rawBodyBuffer)
+    ? rawBodyBuffer
+    : Buffer.from(String(rawBodyBuffer || ''), 'utf8');
+
+  return crypto.createHmac('sha512', secret).update(raw).digest('hex');
 }
 
 async function paystackRequest(pathname, payload) {
@@ -590,6 +719,252 @@ app.get('/api/payments/paystack/status', (req, res) => {
       ? 'Paystack is configured'
       : 'Paystack is not configured on the server. Set PAYSTACK_SECRET_KEY in .env and restart the server.'
   });
+});
+
+// Monnify configuration status (Customer)
+app.get('/api/payments/monnify/status', (req, res) => {
+  const configured = isMonnifyConfigured();
+  const callbackUrl = `${PUBLIC_BASE_URL}/monnify-callback.html`;
+
+  res.json({
+    configured,
+    callbackUrl,
+    publicBaseUrl: PUBLIC_BASE_URL,
+    baseUrl: MONNIFY_BASE_URL,
+    message: configured
+      ? 'Monnify is configured'
+      : 'Monnify is not configured on the server. Set MONNIFY_API_KEY, MONNIFY_SECRET_KEY, and MONNIFY_CONTRACT_CODE in .env and restart the server.'
+  });
+});
+
+// Initialize Monnify payment (Customer)
+app.post('/api/payments/monnify/initialize', async (req, res) => {
+  const { bookingId, email, paymentMethods } = req.body;
+  const normalizedBookingId = String(bookingId || '').trim();
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!normalizedBookingId || !normalizedEmail) {
+    return res.status(400).json({ error: 'bookingId and email are required' });
+  }
+
+  if (!isMonnifyConfigured()) {
+    return res.status(503).json({
+      error: 'Monnify is not configured on the server',
+      hint: 'Set MONNIFY_API_KEY, MONNIFY_SECRET_KEY, and MONNIFY_CONTRACT_CODE in .env and restart the server.'
+    });
+  }
+
+  const db = readDatabase();
+  const booking = db.bookings.find(b => String(b.id) === normalizedBookingId);
+  if (!booking) {
+    return res.status(404).json({ error: 'Booking not found' });
+  }
+
+  if (normalizeEmail(booking.email) !== normalizedEmail) {
+    return res.status(401).json({ error: 'Email does not match this booking' });
+  }
+
+  const amount = Math.max(0, Number(booking.amountDueNow || 0));
+  if (!amount) {
+    return res.status(400).json({ error: 'No payable amount found for this booking' });
+  }
+
+  const redirectUrl = `${PUBLIC_BASE_URL}/monnify-callback.html`;
+  const generatedPaymentReference = `CEOSALOON-${String(booking.id).slice(0, 12)}-${Date.now()}`;
+
+  const normalizedPaymentMethods = Array.isArray(paymentMethods)
+    ? paymentMethods
+        .map(m => String(m || '').trim().toUpperCase())
+        .filter(Boolean)
+    : [];
+
+  try {
+    const init = await monnifyApiRequest('POST', '/api/v1/merchant/transactions/init-transaction', {
+      amount,
+      customerName: booking.name,
+      customerEmail: booking.email,
+      paymentReference: generatedPaymentReference,
+      paymentDescription: `CEO UNISEX SALON - ${booking.serviceName}`,
+      currencyCode: 'NGN',
+      contractCode: String(MONNIFY_CONTRACT_CODE || '').trim(),
+      redirectUrl,
+      paymentMethods: normalizedPaymentMethods.length ? normalizedPaymentMethods : undefined,
+      metaData: {
+        bookingId: booking.id,
+        serviceName: booking.serviceName,
+        paymentPlan: booking.paymentPlan,
+        amountDueNow: booking.amountDueNow,
+        phone: booking.phone
+      }
+    });
+
+    if (!init.ok || !init.data || init.data.requestSuccessful !== true || !init.data.responseBody || !init.data.responseBody.checkoutUrl) {
+      return res.status(502).json({ error: 'Failed to initialize Monnify payment', details: init.data });
+    }
+
+    booking.paymentProvider = 'monnify';
+    booking.paymentReference = init.data.responseBody.paymentReference || generatedPaymentReference;
+    booking.monnifyTransactionReference = init.data.responseBody.transactionReference || '';
+    booking.paymentStatus = 'initiated';
+    booking.paymentInitiatedAt = new Date().toISOString();
+    writeDatabase(db);
+
+    return res.json({
+      message: 'Payment initialized',
+      checkoutUrl: init.data.responseBody.checkoutUrl,
+      paymentReference: booking.paymentReference,
+      transactionReference: booking.monnifyTransactionReference
+    });
+  } catch (error) {
+    if (error && error.code === 'MONNIFY_NOT_CONFIGURED') {
+      return res.status(503).json({ error: 'Monnify is not configured on the server' });
+    }
+    return res.status(500).json({ error: 'Failed to initialize Monnify payment' });
+  }
+});
+
+// Verify Monnify payment (Customer)
+app.get('/api/payments/monnify/verify', async (req, res) => {
+  const paymentReference = String(req.query.paymentReference || '').trim();
+  const transactionReference = String(req.query.transactionReference || '').trim();
+
+  if (!paymentReference && !transactionReference) {
+    return res.status(400).json({ error: 'paymentReference or transactionReference is required' });
+  }
+
+  if (!isMonnifyConfigured()) {
+    return res.status(503).json({
+      error: 'Monnify is not configured on the server',
+      hint: 'Set MONNIFY_API_KEY, MONNIFY_SECRET_KEY, and MONNIFY_CONTRACT_CODE in .env and restart the server.'
+    });
+  }
+
+  try {
+    const result = await monnifyQueryTransaction({ paymentReference, transactionReference });
+    if (!result.ok || !result.data || result.data.requestSuccessful !== true || !result.data.responseBody) {
+      return res.status(502).json({ error: 'Failed to verify payment', details: result.data });
+    }
+
+    const body = result.data.responseBody;
+    const status = String(body.paymentStatus || '').trim().toUpperCase();
+    const paid = ['PAID', 'OVERPAID'].includes(status);
+    const amountPaid = Math.round(Number(body.amountPaid || body.amount || 0));
+
+    const db = readDatabase();
+    const booking = db.bookings.find(b => String(b.paymentReference || '').trim() === String(body.paymentReference || paymentReference).trim())
+      || db.bookings.find(b => String(b.monnifyTransactionReference || '').trim() === String(body.transactionReference || transactionReference).trim());
+
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found for this payment reference' });
+    }
+
+    booking.paymentProvider = 'monnify';
+    booking.paymentReference = String(body.paymentReference || booking.paymentReference || '').trim();
+    booking.monnifyTransactionReference = String(body.transactionReference || booking.monnifyTransactionReference || '').trim();
+    booking.paidAmount = paid ? amountPaid : 0;
+    booking.paymentStatus = paid ? 'paid' : 'failed';
+    booking.paymentVerifiedAt = new Date().toISOString();
+
+    if (paid) {
+      booking.amountRemaining = Math.max(0, Number(booking.price || 0) - amountPaid);
+      addBookingNotification(
+        db,
+        booking,
+        'payment_received',
+        `💳 Payment received successfully (₦${amountPaid.toLocaleString()}). Your booking remains ${booking.status}.`
+      );
+    }
+
+    writeDatabase(db);
+
+    return res.json({
+      ok: true,
+      paid,
+      status,
+      booking: {
+        id: booking.id,
+        status: booking.status,
+        paymentStatus: booking.paymentStatus,
+        paymentPlan: booking.paymentPlan,
+        amountDueNow: booking.amountDueNow,
+        amountRemaining: booking.amountRemaining,
+        paidAmount: booking.paidAmount,
+        paymentReference: booking.paymentReference,
+        transactionReference: booking.monnifyTransactionReference
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'Verification failed' });
+  }
+});
+
+// Monnify webhook (server-to-server) for payment completion events
+app.post('/api/payments/monnify/webhook', async (req, res) => {
+  if (!isMonnifyConfigured()) {
+    return res.status(503).json({ error: 'Monnify is not configured on the server' });
+  }
+
+  const signature = String(req.headers['monnify-signature'] || '').trim();
+  const rawBody = req.rawBody;
+  if (!signature || !rawBody) {
+    return res.status(400).json({ error: 'Missing monnify-signature header or raw body' });
+  }
+
+  const computed = computeMonnifyWebhookSignature(rawBody);
+  if (String(computed).toLowerCase() !== String(signature).toLowerCase()) {
+    return res.status(401).json({ error: 'Invalid webhook signature' });
+  }
+
+  // Best practice: query Monnify for the final status before updating records.
+  const payload = req.body;
+  const eventData = payload && payload.eventData ? payload.eventData : null;
+  const paymentReference = eventData ? String(eventData.paymentReference || '').trim() : '';
+  const transactionReference = eventData ? String(eventData.transactionReference || '').trim() : '';
+
+  if (!paymentReference && !transactionReference) {
+    return res.status(400).json({ error: 'Webhook missing paymentReference/transactionReference' });
+  }
+
+  try {
+    const verified = await monnifyQueryTransaction({ paymentReference, transactionReference });
+    if (!verified.ok || !verified.data || verified.data.requestSuccessful !== true || !verified.data.responseBody) {
+      return res.status(202).json({ received: true, verified: false });
+    }
+
+    const body = verified.data.responseBody;
+    const status = String(body.paymentStatus || '').trim().toUpperCase();
+    const paid = ['PAID', 'OVERPAID'].includes(status);
+    const amountPaid = Math.round(Number(body.amountPaid || body.amount || 0));
+
+    const db = readDatabase();
+    const booking = db.bookings.find(b => String(b.paymentReference || '').trim() === String(body.paymentReference || paymentReference).trim())
+      || db.bookings.find(b => String(b.monnifyTransactionReference || '').trim() === String(body.transactionReference || transactionReference).trim());
+
+    if (booking) {
+      booking.paymentProvider = 'monnify';
+      booking.paymentReference = String(body.paymentReference || booking.paymentReference || '').trim();
+      booking.monnifyTransactionReference = String(body.transactionReference || booking.monnifyTransactionReference || '').trim();
+      booking.paidAmount = paid ? amountPaid : 0;
+      booking.paymentStatus = paid ? 'paid' : booking.paymentStatus;
+      booking.paymentWebhookProcessedAt = new Date().toISOString();
+
+      if (paid) {
+        booking.amountRemaining = Math.max(0, Number(booking.price || 0) - amountPaid);
+        addBookingNotification(
+          db,
+          booking,
+          'payment_received',
+          `💳 Payment received successfully (₦${amountPaid.toLocaleString()}). Your booking remains ${booking.status}.`
+        );
+      }
+
+      writeDatabase(db);
+    }
+
+    return res.json({ received: true });
+  } catch (error) {
+    return res.status(202).json({ received: true, verified: false });
+  }
 });
 
 // Initialize Paystack payment (Customer)

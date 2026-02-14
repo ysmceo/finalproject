@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Payment Verification - CEO UNISEX SALON</title>
+  <style>
+    body { font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: #faf7ff; color: #333; }
+    .wrap { max-width: 720px; margin: 60px auto; padding: 0 16px; }
+    .card { background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 12px 30px rgba(74,14,78,0.12); border: 1px solid rgba(255,20,147,0.15); }
+    h1 { margin: 0 0 10px; color: #4a0e4e; }
+    .status { font-weight: 700; margin-top: 12px; }
+    .ok { color: #0f6b2f; }
+    .bad { color: #a1182b; }
+    .muted { color: #666; }
+    .details { margin-top: 10px; }
+    a.btn { display: inline-block; margin-top: 16px; padding: 12px 18px; background: linear-gradient(135deg,#4a0e4e,#ff1493); color: #fff; text-decoration: none; border-radius: 10px; font-weight: 700; }
+    code { background: #f3f3f3; padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Verifying your payment…</h1>
+      <p class="muted">Please wait. Do not close this page.</p>
+      <div id="result" class="status"></div>
+      <div id="details" class="muted details"></div>
+      <a class="btn" href="/">Back to Website</a>
+    </div>
+  </div>
+
+  <script>
+    async function run() {
+      const params = new URLSearchParams(window.location.search);
+      const reference = params.get('reference');
+      const resultEl = document.getElementById('result');
+      const detailsEl = document.getElementById('details');
+
+      if (!reference) {
+        resultEl.textContent = 'Missing payment reference.';
+        resultEl.className = 'status bad';
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/payments/paystack/verify/${encodeURIComponent(reference)}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+          resultEl.textContent = 'Payment verification failed.';
+          resultEl.className = 'status bad';
+          detailsEl.textContent = data && data.error ? data.error : 'Unknown error';
+          return;
+        }
+
+        if (data.paid) {
+          resultEl.textContent = '✅ Payment verified successfully!';
+          resultEl.className = 'status ok';
+        } else {
+          resultEl.textContent = '❌ Payment not successful.';
+          resultEl.className = 'status bad';
+        }
+
+        if (data.booking && data.booking.id) {
+          detailsEl.innerHTML = `Booking ID: <code>${data.booking.id}</code> | Payment Status: <code>${data.booking.paymentStatus}</code>`;
+        }
+      } catch (e) {
+        resultEl.textContent = 'Payment verification error.';
+        resultEl.className = 'status bad';
+      }
+    }
+
+    run();
+  </script>
+</body>
+</html>

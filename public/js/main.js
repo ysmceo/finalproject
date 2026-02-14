@@ -399,7 +399,7 @@ function updateOnlinePaymentVisibility() {
   const paymentMethod = String(document.getElementById('paymentMethod')?.value || '').trim();
   const onlineGroup = document.getElementById('onlinePaymentChannelGroup');
 
-  const isOnline = ['Credit Card', 'Debit Card', 'Bank Transfer', 'USSD'].includes(paymentMethod);
+  const isOnline = ['Credit Card', 'Debit Card', 'USSD'].includes(paymentMethod);
   if (onlineGroup) {
     onlineGroup.style.display = isOnline ? '' : 'none';
   }
@@ -414,6 +414,7 @@ function setPayNowPanelVisible(visible) {
 async function refreshPayNowAvailability() {
   const payNowBtn = document.getElementById('payNowBtn');
   const payNowHint = document.getElementById('payNowHint');
+  const providerSelect = document.getElementById('paymentProvider');
   if (!payNowBtn) return;
 
   // Default optimistic state.
@@ -423,16 +424,60 @@ async function refreshPayNowAvailability() {
     payNowHint.textContent = 'You will be redirected to a secure payment page.';
   }
 
-  try {
-    const res = await fetch(`${API_URL}/payments/paystack/status`);
-    const data = await res.json();
+  if (payNowBtn) {
+    payNowBtn.textContent = 'Pay Now';
+  }
 
-    if (!res.ok || !data || data.configured !== true) {
+  const normalizeProviderValue = (v) => String(v || '').trim().toLowerCase();
+  const desiredProvider = normalizeProviderValue(providerSelect?.value);
+
+  const fetchStatus = async (provider) => {
+    const res = await fetch(`${API_URL}/payments/${provider}/status`);
+    const data = await res.json().catch(() => ({}));
+    return { ok: res.ok, data };
+  };
+
+  try {
+    const [paystack, monnify] = await Promise.all([
+      fetchStatus('paystack'),
+      fetchStatus('monnify')
+    ]);
+
+    const paystackOk = paystack.ok && paystack.data && paystack.data.configured === true;
+    const monnifyOk = monnify.ok && monnify.data && monnify.data.configured === true;
+
+    const pickAuto = () => {
+      if (paystackOk) return 'paystack';
+      if (monnifyOk) return 'monnify';
+      return '';
+    };
+
+    const chosen = desiredProvider || pickAuto();
+
+    if (providerSelect && !desiredProvider && chosen) {
+      providerSelect.value = chosen;
+    }
+
+    const configuredForChosen = chosen === 'paystack' ? paystackOk : chosen === 'monnify' ? monnifyOk : (paystackOk || monnifyOk);
+
+    if (!configuredForChosen) {
       payNowBtn.disabled = true;
       payNowBtn.classList.add('disabled');
       if (payNowHint) {
         payNowHint.textContent = 'Online card payments are currently unavailable. Please choose Bank Transfer or Cash.';
       }
+      return;
+    }
+
+    if (payNowBtn) {
+      if (chosen === 'paystack') payNowBtn.textContent = 'Pay Now (Paystack)';
+      if (chosen === 'monnify') payNowBtn.textContent = 'Pay Now (Monnify)';
+    }
+
+    if (payNowHint) {
+      payNowHint.textContent = chosen === 'monnify'
+        ? 'You will be redirected to Monnify secure checkout.'
+        : 'You will be redirected to a secure payment page.';
     }
   } catch (e) {
     // If status check fails (offline/server down), disable to avoid a confusing experience.
@@ -442,6 +487,42 @@ async function refreshPayNowAvailability() {
       payNowHint.textContent = 'Unable to reach payment service right now. Please try again later or use Bank Transfer.';
     }
   }
+}
+
+function inferMonnifyPaymentMethods(paymentMethod) {
+  const method = String(paymentMethod || '').trim();
+  if (method === 'USSD') {
+    return ['USSD'];
+  }
+
+  // Credit/Debit: prioritize card, but allow transfer as fallback.
+  return ['CARD', 'ACCOUNT_TRANSFER'];
+}
+
+async function handlePayNowMonnify({ bookingId, email }) {
+  const paymentMethod = String(document.getElementById('paymentMethod')?.value || '').trim();
+  const paymentMethods = inferMonnifyPaymentMethods(paymentMethod);
+
+  const response = await fetch(`${API_URL}/payments/monnify/initialize`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bookingId, email, paymentMethods })
+  });
+
+  const result = await response.json();
+
+  if (!response.ok) {
+    const hint = result && result.hint ? ` ${result.hint}` : '';
+    showMessage('bookingMessage', (result.error || 'Failed to start payment') + hint, 'error');
+    return;
+  }
+
+  if (result.checkoutUrl) {
+    window.location.href = result.checkoutUrl;
+    return;
+  }
+
+  showMessage('bookingMessage', 'Payment initialization did not return a checkout URL.', 'error');
 }
 
 function setBankPayPanelVisible(visible) {
@@ -491,6 +572,7 @@ async function handlePayNow() {
   const bookingId = localStorage.getItem('lastBookingId');
   const email = localStorage.getItem('lastBookingEmail');
   const paymentChannel = String(document.getElementById('paymentChannel')?.value || '').trim();
+  const paymentProvider = String(document.getElementById('paymentProvider')?.value || '').trim().toLowerCase();
 
   if (!bookingId || !email) {
     showMessage('bookingMessage', 'No booking found to pay for. Please book a service first.', 'error');
@@ -498,6 +580,11 @@ async function handlePayNow() {
   }
 
   try {
+    if (paymentProvider === 'monnify') {
+      await handlePayNowMonnify({ bookingId, email });
+      return;
+    }
+
     const response = await fetch(`${API_URL}/payments/paystack/initialize`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
