@@ -1,6 +1,6 @@
 // CEO SALOON - Admin Dashboard JavaScript
 
-const API_URL = 'http://localhost:3000/api/admin';
+const API_URL = '/api/admin';
 
 let currentBookingId = null;
 let currentMessageId = null;
@@ -54,6 +54,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   setupMenuListeners();
   loadBookings();
   setupFilterListeners();
+  setupProductListeners();
   initializeClockAndWeather();
   initializeDarkMode();
 });
@@ -227,7 +228,8 @@ function showTab(tabName) {
     'bookings': 'Bookings Management',
     'messages': 'Messages Management',
     'images': 'Style Images - Approval Report',
-    'reports': 'Customer Service Reports'
+    'reports': 'Customer Service Reports',
+    'products': 'Products Management'
   };
   document.getElementById('pageTitle').textContent = titleMap[tabName] || 'Dashboard';
   
@@ -240,6 +242,172 @@ function showTab(tabName) {
     loadStyleImages();
   } else if (tabName === 'reports') {
     loadServiceReports();
+  } else if (tabName === 'products') {
+    loadProducts();
+  }
+}
+
+function setupProductListeners() {
+  const productForm = document.getElementById('productForm');
+  if (!productForm) return;
+
+  productForm.addEventListener('submit', handleProductSubmit);
+}
+
+async function handleProductSubmit(e) {
+  e.preventDefault();
+
+  const formData = new FormData();
+  formData.append('name', document.getElementById('productName').value.trim());
+  formData.append('category', document.getElementById('productCategory').value.trim());
+  formData.append('price', document.getElementById('productPrice').value);
+  formData.append('stock', document.getElementById('productStock').value);
+
+  const imageFile = document.getElementById('productImage').files[0];
+  if (imageFile) {
+    formData.append('productImage', imageFile);
+  }
+
+  try {
+    const response = await adminFetch('/products', {
+      method: 'POST',
+      body: formData
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      showProductFormMessage(result.error || 'Failed to add product', 'error');
+      return;
+    }
+
+    showProductFormMessage('Product added successfully', 'success');
+    document.getElementById('productForm').reset();
+    loadProducts();
+  } catch (error) {
+    console.error('Error adding product:', error);
+    showProductFormMessage('Error adding product', 'error');
+  }
+}
+
+function showProductFormMessage(message, type) {
+  const messageEl = document.getElementById('productFormMessage');
+  if (!messageEl) return;
+
+  messageEl.textContent = message;
+  messageEl.className = `message ${type}`;
+
+  setTimeout(() => {
+    messageEl.textContent = '';
+    messageEl.className = 'message';
+  }, 4000);
+}
+
+async function loadProducts() {
+  try {
+    const response = await adminFetch('/products');
+    const products = await response.json();
+    displayProducts(products);
+  } catch (error) {
+    console.error('Error loading products:', error);
+    const list = document.getElementById('productsList');
+    if (list) {
+      list.innerHTML = '<div class="loading">Error loading products</div>';
+    }
+  }
+}
+
+function displayProducts(products) {
+  const container = document.getElementById('productsList');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  if (!Array.isArray(products) || products.length === 0) {
+    container.innerHTML = '<div class="loading">No products found</div>';
+    return;
+  }
+
+  const grid = document.createElement('div');
+  grid.className = 'products-grid';
+
+  products.forEach(product => {
+    const card = document.createElement('div');
+    card.className = 'product-card-admin';
+
+    const imageMarkup = product.image
+      ? `<img src="${product.image}" alt="${product.name}" class="product-image-admin">`
+      : '<div class="product-image-placeholder">No image</div>';
+
+    card.innerHTML = `
+      <div class="product-image-wrap">${imageMarkup}</div>
+      <div class="product-content-admin">
+        <h4>${product.name}</h4>
+        <p><strong>Category:</strong> ${product.category}</p>
+        <p><strong>Price:</strong> ₦${Number(product.price || 0).toLocaleString()}</p>
+        <p><strong>Stock:</strong> ${product.stock}</p>
+      </div>
+      <div class="product-actions-admin">
+        <label class="btn btn-accept upload-label" for="replace-image-${product.id}">Replace Image</label>
+        <input type="file" id="replace-image-${product.id}" class="replace-image-input" accept="image/*" onchange="replaceProductImage('${product.id}', this)">
+        <button class="btn btn-decline" onclick="deleteProduct('${product.id}')">Delete</button>
+      </div>
+    `;
+
+    grid.appendChild(card);
+  });
+
+  container.appendChild(grid);
+}
+
+async function replaceProductImage(productId, input) {
+  const file = input.files && input.files[0];
+  if (!file) return;
+
+  const formData = new FormData();
+  formData.append('productImage', file);
+
+  try {
+    const response = await adminFetch(`/products/${productId}/image`, {
+      method: 'PUT',
+      body: formData
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      alert(result.error || 'Failed to update product image');
+      return;
+    }
+
+    loadProducts();
+  } catch (error) {
+    console.error('Error updating product image:', error);
+    alert('Error updating product image');
+  }
+}
+
+async function deleteProduct(productId) {
+  if (!confirm('Are you sure you want to delete this product?')) {
+    return;
+  }
+
+  try {
+    const response = await adminFetch(`/products/${productId}`, {
+      method: 'DELETE'
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      alert(result.error || 'Failed to delete product');
+      return;
+    }
+
+    loadProducts();
+  } catch (error) {
+    console.error('Error deleting product:', error);
+    alert('Error deleting product');
   }
 }
 
@@ -296,6 +464,14 @@ function displayBookings(bookings) {
     const normalizedStatus = normalizeBookingStatus(booking.status);
     const statusLabel = getStatusLabel(normalizedStatus);
 
+    const isPending = normalizedStatus === 'pending';
+    const isApproved = normalizedStatus === 'approved';
+    const isCancelled = normalizedStatus === 'cancelled';
+    const isCompleted = normalizedStatus === 'completed';
+
+    const approveDisabled = isApproved || isCancelled || isCompleted;
+    const rejectDisabled = isCancelled || isCompleted;
+
     const card = document.createElement('div');
     card.className = 'booking-card';
     card.innerHTML = `
@@ -322,8 +498,8 @@ function displayBookings(bookings) {
         </div>
       </div>
       <div class="booking-actions">
-        <button class="btn btn-accept" onclick="updateBookingStatus('${booking.id}', 'approved')">Approve</button>
-        <button class="btn btn-decline" onclick="updateBookingStatus('${booking.id}', 'cancelled')">Cancel</button>
+        <button class="btn btn-accept" ${approveDisabled ? 'disabled' : ''} onclick="updateBookingStatus('${booking.id}', 'approved')">✓ Approve</button>
+        <button class="btn btn-decline" ${rejectDisabled ? 'disabled' : ''} onclick="updateBookingStatus('${booking.id}', 'cancelled')">✗ Reject</button>
         <button class="btn btn-accept" onclick="openBookingModal('${booking.id}')">View Details</button>
         <button class="btn btn-decline" onclick="deleteBooking('${booking.id}')">Delete</button>
       </div>
@@ -431,6 +607,30 @@ async function openBookingModal(bookingId) {
           <label>Payment Method</label>
           <div class="value">${booking.paymentMethod || 'Not specified'}</div>
 
+          <label>Payment Plan</label>
+          <div class="value">${booking.paymentPlan === 'deposit_50' ? '50% Deposit' : (booking.paymentPlan === 'full' ? 'Full Payment' : (booking.paymentPlan || 'Not specified'))}</div>
+
+          <label>Amount Due Now</label>
+          <div class="value">₦${Number(booking.amountDueNow || 0).toLocaleString()}</div>
+
+          <label>Amount Remaining</label>
+          <div class="value">₦${Number(booking.amountRemaining || 0).toLocaleString()}</div>
+
+          <label>Payment Status</label>
+          <div class="value">${booking.paymentStatus || 'pending'}</div>
+
+          <label>Receipt Status</label>
+          <div class="value">${booking.paymentReceiptStatus || 'N/A'}</div>
+
+          <label>Payment Receipt</label>
+          <div class="value">${booking.paymentReceiptFile ? `<a href="${booking.paymentReceiptFile}" target="_blank" rel="noopener">📎 View Receipt</a>` : 'No receipt uploaded'}</div>
+
+          <label>Service Mode</label>
+          <div class="value">${booking.serviceMode === 'home' ? 'Home Service' : 'In Salon'}</div>
+
+          <label>Home Service Address</label>
+          <div class="value">${booking.homeServiceAddress || 'N/A'}</div>
+
           <label>Refreshment</label>
           <div class="value">${booking.refreshment || 'Not specified'}</div>
 
@@ -445,8 +645,23 @@ async function openBookingModal(bookingId) {
       document.getElementById('bookingModal').classList.add('show');
       
       // Setup action buttons
-      document.getElementById('acceptBtn').onclick = () => updateBookingStatus(bookingId, 'approved');
-      document.getElementById('declineBtn').onclick = () => updateBookingStatus(bookingId, 'cancelled');
+      const normalizedStatus = normalizeBookingStatus(booking.status);
+      const isApproved = normalizedStatus === 'approved';
+      const isCancelled = normalizedStatus === 'cancelled';
+      const isCompleted = normalizedStatus === 'completed';
+
+      const acceptBtn = document.getElementById('acceptBtn');
+      const declineBtn = document.getElementById('declineBtn');
+
+      if (acceptBtn) {
+        acceptBtn.disabled = isApproved || isCancelled || isCompleted;
+        acceptBtn.onclick = () => updateBookingStatus(bookingId, 'approved');
+      }
+
+      if (declineBtn) {
+        declineBtn.disabled = isCancelled || isCompleted;
+        declineBtn.onclick = () => updateBookingStatus(bookingId, 'cancelled');
+      }
     }
   } catch (error) {
     console.error('Error opening booking modal:', error);
@@ -866,7 +1081,7 @@ async function deleteReport(messageId) {
 // Update Stats
 async function updateStats(bookings) {
   const total = bookings.length;
-  const pending = bookings.filter(b => b.status === 'pending').length;
+  const pending = bookings.filter(b => normalizeBookingStatus(b.status) === 'pending').length;
   
   document.getElementById('totalBookings').textContent = total;
   document.getElementById('pendingBookings').textContent = pending;
@@ -897,10 +1112,10 @@ function normalizeBookingStatus(status) {
 
 function getStatusLabel(status) {
   const labels = {
-    pending: 'Pending',
-    approved: 'Approved',
-    cancelled: 'Cancelled',
-    completed: 'Completed'
+    pending: '⏳ Pending',
+    approved: '✓ Approved',
+    cancelled: '✗ Rejected',
+    completed: '✓ Completed'
   };
 
   return labels[status] || status;

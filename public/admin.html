@@ -38,6 +38,9 @@
         <a href="#" class="menu-item" data-tab="reports">
           <span class="icon">📋</span> Service Reports
         </a>
+        <a href="#" class="menu-item" data-tab="products">
+          <span class="icon">🛍️</span> Products
+        </a>
         <a href="/" class="menu-item">
           <span class="icon">🏠</span> Back to Website
         </a>
@@ -148,6 +151,33 @@
         </div>
       </section>
 
+      <!-- Products Tab -->
+      <section id="productsTab" class="tab-content">
+        <div class="section-header">
+          <h3>Products Management</h3>
+        </div>
+
+        <div class="product-upload-panel">
+          <h4>Add New Product</h4>
+          <form id="productForm" class="product-form">
+            <div class="product-form-grid">
+              <input type="text" id="productName" placeholder="Product Name" required>
+              <input type="text" id="productCategory" placeholder="Category" required>
+              <input type="number" id="productPrice" placeholder="Price (₦)" min="0" required>
+              <input type="number" id="productStock" placeholder="Stock" min="0" required>
+              <label for="productImage" class="sr-only">Product Image</label>
+              <input type="file" id="productImage" accept="image/*">
+            </div>
+            <button type="submit" class="btn btn-accept">Add Product</button>
+            <div id="productFormMessage" class="message"></div>
+          </form>
+        </div>
+
+        <div id="productsList" class="products-list">
+          <div class="loading">Loading products...</div>
+        </div>
+      </section>
+
       <!-- Booking Modal -->
       <div id="bookingModal" class="modal">
         <div class="modal-content">
@@ -157,8 +187,8 @@
             <!-- Booking details loaded here -->
           </div>
           <div class="modal-actions">
-            <button class="btn btn-accept" id="acceptBtn">Approve Booking</button>
-            <button class="btn btn-decline" id="declineBtn">Cancel Booking</button>
+            <button class="btn btn-accept" id="acceptBtn">✓ Approve</button>
+            <button class="btn btn-decline" id="declineBtn">✗ Reject</button>
             <button class="btn btn-cancel" onclick="closeBookingModal()">Close</button>
           </div>
         </div>
