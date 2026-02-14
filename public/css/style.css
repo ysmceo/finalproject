@@ -37,6 +37,7 @@ body.dark-mode section {
 }
 
 body.dark-mode .services,
+body.dark-mode .products,
 body.dark-mode .team,
 body.dark-mode .gallery,
 body.dark-mode .booking-section,
@@ -173,6 +174,13 @@ body {
 .nav-center {
   flex: 1;
   display: flex;
+
+.submit-btn.disabled,
+.submit-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  filter: grayscale(0.2);
+}
   justify-content: center;
 }
 
@@ -371,6 +379,14 @@ body.dark-mode .ceo-card h3 {
   background-position: center center;
 }
 
+.products {
+  padding: 80px 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.94), rgba(255,240,248,0.9)),
+              url('https://images.unsplash.com/photo-1521590832167-7bcbfaa6381f?w=1400&h=800&fit=crop') center/cover;
+  background-attachment: fixed;
+  background-position: center center;
+}
+
 .team {
   background: linear-gradient(135deg, rgba(255,255,255,0.92), rgba(248,249,250,0.92)),
               url('https://images.unsplash.com/photo-1552664730-d307ca884978?w=1400&h=800&fit=crop') center/cover;
@@ -446,6 +462,90 @@ h2 {
 .service-duration {
   font-size: 14px;
   opacity: 0.9;
+}
+
+/* Products Grid */
+.products-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 24px;
+  margin-top: 40px;
+}
+
+.product-card {
+  background: linear-gradient(140deg, #ffffff, #fff7fd);
+  border: 1px solid rgba(255, 20, 147, 0.2);
+  border-radius: 12px;
+  overflow: hidden;
+  box-shadow: 0 8px 20px rgba(74,14,78,0.12);
+  transition: transform 0.25s, box-shadow 0.25s;
+}
+
+.product-card:hover {
+  transform: translateY(-6px);
+  box-shadow: 0 14px 30px rgba(74,14,78,0.2);
+}
+
+.product-card h3 {
+  padding: 18px 18px 0;
+  color: var(--secondary-color);
+  margin-bottom: 8px;
+  font-size: 20px;
+}
+
+.product-image-wrapper {
+  width: 100%;
+  height: 180px;
+  background: #f3f3f3;
+}
+
+.product-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.product-image-fallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 46px;
+}
+
+.product-meta {
+  padding: 0 18px;
+  color: var(--primary-color);
+  font-weight: 700;
+  margin-bottom: 10px;
+}
+
+.product-price {
+  padding: 0 18px;
+  font-size: 24px;
+  font-weight: 800;
+  color: #0f6b2f;
+  margin-bottom: 6px;
+}
+
+.product-stock {
+  padding: 0 18px 18px;
+  color: #555;
+  font-size: 14px;
+}
+
+body.dark-mode .product-card {
+  background: linear-gradient(140deg, #2d1f3a, #3b244a);
+  border-color: rgba(255, 215, 0, 0.28);
+}
+
+body.dark-mode .product-card h3 {
+  color: var(--accent-color);
+}
+
+body.dark-mode .product-stock {
+  color: #d7d7d7;
 }
 
 /* Booking Section */
@@ -535,6 +635,61 @@ h2 {
 
 .submit-btn:hover {
   transform: scale(1.02);
+}
+
+/* Bank Payment Panel */
+.bank-pay-card {
+  background: #ffffff;
+  border-radius: 12px;
+  padding: 18px;
+  box-shadow: 0 10px 25px rgba(74,14,78,0.12);
+  border: 1px solid rgba(255,20,147,0.18);
+}
+
+.bank-pay-muted {
+  color: #666;
+  margin-bottom: 12px;
+}
+
+.bank-pay-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.bank-pay-label {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--secondary-color);
+  margin-bottom: 3px;
+}
+
+.bank-pay-value {
+  font-size: 16px;
+  font-weight: 800;
+  color: #222;
+}
+
+.bank-pay-ref {
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: 0.6px;
+  color: var(--primary-color);
+  word-break: break-all;
+}
+
+body.dark-mode .bank-pay-card {
+  background: var(--dark-bg-secondary);
+  color: var(--dark-text);
+}
+
+body.dark-mode .bank-pay-muted {
+  color: #c9c9c9;
+}
+
+body.dark-mode .bank-pay-value {
+  color: var(--accent-color);
 }
 
 /* Gallery */

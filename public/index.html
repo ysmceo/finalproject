@@ -28,6 +28,7 @@
       <ul class="nav-menu">
         <li><a href="#home" data-i18n="nav_home">Home</a></li>
         <li><a href="#services" data-i18n="nav_services">Services</a></li>
+        <li><a href="#products">Products</a></li>
         <li><a href="#ceo">CEOs</a></li>
         <li><a href="#gallery" data-i18n="nav_gallery">Gallery</a></li>
         <li><a href="#team" data-i18n="nav_team">Team</a></li>
@@ -83,6 +84,18 @@
       
       <div class="services-grid" id="servicesGrid">
         <!-- Services loaded from API -->
+      </div>
+    </div>
+  </section>
+
+  <!-- Products Section -->
+  <section id="products" class="products">
+    <div class="container">
+      <h2>Products We Sell</h2>
+      <p class="section-subtitle">Quality hair, beauty, and grooming products available at our salon</p>
+
+      <div class="products-grid" id="productsGrid">
+        <!-- Products loaded from API -->
       </div>
     </div>
   </section>
@@ -455,6 +468,39 @@
           </select>
         </div>
 
+        <div class="form-group" id="onlinePaymentChannelGroup" style="display:none;">
+          <label for="paymentChannel">Online Payment Option</label>
+          <select id="paymentChannel">
+            <option value="">Auto (recommended)</option>
+            <option value="card">Card</option>
+            <option value="bank_transfer">Bank Transfer</option>
+            <option value="ussd">USSD</option>
+          </select>
+          <small style="display:block; margin-top: 6px; color: #666;">Choose how you want to pay instantly (optional).</small>
+        </div>
+
+        <div class="form-group">
+          <label for="paymentPlan">Payment Option *</label>
+          <select id="paymentPlan" required>
+            <option value="">Select payment option...</option>
+            <option value="full">Pay Full Amount</option>
+            <option value="deposit_50">Pay 50% Deposit</option>
+          </select>
+          <small id="paymentSummary" style="display:block; margin-top: 6px; color: #666;">Select a service to see payment details.</small>
+        </div>
+
+        <div class="form-group">
+          <label class="radio-label" style="align-items: center;">
+            <input type="checkbox" id="homeServiceRequested">
+            <span>Request Home Service (Optional)</span>
+          </label>
+        </div>
+
+        <div class="form-group" id="homeServiceAddressGroup" style="display:none;">
+          <label for="homeServiceAddress">Home Service Address *</label>
+          <textarea id="homeServiceAddress" rows="3" placeholder="Enter your address for home service..."></textarea>
+        </div>
+
         <div class="form-group">
           <label for="refreshment" data-i18n="booking_refreshment">Would you like refreshment during your appointment?</label>
           <div class="radio-group">
@@ -484,6 +530,49 @@
         <button type="submit" class="submit-btn" data-i18n="booking_submit">Book Appointment</button>
       </form>
       <div id="bookingMessage" class="message"></div>
+
+      <div id="payNowPanel" style="display:none; margin-top: 15px; text-align: center;">
+        <button id="payNowBtn" type="button" class="submit-btn">Pay Now</button>
+        <small id="payNowHint" style="display:block; margin-top: 8px; color: #666;">You will be redirected to a secure payment page.</small>
+      </div>
+
+      <div id="bankPayPanel" style="display:none; margin-top: 15px;">
+        <div class="bank-pay-card">
+          <h3 style="margin-bottom: 10px;">Bank Transfer Payment</h3>
+          <p class="bank-pay-muted">Transfer the amount due to the salon account below and use the reference exactly as shown.</p>
+
+          <div class="bank-pay-grid">
+            <div>
+              <div class="bank-pay-label">Bank</div>
+              <div id="bankPayBank" class="bank-pay-value">—</div>
+            </div>
+            <div>
+              <div class="bank-pay-label">Account Number</div>
+              <div id="bankPayAccount" class="bank-pay-value">—</div>
+            </div>
+            <div>
+              <div class="bank-pay-label">Account Name</div>
+              <div id="bankPayName" class="bank-pay-value">—</div>
+            </div>
+            <div>
+              <div class="bank-pay-label">Amount Due Now</div>
+              <div id="bankPayAmount" class="bank-pay-value">—</div>
+            </div>
+            <div style="grid-column: 1 / -1;">
+              <div class="bank-pay-label">Reference</div>
+              <div id="bankPayRef" class="bank-pay-ref">—</div>
+            </div>
+          </div>
+
+          <small class="bank-pay-muted">After payment, our team will validate your booking and contact you.</small>
+
+          <hr style="border:none; border-top: 1px solid rgba(0,0,0,0.1); margin: 14px 0;">
+          <h4 style="margin-bottom: 8px; color: var(--secondary-color);">Upload Payment Receipt (Optional)</h4>
+          <p class="bank-pay-muted">After you transfer, upload your receipt (image or PDF) so we can confirm faster.</p>
+          <input type="file" id="paymentReceiptFile" accept="image/*,application/pdf">
+          <button id="uploadReceiptBtn" type="button" class="submit-btn" style="margin-top: 10px;">Upload Receipt</button>
+        </div>
+      </div>
     </div>
   </section>
 

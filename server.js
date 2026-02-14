@@ -11,6 +11,51 @@ const app = express();
 const PORT = 3000;
 const ADMIN_SECRET_PASSCODE = process.env.ADMIN_SECRET_PASSCODE || 'CHANGE_ME_ADMIN_PASSCODE';
 const ONE_TIME_CODE_TTL_MS = 10 * 60 * 1000;
+const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || '';
+const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
+
+const SALON_BANK_ACCOUNT_NUMBER = process.env.SALON_BANK_ACCOUNT_NUMBER || '0204661552';
+const SALON_BANK_NAME = process.env.SALON_BANK_NAME || 'GTBank';
+const SALON_BANK_ACCOUNT_NAME = process.env.SALON_BANK_ACCOUNT_NAME || 'CEO Saloon';
+
+function getDefaultProducts() {
+  return [
+    { id: 1, name: 'Bread Oil', category: 'Grooming', price: 4500, stock: 35, image: '/images/bread oil.jpeg' },
+    { id: 2, name: 'Hair Oil', category: 'Hair Care', price: 3500, stock: 42, image: '/images/hair oil.jpeg' },
+    { id: 3, name: 'Face Cream', category: 'Skin Care', price: 5000, stock: 28, image: '/images/face cream.jpeg' },
+    { id: 4, name: 'Hair Cream', category: 'Hair Care', price: 4000, stock: 40, image: '/images/hair cream.jpeg' },
+    { id: 5, name: 'Prefume', category: 'Fragrance', price: 9000, stock: 22, image: '/images/prefume.jpeg' },
+    { id: 6, name: 'Premium Wig', category: 'Wigs', price: 45000, stock: 12, image: '/images/premium wig.jpeg' },
+    { id: 7, name: 'Wig Revampimg', category: 'Wig Service', price: 15000, stock: 999, image: '/images/wig revamping.jpeg' },
+    { id: 9, name: 'Wig Frsh Oil', category: 'Wig Care', price: 6000, stock: 30, image: '/images/wig fresh oil.jpeg' }
+  ];
+}
+
+function mergeProductDefaults(existingProducts) {
+  const defaultProducts = getDefaultProducts();
+  const mergedProducts = [...(existingProducts || [])];
+
+  defaultProducts.forEach(defaultProduct => {
+    const existingIndex = mergedProducts.findIndex(product => Number(product.id) === Number(defaultProduct.id));
+
+    if (existingIndex === -1) {
+      mergedProducts.push(defaultProduct);
+      return;
+    }
+
+    const existingProduct = mergedProducts[existingIndex];
+    mergedProducts[existingIndex] = {
+      ...existingProduct,
+      name: defaultProduct.name,
+      category: defaultProduct.category,
+      price: Number(existingProduct.price) || defaultProduct.price,
+      stock: Number(existingProduct.stock) || defaultProduct.stock,
+      image: existingProduct.image || defaultProduct.image
+    };
+  });
+
+  return mergedProducts;
+}
 
 // Create uploads directory if it doesn't exist
 const uploadsDir = path.join(__dirname, 'public', 'uploads');
@@ -38,6 +83,19 @@ const upload = multer({
       cb(null, true);
     } else {
       cb(new Error('Invalid file type. Only images are allowed.'));
+    }
+  }
+});
+
+const uploadReceipt = multer({
+  storage: storage,
+  limits: { fileSize: 8 * 1024 * 1024 }, // 8MB limit for receipts
+  fileFilter: (req, file, cb) => {
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp', 'application/pdf'];
+    if (allowedMimes.includes(file.mimetype)) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid file type. Upload an image or PDF receipt.'));
     }
   }
 });
@@ -81,6 +139,7 @@ function initializeDatabase() {
       messages: [],
       admins: [],
       adminAccessCodes: [],
+      products: getDefaultProducts(),
       services: [
         { id: 1, name: 'Hair Cut', price: 5000, duration: 30 },
         { id: 2, name: 'Hair Coloring', price: 15000, duration: 60 },
@@ -103,10 +162,87 @@ function readDatabase() {
   if (!Array.isArray(db.bookings)) db.bookings = [];
   if (!Array.isArray(db.messages)) db.messages = [];
   if (!Array.isArray(db.services)) db.services = [];
+  if (!Array.isArray(db.products)) db.products = [];
   if (!Array.isArray(db.admins)) db.admins = [];
   if (!Array.isArray(db.adminAccessCodes)) db.adminAccessCodes = [];
+  if (!Array.isArray(db.bookingNotifications)) db.bookingNotifications = [];
+
+  if (db.products.length === 0) {
+    db.products = getDefaultProducts();
+    writeDatabase(db);
+  } else {
+    const mergedProducts = mergeProductDefaults(db.products);
+    const hasChanges = JSON.stringify(mergedProducts) !== JSON.stringify(db.products);
+
+    if (hasChanges) {
+      db.products = mergedProducts;
+      writeDatabase(db);
+    }
+  }
 
   return db;
+}
+
+function addBookingNotification(db, booking, type, message) {
+  if (!db.bookingNotifications) {
+    db.bookingNotifications = [];
+  }
+
+  db.bookingNotifications.push({
+    id: uuidv4(),
+    bookingId: booking.id,
+    email: booking.email,
+    phone: booking.phone,
+    type,
+    message,
+    createdAt: new Date().toISOString()
+  });
+}
+
+function normalizePhone(phone) {
+  return String(phone || '').trim();
+}
+
+function buildBankTransferReference(bookingId) {
+  const shortId = String(bookingId || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
+  return `CEOSALOON-${shortId || 'BOOKING'}`;
+}
+
+function isPaystackConfigured() {
+  return Boolean(String(PAYSTACK_SECRET_KEY || '').trim());
+}
+
+async function paystackRequest(pathname, payload) {
+  if (!PAYSTACK_SECRET_KEY) {
+    const err = new Error('Paystack secret key is not configured');
+    err.code = 'PAYSTACK_NOT_CONFIGURED';
+    throw err;
+  }
+
+  const response = await fetch(`https://api.paystack.co${pathname}`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    return {
+      ok: false,
+      status: response.status,
+      data
+    };
+  }
+
+  return {
+    ok: true,
+    status: response.status,
+    data
+  };
 }
 
 function generateOneTimeCode() {
@@ -203,6 +339,87 @@ app.get('/api/services', (req, res) => {
   res.json(db.services);
 });
 
+// Get all products
+app.get('/api/products', (req, res) => {
+  const db = readDatabase();
+  res.json(db.products);
+});
+
+// Get all products (Admin)
+app.get('/api/admin/products', requireAdminAuth, (req, res) => {
+  const db = readDatabase();
+  res.json(db.products);
+});
+
+// Create product (Admin)
+app.post('/api/admin/products', requireAdminAuth, upload.single('productImage'), (req, res) => {
+  const { name, category, price, stock } = req.body;
+  const normalizedName = String(name || '').trim();
+  const normalizedCategory = String(category || '').trim();
+  const normalizedPrice = Number(price);
+  const normalizedStock = Number(stock);
+
+  if (!normalizedName || !normalizedCategory || Number.isNaN(normalizedPrice) || Number.isNaN(normalizedStock)) {
+    return res.status(400).json({ error: 'Name, category, price, and stock are required' });
+  }
+
+  const db = readDatabase();
+  const nextId = db.products.length ? Math.max(...db.products.map(p => Number(p.id) || 0)) + 1 : 1;
+
+  const product = {
+    id: nextId,
+    name: normalizedName,
+    category: normalizedCategory,
+    price: normalizedPrice,
+    stock: normalizedStock,
+    image: req.file ? `/uploads/${req.file.filename}` : null,
+    createdAt: new Date().toISOString()
+  };
+
+  db.products.push(product);
+  writeDatabase(db);
+
+  res.status(201).json({ message: 'Product added successfully', product });
+});
+
+// Update product image (Admin)
+app.put('/api/admin/products/:id/image', requireAdminAuth, upload.single('productImage'), (req, res) => {
+  const productId = Number(req.params.id);
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'Product image file is required' });
+  }
+
+  const db = readDatabase();
+  const product = db.products.find(p => Number(p.id) === productId);
+
+  if (!product) {
+    return res.status(404).json({ error: 'Product not found' });
+  }
+
+  product.image = `/uploads/${req.file.filename}`;
+  product.updatedAt = new Date().toISOString();
+  writeDatabase(db);
+
+  res.json({ message: 'Product image updated successfully', product });
+});
+
+// Delete product (Admin)
+app.delete('/api/admin/products/:id', requireAdminAuth, (req, res) => {
+  const productId = Number(req.params.id);
+  const db = readDatabase();
+  const existingCount = db.products.length;
+
+  db.products = db.products.filter(p => Number(p.id) !== productId);
+
+  if (db.products.length === existingCount) {
+    return res.status(404).json({ error: 'Product not found' });
+  }
+
+  writeDatabase(db);
+  res.json({ message: 'Product deleted successfully' });
+});
+
 // Get Weather Data
 app.get('/api/weather', async (req, res) => {
   try {
@@ -218,10 +435,37 @@ app.get('/api/weather', async (req, res) => {
 
 // Create booking
 app.post('/api/bookings', upload.single('styleImage'), (req, res) => {
-  const { name, email, phone, serviceId, date, time, language, paymentMethod, refreshment, specialRequests } = req.body;
+  const {
+    name,
+    email,
+    phone,
+    serviceId,
+    date,
+    time,
+    language,
+    paymentMethod,
+    paymentPlan,
+    homeServiceRequested,
+    homeServiceAddress,
+    refreshment,
+    specialRequests
+  } = req.body;
 
-  if (!name || !email || !phone || !serviceId || !date || !time || !paymentMethod) {
+  const normalizedPaymentPlan = String(paymentPlan || '').trim();
+  const normalizedHomeServiceRequested = String(homeServiceRequested || '').trim().toLowerCase();
+  const isHomeServiceRequested = normalizedHomeServiceRequested === 'true' || normalizedHomeServiceRequested === '1' || normalizedHomeServiceRequested === 'yes';
+  const normalizedHomeServiceAddress = String(homeServiceAddress || '').trim();
+
+  if (!name || !email || !phone || !serviceId || !date || !time || !paymentMethod || !normalizedPaymentPlan) {
     return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  if (!['full', 'deposit_50'].includes(normalizedPaymentPlan)) {
+    return res.status(400).json({ error: 'Invalid payment plan. Use full or deposit_50.' });
+  }
+
+  if (isHomeServiceRequested && !normalizedHomeServiceAddress) {
+    return res.status(400).json({ error: 'Home service address is required when requesting home service' });
   }
 
   const db = readDatabase();
@@ -230,6 +474,10 @@ app.post('/api/bookings', upload.single('styleImage'), (req, res) => {
   if (!service) {
     return res.status(400).json({ error: 'Service not found' });
   }
+
+  const totalAmount = Number(service.price) || 0;
+  const amountDueNow = normalizedPaymentPlan === 'deposit_50' ? Math.ceil(totalAmount * 0.5) : totalAmount;
+  const amountRemaining = Math.max(0, totalAmount - amountDueNow);
 
   const booking = {
     id: uuidv4(),
@@ -243,6 +491,16 @@ app.post('/api/bookings', upload.single('styleImage'), (req, res) => {
     time,
     language: language || '',
     paymentMethod: paymentMethod || '',
+    paymentPlan: normalizedPaymentPlan,
+    amountDueNow,
+    amountRemaining,
+    paymentStatus: 'pending',
+    paymentProvider: '',
+    paymentReference: '',
+    paidAmount: 0,
+    bankTransferReference: '',
+    serviceMode: isHomeServiceRequested ? 'home' : 'in_salon',
+    homeServiceAddress: isHomeServiceRequested ? normalizedHomeServiceAddress : '',
     refreshment: refreshment || 'No',
     specialRequests: specialRequests || '',
     styleImage: req.file ? `/uploads/${req.file.filename}` : null,
@@ -252,11 +510,344 @@ app.post('/api/bookings', upload.single('styleImage'), (req, res) => {
   };
 
   db.bookings.push(booking);
+
+  if (String(booking.paymentMethod || '').trim() === 'Bank Transfer') {
+    booking.bankTransferReference = buildBankTransferReference(booking.id);
+    addBookingNotification(
+      db,
+      booking,
+      'payment_instructions',
+      `🏦 Bank Transfer Details: ${SALON_BANK_NAME} ${SALON_BANK_ACCOUNT_NUMBER} (${SALON_BANK_ACCOUNT_NAME}). Use reference: ${booking.bankTransferReference}. Amount due now: ₦${Number(booking.amountDueNow || 0).toLocaleString()}.`
+    );
+  }
+
   writeDatabase(db);
 
   res.status(201).json({
-    message: 'Your service order has been made. A customer care representative will reach out to you via the email and phone number provided.',
+    message: `Your service order has been made. A customer care representative will reach out to you via the email and phone number provided. Booking ID: ${booking.id}. Payment: ${normalizedPaymentPlan === 'deposit_50' ? '50% deposit' : 'full'} (₦${amountDueNow.toLocaleString()} due now).`,
+    paymentBankDetails: String(booking.paymentMethod || '').trim() === 'Bank Transfer'
+      ? {
+          bankName: SALON_BANK_NAME,
+          accountNumber: SALON_BANK_ACCOUNT_NUMBER,
+          accountName: SALON_BANK_ACCOUNT_NAME,
+          reference: booking.bankTransferReference,
+          amountDueNow: booking.amountDueNow
+        }
+      : null,
     booking
+  });
+});
+
+// Bank transfer payment details (Customer)
+app.get('/api/payments/bank/details', (req, res) => {
+  const bookingId = String(req.query.bookingId || '').trim();
+  const email = normalizeEmail(req.query.email);
+
+  if (!bookingId || !email) {
+    return res.status(400).json({ error: 'bookingId and email are required' });
+  }
+
+  const db = readDatabase();
+  const booking = db.bookings.find(b => String(b.id) === bookingId);
+
+  if (!booking) {
+    return res.status(404).json({ error: 'Booking not found' });
+  }
+
+  if (normalizeEmail(booking.email) !== email) {
+    return res.status(401).json({ error: 'Email does not match this booking' });
+  }
+
+  if (String(booking.paymentMethod || '').trim() !== 'Bank Transfer') {
+    return res.status(400).json({ error: 'This booking is not set to Bank Transfer payment method' });
+  }
+
+  if (!booking.bankTransferReference) {
+    booking.bankTransferReference = buildBankTransferReference(booking.id);
+    writeDatabase(db);
+  }
+
+  res.json({
+    bankName: SALON_BANK_NAME,
+    accountNumber: SALON_BANK_ACCOUNT_NUMBER,
+    accountName: SALON_BANK_ACCOUNT_NAME,
+    reference: booking.bankTransferReference,
+    amountDueNow: booking.amountDueNow,
+    bookingId: booking.id
+  });
+});
+
+// Paystack configuration status (Customer)
+app.get('/api/payments/paystack/status', (req, res) => {
+  const configured = isPaystackConfigured();
+  const callbackUrl = `${PUBLIC_BASE_URL}/paystack-callback.html`;
+
+  res.json({
+    configured,
+    callbackUrl,
+    publicBaseUrl: PUBLIC_BASE_URL,
+    message: configured
+      ? 'Paystack is configured'
+      : 'Paystack is not configured on the server. Set PAYSTACK_SECRET_KEY in .env and restart the server.'
+  });
+});
+
+// Initialize Paystack payment (Customer)
+app.post('/api/payments/paystack/initialize', async (req, res) => {
+  const { bookingId, email, paymentChannel } = req.body;
+  const normalizedBookingId = String(bookingId || '').trim();
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedChannel = String(paymentChannel || '').trim();
+
+  if (!normalizedBookingId || !normalizedEmail) {
+    return res.status(400).json({ error: 'bookingId and email are required' });
+  }
+
+  const db = readDatabase();
+  const booking = db.bookings.find(b => String(b.id) === normalizedBookingId);
+
+  if (!booking) {
+    return res.status(404).json({ error: 'Booking not found' });
+  }
+
+  if (normalizeEmail(booking.email) !== normalizedEmail) {
+    return res.status(401).json({ error: 'Email does not match this booking' });
+  }
+
+  const amountInKobo = Math.max(0, Number(booking.amountDueNow || 0)) * 100;
+  if (!amountInKobo) {
+    return res.status(400).json({ error: 'No payable amount found for this booking' });
+  }
+
+  const callbackUrl = `${PUBLIC_BASE_URL}/paystack-callback.html`;
+
+  const channels = [];
+  // Paystack supported channels include: card, bank, ussd, bank_transfer, mobile_money
+  if (normalizedChannel) {
+    channels.push(normalizedChannel);
+  }
+
+  try {
+    const init = await paystackRequest('/transaction/initialize', {
+      email: booking.email,
+      amount: amountInKobo,
+      callback_url: callbackUrl,
+      channels: channels.length ? channels : undefined,
+      metadata: {
+        bookingId: booking.id,
+        serviceName: booking.serviceName,
+        paymentPlan: booking.paymentPlan,
+        amountDueNow: booking.amountDueNow,
+        phone: booking.phone
+      }
+    });
+
+    if (!init.ok || !init.data || init.data.status !== true) {
+      return res.status(502).json({
+        error: 'Failed to initialize payment',
+        details: init.data
+      });
+    }
+
+    booking.paymentProvider = 'paystack';
+    booking.paymentReference = init.data.data.reference;
+    booking.paymentStatus = 'initiated';
+    booking.paymentInitiatedAt = new Date().toISOString();
+    writeDatabase(db);
+
+    return res.json({
+      message: 'Payment initialized',
+      authorizationUrl: init.data.data.authorization_url,
+      reference: init.data.data.reference
+    });
+  } catch (error) {
+    if (error && error.code === 'PAYSTACK_NOT_CONFIGURED') {
+      return res.status(503).json({
+        error: 'Paystack is not configured on the server',
+        hint: 'Set PAYSTACK_SECRET_KEY in .env and restart the server.'
+      });
+    }
+    return res.status(500).json({ error: 'Failed to initialize payment' });
+  }
+});
+
+// Verify Paystack payment (Customer)
+app.get('/api/payments/paystack/verify/:reference', async (req, res) => {
+  const reference = String(req.params.reference || '').trim();
+  if (!reference) {
+    return res.status(400).json({ error: 'reference is required' });
+  }
+
+  if (!isPaystackConfigured()) {
+    return res.status(503).json({
+      error: 'Paystack is not configured on the server',
+      hint: 'Set PAYSTACK_SECRET_KEY in .env and restart the server.'
+    });
+  }
+
+  try {
+    const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`
+      }
+    });
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data || data.status !== true) {
+      return res.status(502).json({ error: 'Failed to verify payment', details: data });
+    }
+
+    const payData = data.data;
+    const bookingId = payData && payData.metadata ? String(payData.metadata.bookingId || '').trim() : '';
+    const db = readDatabase();
+    const booking = bookingId
+      ? db.bookings.find(b => String(b.id) === bookingId)
+      : db.bookings.find(b => String(b.paymentReference || '').trim() === reference);
+
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found for this payment reference' });
+    }
+
+    const paid = payData.status === 'success';
+    const paidAmount = Math.round(Number(payData.amount || 0) / 100);
+
+    booking.paymentProvider = 'paystack';
+    booking.paymentReference = reference;
+    booking.paidAmount = paid ? paidAmount : 0;
+    booking.paymentStatus = paid ? 'paid' : 'failed';
+    booking.paymentVerifiedAt = new Date().toISOString();
+
+    if (paid) {
+      booking.amountRemaining = Math.max(0, Number(booking.price || 0) - paidAmount);
+      addBookingNotification(
+        db,
+        booking,
+        'payment_received',
+        `💳 Payment received successfully (₦${paidAmount.toLocaleString()}). Your booking remains ${booking.status}.`
+      );
+    }
+
+    writeDatabase(db);
+
+    res.json({
+      ok: true,
+      paid,
+      booking: {
+        id: booking.id,
+        status: booking.status,
+        paymentStatus: booking.paymentStatus,
+        paymentPlan: booking.paymentPlan,
+        amountDueNow: booking.amountDueNow,
+        amountRemaining: booking.amountRemaining,
+        paidAmount: booking.paidAmount,
+        paymentReference: booking.paymentReference
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Verification failed' });
+  }
+});
+
+// Track booking status + notifications (Customer)
+app.get('/api/bookings/:id/track', (req, res) => {
+  const bookingId = String(req.params.id || '').trim();
+  const email = normalizeEmail(req.query.email);
+
+  if (!bookingId || !email) {
+    return res.status(400).json({ error: 'Booking id and email are required' });
+  }
+
+  const db = readDatabase();
+  const booking = db.bookings.find(b => String(b.id) === bookingId);
+
+  if (!booking) {
+    return res.status(404).json({ error: 'Booking not found' });
+  }
+
+  if (normalizeEmail(booking.email) !== email) {
+    return res.status(401).json({ error: 'Email does not match this booking' });
+  }
+
+  const notifications = (db.bookingNotifications || [])
+    .filter(n => String(n.bookingId) === bookingId)
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  res.json({
+    booking: {
+      id: booking.id,
+      status: booking.status,
+      serviceName: booking.serviceName,
+      date: booking.date,
+      time: booking.time,
+      price: booking.price,
+      paymentMethod: booking.paymentMethod,
+      paymentPlan: booking.paymentPlan,
+      amountDueNow: booking.amountDueNow,
+      amountRemaining: booking.amountRemaining,
+      paymentStatus: booking.paymentStatus,
+      paymentProvider: booking.paymentProvider,
+      paymentReference: booking.paymentReference,
+      paidAmount: booking.paidAmount,
+      bankTransferReference: booking.bankTransferReference,
+      paymentReceiptFile: booking.paymentReceiptFile || null,
+      paymentReceiptStatus: booking.paymentReceiptStatus || '',
+      serviceMode: booking.serviceMode,
+      homeServiceAddress: booking.homeServiceAddress
+    },
+    notifications
+  });
+});
+
+// Upload bank transfer receipt (Customer)
+app.post('/api/bookings/:id/upload-receipt', uploadReceipt.single('receipt'), (req, res) => {
+  const bookingId = String(req.params.id || '').trim();
+  const email = normalizeEmail(req.body.email);
+
+  if (!bookingId || !email) {
+    return res.status(400).json({ error: 'Booking id and email are required' });
+  }
+
+  if (!req.file) {
+    return res.status(400).json({ error: 'Receipt file is required' });
+  }
+
+  const db = readDatabase();
+  const booking = db.bookings.find(b => String(b.id) === bookingId);
+
+  if (!booking) {
+    return res.status(404).json({ error: 'Booking not found' });
+  }
+
+  if (normalizeEmail(booking.email) !== email) {
+    return res.status(401).json({ error: 'Email does not match this booking' });
+  }
+
+  booking.paymentReceiptFile = `/uploads/${req.file.filename}`;
+  booking.paymentReceiptUploadedAt = new Date().toISOString();
+  booking.paymentReceiptStatus = 'submitted';
+
+  if (booking.paymentStatus === 'pending' || booking.paymentStatus === 'initiated') {
+    booking.paymentStatus = 'receipt_submitted';
+  }
+
+  addBookingNotification(
+    db,
+    booking,
+    'receipt_uploaded',
+    '📎 Payment receipt uploaded successfully. Our team will confirm your payment shortly.'
+  );
+
+  writeDatabase(db);
+
+  res.status(201).json({
+    message: 'Receipt uploaded successfully',
+    receiptFile: booking.paymentReceiptFile,
+    booking: {
+      id: booking.id,
+      paymentStatus: booking.paymentStatus,
+      paymentReceiptStatus: booking.paymentReceiptStatus
+    }
   });
 });
 
@@ -289,8 +880,28 @@ app.put('/api/admin/bookings/:id', requireAdminAuth, (req, res) => {
     return res.status(404).json({ error: 'Booking not found' });
   }
 
+  const previousStatus = booking.status;
   booking.status = normalizedStatus;
   booking.updatedAt = new Date().toISOString();
+
+  if (previousStatus !== normalizedStatus && normalizedStatus === 'approved') {
+    addBookingNotification(
+      db,
+      booking,
+      'approved',
+      '✅ Your booking has been approved! We will contact you shortly using the email and phone number you provided.'
+    );
+  }
+
+  if (previousStatus !== normalizedStatus && normalizedStatus === 'cancelled') {
+    addBookingNotification(
+      db,
+      booking,
+      'cancelled',
+      '❌ Your booking was cancelled. Please contact the salon if you believe this was a mistake.'
+    );
+  }
+
   writeDatabase(db);
 
   res.json({ message: 'Booking updated successfully', booking });

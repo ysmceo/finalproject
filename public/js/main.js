@@ -1,7 +1,8 @@
 // CEO SALOON - Main Website JavaScript
 
-const API_URL = 'http://localhost:3000/api';
+const API_URL = '/api';
 let cachedServices = [];
+let cachedProducts = [];
 const serviceNameKeyMap = {
   1: 'service_hair_cut',
   2: 'service_hair_coloring',
@@ -19,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
   initializeLanguage();
   
   loadServices();
+  loadProducts();
   setupEventListeners();
   initializePasswordVisibilityToggles();
   setMinDate();
@@ -167,6 +169,18 @@ async function loadServices() {
   }
 }
 
+// Load Products
+async function loadProducts() {
+  try {
+    const response = await fetch(`${API_URL}/products`);
+    const products = await response.json();
+    cachedProducts = products;
+    displayProducts(cachedProducts);
+  } catch (error) {
+    console.error('Error loading products:', error);
+  }
+}
+
 function getTranslatedServiceName(service) {
   const key = serviceNameKeyMap[service.id];
   return key ? languageManager.translate(key) : service.name;
@@ -187,6 +201,37 @@ function displayServices(services) {
       <div class="service-duration">${languageManager.translate('service_duration_label')} ${service.duration} ${languageManager.translate('service_duration_minutes')}</div>
     `;
     card.onclick = () => scrollToBooking();
+    grid.appendChild(card);
+  });
+}
+
+// Display Products
+function displayProducts(products) {
+  const grid = document.getElementById('productsGrid');
+  if (!grid) return;
+
+  grid.innerHTML = '';
+
+  if (!Array.isArray(products) || products.length === 0) {
+    grid.innerHTML = '<div class="message error">No products available right now.</div>';
+    return;
+  }
+
+  products.forEach(product => {
+    const card = document.createElement('div');
+    card.className = 'product-card';
+
+    const imageMarkup = product.image
+      ? `<img src="${product.image}" alt="${product.name}" class="product-image">`
+      : '<div class="product-image-fallback">🛍️</div>';
+
+    card.innerHTML = `
+      <div class="product-image-wrapper">${imageMarkup}</div>
+      <h3>${product.name}</h3>
+      <div class="product-meta">${product.category}</div>
+      <div class="product-price">₦${Number(product.price || 0).toLocaleString()}</div>
+      <div class="product-stock">In stock: ${product.stock}</div>
+    `;
     grid.appendChild(card);
   });
 }
@@ -224,6 +269,37 @@ function setupEventListeners() {
   document.getElementById('adminLoginForm').addEventListener('submit', handleAdminLogin);
   document.getElementById('adminRegisterForm').addEventListener('submit', handleAdminRegister);
   document.getElementById('requestAccessCodeBtn').addEventListener('click', handleRequestAccessCode);
+
+  const serviceSelect = document.getElementById('service');
+  const paymentPlanSelect = document.getElementById('paymentPlan');
+  const homeServiceCheckbox = document.getElementById('homeServiceRequested');
+
+  if (serviceSelect) {
+    serviceSelect.addEventListener('change', updatePaymentSummary);
+  }
+
+  if (paymentPlanSelect) {
+    paymentPlanSelect.addEventListener('change', updatePaymentSummary);
+  }
+
+  if (homeServiceCheckbox) {
+    homeServiceCheckbox.addEventListener('change', toggleHomeServiceAddress);
+  }
+
+  const paymentMethodSelect = document.getElementById('paymentMethod');
+  if (paymentMethodSelect) {
+    paymentMethodSelect.addEventListener('change', updateOnlinePaymentVisibility);
+  }
+
+  const payNowBtn = document.getElementById('payNowBtn');
+  if (payNowBtn) {
+    payNowBtn.addEventListener('click', handlePayNow);
+  }
+
+  const uploadReceiptBtn = document.getElementById('uploadReceiptBtn');
+  if (uploadReceiptBtn) {
+    uploadReceiptBtn.addEventListener('click', handleUploadReceipt);
+  }
   
   // Add report file preview listener
   document.getElementById('reportFile').addEventListener('change', function(e) {
@@ -276,6 +352,219 @@ function setupEventListeners() {
       preview.innerHTML = '';
     }
   });
+}
+
+async function handleUploadReceipt() {
+  const bookingId = localStorage.getItem('lastBookingId');
+  const email = localStorage.getItem('lastBookingEmail');
+  const fileInput = document.getElementById('paymentReceiptFile');
+  const file = fileInput && fileInput.files ? fileInput.files[0] : null;
+
+  if (!bookingId || !email) {
+    showMessage('bookingMessage', 'No booking found. Please book a service first.', 'error');
+    return;
+  }
+
+  if (!file) {
+    showMessage('bookingMessage', 'Please choose a receipt file (image or PDF).', 'error');
+    return;
+  }
+
+  const formData = new FormData();
+  formData.append('email', email);
+  formData.append('receipt', file);
+
+  try {
+    const response = await fetch(`${API_URL}/bookings/${encodeURIComponent(bookingId)}/upload-receipt`, {
+      method: 'POST',
+      body: formData
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      showMessage('bookingMessage', result.error || 'Failed to upload receipt', 'error');
+      return;
+    }
+
+    showMessage('bookingMessage', result.message || 'Receipt uploaded successfully', 'success');
+    if (fileInput) fileInput.value = '';
+  } catch (error) {
+    console.error('Receipt upload error:', error);
+    showMessage('bookingMessage', 'Error uploading receipt', 'error');
+  }
+}
+
+function updateOnlinePaymentVisibility() {
+  const paymentMethod = String(document.getElementById('paymentMethod')?.value || '').trim();
+  const onlineGroup = document.getElementById('onlinePaymentChannelGroup');
+
+  const isOnline = ['Credit Card', 'Debit Card', 'Bank Transfer', 'USSD'].includes(paymentMethod);
+  if (onlineGroup) {
+    onlineGroup.style.display = isOnline ? '' : 'none';
+  }
+}
+
+function setPayNowPanelVisible(visible) {
+  const panel = document.getElementById('payNowPanel');
+  if (!panel) return;
+  panel.style.display = visible ? '' : 'none';
+}
+
+async function refreshPayNowAvailability() {
+  const payNowBtn = document.getElementById('payNowBtn');
+  const payNowHint = document.getElementById('payNowHint');
+  if (!payNowBtn) return;
+
+  // Default optimistic state.
+  payNowBtn.disabled = false;
+  payNowBtn.classList.remove('disabled');
+  if (payNowHint) {
+    payNowHint.textContent = 'You will be redirected to a secure payment page.';
+  }
+
+  try {
+    const res = await fetch(`${API_URL}/payments/paystack/status`);
+    const data = await res.json();
+
+    if (!res.ok || !data || data.configured !== true) {
+      payNowBtn.disabled = true;
+      payNowBtn.classList.add('disabled');
+      if (payNowHint) {
+        payNowHint.textContent = 'Online card payments are currently unavailable. Please choose Bank Transfer or Cash.';
+      }
+    }
+  } catch (e) {
+    // If status check fails (offline/server down), disable to avoid a confusing experience.
+    payNowBtn.disabled = true;
+    payNowBtn.classList.add('disabled');
+    if (payNowHint) {
+      payNowHint.textContent = 'Unable to reach payment service right now. Please try again later or use Bank Transfer.';
+    }
+  }
+}
+
+function setBankPayPanelVisible(visible) {
+  const panel = document.getElementById('bankPayPanel');
+  if (!panel) return;
+  panel.style.display = visible ? '' : 'none';
+}
+
+function fillBankPayPanel(details) {
+  if (!details) return;
+  const bankEl = document.getElementById('bankPayBank');
+  const acctEl = document.getElementById('bankPayAccount');
+  const nameEl = document.getElementById('bankPayName');
+  const amountEl = document.getElementById('bankPayAmount');
+  const refEl = document.getElementById('bankPayRef');
+
+  if (bankEl) bankEl.textContent = details.bankName || '—';
+  if (acctEl) acctEl.textContent = details.accountNumber || '—';
+  if (nameEl) nameEl.textContent = details.accountName || '—';
+  if (amountEl) amountEl.textContent = `₦${Number(details.amountDueNow || 0).toLocaleString()}`;
+  if (refEl) refEl.textContent = details.reference || '—';
+}
+
+async function loadBankPaymentDetailsForLastBooking() {
+  const bookingId = localStorage.getItem('lastBookingId');
+  const email = localStorage.getItem('lastBookingEmail');
+
+  if (!bookingId || !email) return null;
+
+  const response = await fetch(`${API_URL}/payments/bank/details?bookingId=${encodeURIComponent(bookingId)}&email=${encodeURIComponent(email)}`);
+  const result = await response.json();
+
+  if (!response.ok) {
+    throw new Error(result.error || 'Failed to load bank payment details');
+  }
+
+  return result;
+}
+
+function setLastBookingForPayment(booking) {
+  if (!booking) return;
+  localStorage.setItem('lastBookingId', booking.id);
+  localStorage.setItem('lastBookingEmail', booking.email);
+}
+
+async function handlePayNow() {
+  const bookingId = localStorage.getItem('lastBookingId');
+  const email = localStorage.getItem('lastBookingEmail');
+  const paymentChannel = String(document.getElementById('paymentChannel')?.value || '').trim();
+
+  if (!bookingId || !email) {
+    showMessage('bookingMessage', 'No booking found to pay for. Please book a service first.', 'error');
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_URL}/payments/paystack/initialize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bookingId, email, paymentChannel })
+    });
+
+    const result = await response.json();
+
+    if (!response.ok) {
+      const hint = result && result.hint ? ` ${result.hint}` : '';
+      showMessage('bookingMessage', (result.error || 'Failed to start payment') + hint, 'error');
+      return;
+    }
+
+    if (result.authorizationUrl) {
+      window.location.href = result.authorizationUrl;
+      return;
+    }
+
+    showMessage('bookingMessage', 'Payment initialization did not return a payment URL.', 'error');
+  } catch (error) {
+    console.error('Payment init error:', error);
+    showMessage('bookingMessage', 'Error starting payment', 'error');
+  }
+}
+
+function toggleHomeServiceAddress() {
+  const checkbox = document.getElementById('homeServiceRequested');
+  const addressGroup = document.getElementById('homeServiceAddressGroup');
+  const addressInput = document.getElementById('homeServiceAddress');
+
+  if (!checkbox || !addressGroup) return;
+
+  const show = checkbox.checked === true;
+  addressGroup.style.display = show ? '' : 'none';
+
+  if (!show && addressInput) {
+    addressInput.value = '';
+  }
+}
+
+function updatePaymentSummary() {
+  const summaryEl = document.getElementById('paymentSummary');
+  const serviceSelect = document.getElementById('service');
+  const planSelect = document.getElementById('paymentPlan');
+
+  if (!summaryEl || !serviceSelect || !planSelect) return;
+
+  const serviceId = Number(serviceSelect.value);
+  const plan = String(planSelect.value || '').trim();
+  const service = cachedServices.find(s => Number(s.id) === serviceId);
+
+  if (!service) {
+    summaryEl.textContent = 'Select a service to see payment details.';
+    return;
+  }
+
+  const total = Number(service.price || 0);
+  const dueNow = plan === 'deposit_50' ? Math.ceil(total * 0.5) : total;
+  const remaining = Math.max(0, total - dueNow);
+
+  if (!plan) {
+    summaryEl.textContent = `Total: ₦${total.toLocaleString()}. Choose a payment option (full or 50% deposit).`;
+    return;
+  }
+
+  summaryEl.textContent = `Total: ₦${total.toLocaleString()} | Pay now: ₦${dueNow.toLocaleString()} | Remaining: ₦${remaining.toLocaleString()}`;
 }
 
 function initializePasswordVisibilityToggles() {
@@ -336,6 +625,10 @@ async function handleBooking(e) {
   formData.append('time', document.getElementById('time').value);
   formData.append('language', document.getElementById('language').value);
   formData.append('paymentMethod', document.getElementById('paymentMethod').value);
+  formData.append('paymentPlan', document.getElementById('paymentPlan').value);
+  const homeServiceRequested = document.getElementById('homeServiceRequested').checked;
+  formData.append('homeServiceRequested', String(homeServiceRequested));
+  formData.append('homeServiceAddress', document.getElementById('homeServiceAddress').value);
   formData.append('refreshment', document.querySelector('input[name="refreshment"]:checked').value);
   formData.append('specialRequests', document.getElementById('specialRequests').value);
   
@@ -355,6 +648,33 @@ async function handleBooking(e) {
       const result = await response.json();
       const successMessage = result.message || languageManager.translate('booking_success');
       showMessage('bookingMessage', successMessage, 'success');
+
+      setLastBookingForPayment(result.booking);
+      updateOnlinePaymentVisibility();
+      const paymentMethod = String(document.getElementById('paymentMethod').value || '').trim();
+
+      // Reset panels
+      setPayNowPanelVisible(false);
+      setBankPayPanelVisible(false);
+
+      // Online redirect payments (Paystack)
+      const wantsOnline = ['Credit Card', 'Debit Card', 'USSD'].includes(paymentMethod);
+      if (wantsOnline) {
+        setPayNowPanelVisible(true);
+        refreshPayNowAvailability();
+      }
+
+      // Bank transfer (salon account + per-booking reference)
+      if (paymentMethod === 'Bank Transfer') {
+        try {
+          const details = result.paymentBankDetails || await loadBankPaymentDetailsForLastBooking();
+          fillBankPayPanel(details);
+          setBankPayPanelVisible(true);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
       document.getElementById('bookingForm').reset();
       document.getElementById('imagePreview').innerHTML = '';
     } else {
