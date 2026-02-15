@@ -9,7 +9,7 @@ const multer = require('multer');
 require('dotenv').config();
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT) || 3000;
 const ADMIN_SECRET_PASSCODE = process.env.ADMIN_SECRET_PASSCODE || 'CHANGE_ME_ADMIN_PASSCODE';
 const ONE_TIME_CODE_TTL_MS = 10 * 60 * 1000;
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || '';
@@ -1612,6 +1612,19 @@ app.post('/api/admin/verify', (req, res) => {
   }
 });
 
-app.listen(PORT, () => {
+const server = app.listen(PORT, () => {
   console.log(`CEO UNISEX SALON Server running at http://localhost:${PORT}`);
+});
+
+server.on('error', (err) => {
+  if (err && err.code === 'EADDRINUSE') {
+    console.error(`\n❌ Port ${PORT} is already in use.`);
+    console.error('   - Close the other app using this port, OR');
+    console.error('   - Set a different port, e.g. PORT=3001 (Windows: set PORT=3001)');
+    console.error('   - If you also use PUBLIC_BASE_URL, update it to match the new port.\n');
+    process.exit(1);
+  }
+
+  console.error('\n❌ Server failed to start:', err);
+  process.exit(1);
 });

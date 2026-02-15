@@ -83,6 +83,12 @@ Welcome to CEO SALOON's comprehensive documentation! Here's a guide to all avail
    - Environment setup
    - Database initialization
 
+10. **MOBILE_APP.md** (Expo Mobile App)
+  - Hybrid mobile app (WebView + native screens)
+  - Android/iOS development with Expo
+  - API integration for booking + tracking
+  - Base URL configuration for emulators/devices
+
 ---
 
 ## 🎯 WHICH DOCUMENT SHOULD I READ?

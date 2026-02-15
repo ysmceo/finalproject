@@ -16,6 +16,13 @@ const serviceNameKeyMap = {
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
+  // PWA: register service worker (installable app + basic offline support)
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js').catch(() => {
+      // Silent fail: app still works fine without SW.
+    });
+  }
+
   // Initialize language system
   initializeLanguage();
   
