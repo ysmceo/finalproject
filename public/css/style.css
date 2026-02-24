@@ -105,6 +105,10 @@ body.dark-mode .footer {
   box-sizing: border-box;
 }
 
+.hidden {
+  display: none !important;
+}
+
 body {
   font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   line-height: 1.6;
@@ -257,6 +261,8 @@ body {
 .weather-info {
   font-size: 14px;
 }
+
+
 
 /* Dark Mode Button */
 .dark-mode-btn {
@@ -419,11 +425,90 @@ body.dark-mode .ceo-card h3 {
 }
 
 .contact {
-  background: linear-gradient(135deg, rgba(74,14,78,0.88), rgba(255,20,147,0.15)),
-              url('https://images.unsplash.com/photo-1629209225666-5a5a8d74a4f5?w=1400&h=800&fit=crop') center/cover;
+  position: relative;
+  overflow: hidden;
   color: white;
-  background-attachment: fixed;
-  background-position: center center;
+  /* Fallback background when images haven't loaded yet */
+  background: radial-gradient(circle at 20% 10%, rgba(255, 20, 147, 0.25), transparent 55%),
+              linear-gradient(135deg, rgba(74, 14, 78, 0.92), rgba(0, 0, 0, 0.55));
+}
+
+/* Animated background slideshow behind the Contact section */
+.contact-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.contact-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(74, 14, 78, 0.85), rgba(255, 20, 147, 0.18));
+}
+
+.contact-bg__slide {
+  position: absolute;
+  inset: -20px;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transform: scale(1.05);
+  filter: saturate(1.05) contrast(1.05);
+  animation: contactSlideShow 24s infinite;
+}
+
+.contact-bg__slide--1 {
+  background-image: url('/images/p6%20styling.jpg');
+  animation-delay: 0s;
+}
+
+.contact-bg__slide--2 {
+  background-image: url('/images/p5%20relaxation%20services.jpg');
+  animation-delay: 8s;
+}
+
+.contact-bg__slide--3 {
+  background-image: url('/images/p2%20hair%20color.jpg');
+  animation-delay: 16s;
+}
+
+@keyframes contactSlideShow {
+  0% {
+    opacity: 0;
+    transform: scale(1.07) translate3d(0, 0, 0);
+  }
+  8% {
+    opacity: 1;
+  }
+  33% {
+    opacity: 1;
+    transform: scale(1.02) translate3d(-1.5%, -1%, 0);
+  }
+  41% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.07) translate3d(0, 0, 0);
+  }
+}
+
+.contact > .container {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .contact-bg__slide {
+    animation: none;
+    opacity: 0;
+  }
+  .contact-bg__slide--1 {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 h2 {
@@ -494,6 +579,44 @@ h2 {
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 24px;
   margin-top: 40px;
+}
+
+.products-paystack {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  margin-top: 18px;
+}
+
+.paystack-pay-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 14px 18px;
+  border-radius: 12px;
+  text-decoration: none;
+  font-weight: 800;
+  background: linear-gradient(135deg, #0f6b2f, #28a745);
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(15, 107, 47, 0.18);
+  border: 1px solid rgba(15, 107, 47, 0.25);
+}
+
+.paystack-pay-btn:hover {
+  transform: translateY(-1px);
+}
+
+.products-paystack-hint {
+  margin: 0;
+  font-size: 14px;
+  color: #555;
+  text-align: center;
+}
+
+body.dark-mode .products-paystack-hint {
+  color: #d7d7d7;
 }
 
 .product-card {

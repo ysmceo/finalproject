@@ -6,6 +6,8 @@ const path = require('path');
 const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
+const nodemailer = require('nodemailer');
+const Stripe = require('stripe');
 require('dotenv').config();
 
 const app = express();
@@ -13,7 +15,161 @@ const PORT = Number(process.env.PORT) || 3000;
 const ADMIN_SECRET_PASSCODE = process.env.ADMIN_SECRET_PASSCODE || 'CHANGE_ME_ADMIN_PASSCODE';
 const ONE_TIME_CODE_TTL_MS = 10 * 60 * 1000;
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || '';
+const PAYSTACK_PAYMENT_PAGE_URL = process.env.PAYSTACK_PAYMENT_PAGE_URL || '';
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
+
+const PAYMENTS_MODE = String(process.env.PAYMENTS_MODE || 'test').trim().toLowerCase();
+const IS_LIVE_MODE = PAYMENTS_MODE === 'live';
+
+function isLikelyPaystackLiveKey(key) {
+  return String(key || '').trim().toLowerCase().startsWith('sk_live');
+}
+
+function isLikelyPaystackTestKey(key) {
+  return String(key || '').trim().toLowerCase().startsWith('sk_test');
+}
+
+function isLikelyStripeLiveKey(key) {
+  return String(key || '').trim().toLowerCase().startsWith('sk_live');
+}
+
+function isLikelyStripeTestKey(key) {
+  return String(key || '').trim().toLowerCase().startsWith('sk_test');
+}
+
+// Stripe configuration
+const STRIPE_SECRET_KEY = process.env.STRIPE_SECRET_KEY || '';
+const STRIPE_WEBHOOK_SECRET = process.env.STRIPE_WEBHOOK_SECRET || '';
+const STRIPE_CONNECTED_ACCOUNT_ID = process.env.STRIPE_CONNECTED_ACCOUNT_ID || '';
+
+function isStripeConfigured() {
+  return Boolean(String(STRIPE_SECRET_KEY || '').trim());
+}
+
+function getStripeClient() {
+  if (!isStripeConfigured()) {
+    const err = new Error('Stripe is not configured');
+    err.code = 'STRIPE_NOT_CONFIGURED';
+    throw err;
+  }
+
+  return new Stripe(String(STRIPE_SECRET_KEY).trim(), {
+    // Keep defaults; Stripe may vary API versions by account.
+  });
+}
+
+function getStripeRequestOptions() {
+  const acct = String(STRIPE_CONNECTED_ACCOUNT_ID || '').trim();
+  return acct ? { stripeAccount: acct } : undefined;
+}
+
+// Email (SMTP) configuration for admin replies
+const SMTP_HOST = process.env.SMTP_HOST || '';
+const SMTP_PORT = Number(process.env.SMTP_PORT) || 587;
+const SMTP_SECURE = String(process.env.SMTP_SECURE || '').trim().toLowerCase() === 'true';
+const SMTP_USER = process.env.SMTP_USER || '';
+const SMTP_PASS = process.env.SMTP_PASS || '';
+const SMTP_FROM = process.env.SMTP_FROM || 'CEO Unisex Salon <no-reply@ceosaloon.com>';
+const SEND_PAYMENT_EMAIL_RECEIPTS = String(process.env.SEND_PAYMENT_EMAIL_RECEIPTS || 'false').trim().toLowerCase() === 'true';
+const PAYMENT_RECEIPTS_BCC = process.env.PAYMENT_RECEIPTS_BCC || '';
+
+function isSmtpConfigured() {
+  return Boolean(String(SMTP_HOST || '').trim()) &&
+    Boolean(Number.isFinite(SMTP_PORT) && SMTP_PORT > 0) &&
+    Boolean(String(SMTP_USER || '').trim()) &&
+    Boolean(String(SMTP_PASS || '').trim());
+}
+
+function getMailer() {
+  if (!isSmtpConfigured()) {
+    const err = new Error('SMTP is not configured');
+    err.code = 'SMTP_NOT_CONFIGURED';
+    throw err;
+  }
+
+  return nodemailer.createTransport({
+    host: String(SMTP_HOST).trim(),
+    port: SMTP_PORT,
+    secure: SMTP_SECURE,
+    auth: {
+      user: String(SMTP_USER).trim(),
+      pass: String(SMTP_PASS)
+    }
+  });
+}
+
+async function sendEmail({ to, subject, text, html, replyTo }) {
+  const transporter = getMailer();
+  const info = await transporter.sendMail({
+    from: SMTP_FROM,
+    to,
+    bcc: String(PAYMENT_RECEIPTS_BCC || '').trim() || undefined,
+    subject,
+    text,
+    html,
+    replyTo: replyTo || undefined
+  });
+  return info;
+}
+
+async function maybeSendPaymentReceiptEmail({ booking, provider, paidAmount, reference, receiptUrl }) {
+  if (!SEND_PAYMENT_EMAIL_RECEIPTS) {
+    return { sent: false, skipped: true, reason: 'SEND_PAYMENT_EMAIL_RECEIPTS=false' };
+  }
+
+  // Don't send if SMTP is not configured.
+  if (!isSmtpConfigured()) {
+    return { sent: false, skipped: true, reason: 'SMTP not configured' };
+  }
+
+  if (!booking || !booking.email) {
+    return { sent: false, skipped: true, reason: 'Missing booking/email' };
+  }
+
+  // Idempotency: don't spam customer.
+  if (booking.paymentReceiptEmailSentAt) {
+    return { sent: false, skipped: true, reason: 'Already sent' };
+  }
+
+  const toEmail = normalizeEmail(booking.email);
+  const bookingId = String(booking.id || '').trim();
+  const serviceName = String(booking.serviceName || '').trim() || 'Salon Service';
+  const amountText = `₦${Number(paidAmount || 0).toLocaleString()}`;
+  const providerLabel = String(provider || '').trim().toUpperCase();
+
+  const subject = `Payment Receipt (${providerLabel}) - Booking ${bookingId || ''}`.trim();
+
+  const safeRef = String(reference || '').trim();
+  const safeReceiptUrl = String(receiptUrl || '').trim();
+
+  const text = `Hi ${booking.name || 'Customer'},\n\nWe received your payment for your booking.\n\nBooking ID: ${bookingId}\nService: ${serviceName}\nAmount paid: ${amountText}\nProvider: ${providerLabel}\nReference: ${safeRef || 'N/A'}\nReceipt: ${safeReceiptUrl || 'N/A'}\n\nThank you for choosing CEO Unisex Salon.`;
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height:1.5;">
+      <h2 style="margin:0 0 10px; color:#4a0e4e;">Payment Receipt</h2>
+      <p style="margin:0 0 12px;">Hi <strong>${String(booking.name || 'Customer').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</strong>,</p>
+      <p style="margin:0 0 12px;">We received your payment for your booking.</p>
+      <div style="padding:12px; border:1px solid #eee; border-radius:10px; background:#faf7ff;">
+        <div><strong>Booking ID:</strong> ${bookingId}</div>
+        <div><strong>Service:</strong> ${serviceName.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+        <div><strong>Amount paid:</strong> ${amountText}</div>
+        <div><strong>Provider:</strong> ${providerLabel}</div>
+        <div><strong>Reference:</strong> ${safeRef ? safeRef.replace(/</g,'&lt;').replace(/>/g,'&gt;') : 'N/A'}</div>
+        <div><strong>Receipt:</strong> ${safeReceiptUrl ? `<a href="${safeReceiptUrl}" target="_blank" rel="noopener">View receipt</a>` : 'N/A'}</div>
+      </div>
+      <p style="margin:12px 0 0; color:#666; font-size: 13px;">Thank you for choosing CEO Unisex Salon.</p>
+    </div>
+  `;
+
+  const info = await sendEmail({ to: toEmail, subject, text, html });
+
+  booking.paymentReceiptEmailSentAt = new Date().toISOString();
+  booking.paymentReceiptEmailTo = toEmail;
+  booking.paymentReceiptEmailProvider = provider;
+  booking.paymentReceiptEmailMessageId = info && info.messageId ? info.messageId : undefined;
+
+  return { sent: true };
+}
 
 // Monnify (card/transfer/ussd) configuration
 const MONNIFY_API_KEY = process.env.MONNIFY_API_KEY || '';
@@ -711,14 +867,269 @@ app.get('/api/payments/paystack/status', (req, res) => {
   const configured = isPaystackConfigured();
   const callbackUrl = `${PUBLIC_BASE_URL}/paystack-callback.html`;
 
+  const key = String(PAYSTACK_SECRET_KEY || '').trim();
+  const keyEnv = isLikelyPaystackLiveKey(key) ? 'live' : isLikelyPaystackTestKey(key) ? 'test' : 'unknown';
+
   res.json({
     configured,
+    paymentsMode: PAYMENTS_MODE,
+    keyEnv,
     callbackUrl,
     publicBaseUrl: PUBLIC_BASE_URL,
     message: configured
       ? 'Paystack is configured'
       : 'Paystack is not configured on the server. Set PAYSTACK_SECRET_KEY in .env and restart the server.'
   });
+});
+
+// Paystack payment page link (optional - manual payment page)
+app.get('/api/payments/paystack/page-link', (req, res) => {
+  const url = String(PAYSTACK_PAYMENT_PAGE_URL || '').trim();
+  res.json({
+    configured: Boolean(url),
+    paymentsMode: PAYMENTS_MODE,
+    url: url || null
+  });
+});
+
+// Payments mode (Customer)
+app.get('/api/payments/mode', (req, res) => {
+  res.json({
+    paymentsMode: PAYMENTS_MODE,
+    isLive: IS_LIVE_MODE
+  });
+});
+
+// Stripe configuration status (Customer)
+app.get('/api/payments/stripe/status', (req, res) => {
+  const configured = isStripeConfigured();
+  const successUrl = `${PUBLIC_BASE_URL}/stripe-success.html`;
+
+  const key = String(STRIPE_SECRET_KEY || '').trim();
+  const keyEnv = isLikelyStripeLiveKey(key) ? 'live' : isLikelyStripeTestKey(key) ? 'test' : 'unknown';
+
+  res.json({
+    configured,
+    paymentsMode: PAYMENTS_MODE,
+    keyEnv,
+    connectedAccount: String(STRIPE_CONNECTED_ACCOUNT_ID || '').trim() || null,
+    successUrl,
+    message: configured
+      ? 'Stripe is configured'
+      : 'Stripe is not configured. Set STRIPE_SECRET_KEY in .env and restart the server.'
+  });
+});
+
+// Initialize Stripe Checkout payment (Customer)
+app.post('/api/payments/stripe/initialize', async (req, res) => {
+  const { bookingId, email } = req.body;
+  const normalizedBookingId = String(bookingId || '').trim();
+  const normalizedEmail = normalizeEmail(email);
+
+  if (!normalizedBookingId || !normalizedEmail) {
+    return res.status(400).json({ error: 'bookingId and email are required' });
+  }
+
+  const db = readDatabase();
+  const booking = db.bookings.find(b => String(b.id) === normalizedBookingId);
+  if (!booking) {
+    return res.status(404).json({ error: 'Booking not found' });
+  }
+
+  if (normalizeEmail(booking.email) !== normalizedEmail) {
+    return res.status(401).json({ error: 'Email does not match this booking' });
+  }
+
+  const amountKobo = Math.max(0, Number(booking.amountDueNow || 0)) * 100;
+  if (!amountKobo) {
+    return res.status(400).json({ error: 'No payable amount found for this booking' });
+  }
+
+  try {
+    const stripe = getStripeClient();
+    const opts = getStripeRequestOptions();
+
+    const session = await stripe.checkout.sessions.create({
+      mode: 'payment',
+      currency: 'ngn',
+      customer_email: booking.email,
+      success_url: `${PUBLIC_BASE_URL}/stripe-success.html?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${PUBLIC_BASE_URL}/#booking`,
+      line_items: [
+        {
+          quantity: 1,
+          price_data: {
+            currency: 'ngn',
+            unit_amount: amountKobo,
+            product_data: {
+              name: `Booking: ${booking.serviceName || 'Salon Service'}`,
+              description: `Payment plan: ${booking.paymentPlan || 'N/A'} | Booking ID: ${booking.id}`
+            }
+          }
+        }
+      ],
+      metadata: {
+        bookingId: booking.id,
+        email: booking.email,
+        serviceName: booking.serviceName || '',
+        paymentPlan: booking.paymentPlan || ''
+      }
+    }, opts);
+
+    booking.paymentProvider = 'stripe';
+    booking.stripeSessionId = session.id;
+    booking.paymentStatus = 'initiated';
+    booking.paymentInitiatedAt = new Date().toISOString();
+    writeDatabase(db);
+
+    res.json({
+      message: 'Payment initialized',
+      checkoutUrl: session.url,
+      sessionId: session.id
+    });
+  } catch (error) {
+    if (error && error.code === 'STRIPE_NOT_CONFIGURED') {
+      return res.status(503).json({
+        error: 'Stripe is not configured on the server',
+        hint: 'Set STRIPE_SECRET_KEY in .env and restart the server.'
+      });
+    }
+    res.status(500).json({ error: 'Failed to initialize Stripe payment' });
+  }
+});
+
+// Verify Stripe payment (Customer)
+app.get('/api/payments/stripe/verify', async (req, res) => {
+  const sessionId = String(req.query.session_id || '').trim();
+  if (!sessionId) {
+    return res.status(400).json({ error: 'session_id is required' });
+  }
+
+  if (!isStripeConfigured()) {
+    return res.status(503).json({
+      error: 'Stripe is not configured on the server',
+      hint: 'Set STRIPE_SECRET_KEY in .env and restart the server.'
+    });
+  }
+
+  try {
+    const stripe = getStripeClient();
+    const opts = getStripeRequestOptions();
+
+    const session = await stripe.checkout.sessions.retrieve(sessionId, {
+      expand: ['payment_intent']
+    }, opts);
+
+    const bookingId = session && session.metadata ? String(session.metadata.bookingId || '').trim() : '';
+    const db = readDatabase();
+    const booking = bookingId
+      ? db.bookings.find(b => String(b.id) === bookingId)
+      : db.bookings.find(b => String(b.stripeSessionId || '').trim() === sessionId);
+
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found for this Stripe session' });
+    }
+
+    const paid = session.payment_status === 'paid';
+
+    let receiptUrl = '';
+    let paidAmount = 0;
+
+    if (session.payment_intent && typeof session.payment_intent === 'object') {
+      const pi = session.payment_intent;
+      paidAmount = Math.round(Number(pi.amount_received || 0) / 100);
+
+      // Attempt to get receipt_url from the latest charge.
+      if (pi.latest_charge) {
+        const charge = await stripe.charges.retrieve(pi.latest_charge, {}, opts);
+        receiptUrl = charge && charge.receipt_url ? String(charge.receipt_url) : '';
+        booking.stripeChargeId = charge && charge.id ? charge.id : booking.stripeChargeId;
+      }
+
+      booking.stripePaymentIntentId = pi.id || booking.stripePaymentIntentId;
+    }
+
+    booking.paymentProvider = 'stripe';
+    booking.paymentStatus = paid ? 'paid' : 'failed';
+    booking.paidAmount = paid ? paidAmount : 0;
+    booking.stripeReceiptUrl = receiptUrl || booking.stripeReceiptUrl || '';
+    booking.paymentVerifiedAt = new Date().toISOString();
+
+    if (paid) {
+      booking.amountRemaining = Math.max(0, Number(booking.price || 0) - paidAmount);
+      addBookingNotification(
+        db,
+        booking,
+        'payment_received',
+        `💳 Stripe payment received successfully (₦${paidAmount.toLocaleString()}). ${booking.stripeReceiptUrl ? `Receipt: ${booking.stripeReceiptUrl}` : ''}`
+      );
+
+      // Optional: email receipt to customer
+      try {
+        await maybeSendPaymentReceiptEmail({
+          booking,
+          provider: 'stripe',
+          paidAmount,
+          reference: booking.stripePaymentIntentId || booking.stripeSessionId,
+          receiptUrl: booking.stripeReceiptUrl
+        });
+      } catch (e) {
+        booking.paymentReceiptEmailError = String(e && e.message ? e.message : 'Failed to send receipt email');
+        booking.paymentReceiptEmailErrorAt = new Date().toISOString();
+      }
+    }
+
+    writeDatabase(db);
+
+    res.json({
+      ok: true,
+      paid,
+      receiptUrl: booking.stripeReceiptUrl || null,
+      booking: {
+        id: booking.id,
+        status: booking.status,
+        paymentStatus: booking.paymentStatus,
+        amountDueNow: booking.amountDueNow,
+        amountRemaining: booking.amountRemaining,
+        paidAmount: booking.paidAmount
+      }
+    });
+  } catch (error) {
+    res.status(500).json({ error: 'Stripe verification failed' });
+  }
+});
+
+// Stripe webhook (optional but recommended)
+app.post('/api/payments/stripe/webhook', async (req, res) => {
+  if (!STRIPE_WEBHOOK_SECRET) {
+    return res.status(501).json({ error: 'Stripe webhook secret not configured' });
+  }
+
+  try {
+    const stripe = getStripeClient();
+    const sig = req.headers['stripe-signature'];
+    const event = stripe.webhooks.constructEvent(req.rawBody, sig, STRIPE_WEBHOOK_SECRET);
+
+    if (event.type === 'checkout.session.completed') {
+      const session = event.data && event.data.object ? event.data.object : null;
+      const bookingId = session && session.metadata ? String(session.metadata.bookingId || '').trim() : '';
+      if (bookingId) {
+        const db = readDatabase();
+        const booking = db.bookings.find(b => String(b.id) === bookingId);
+        if (booking) {
+          booking.paymentProvider = 'stripe';
+          booking.stripeSessionId = session.id || booking.stripeSessionId;
+          booking.paymentStatus = 'paid';
+          booking.paymentWebhookProcessedAt = new Date().toISOString();
+          writeDatabase(db);
+        }
+      }
+    }
+
+    res.json({ received: true });
+  } catch (error) {
+    res.status(400).send(`Webhook Error: ${error.message}`);
+  }
 });
 
 // Monnify configuration status (Customer)
@@ -989,7 +1400,8 @@ app.post('/api/payments/paystack/initialize', async (req, res) => {
     return res.status(401).json({ error: 'Email does not match this booking' });
   }
 
-  const amountInKobo = Math.max(0, Number(booking.amountDueNow || 0)) * 100;
+  // Paystack expects the amount as an integer (kobo).
+  const amountInKobo = Math.round(Math.max(0, Number(booking.amountDueNow || 0)) * 100);
   if (!amountInKobo) {
     return res.status(400).json({ error: 'No payable amount found for this booking' });
   }
@@ -1042,7 +1454,15 @@ app.post('/api/payments/paystack/initialize', async (req, res) => {
         hint: 'Set PAYSTACK_SECRET_KEY in .env and restart the server.'
       });
     }
-    return res.status(500).json({ error: 'Failed to initialize payment' });
+
+    // Provide a small amount of diagnostics to help resolve configuration/network issues.
+    return res.status(500).json({
+      error: 'Failed to initialize payment',
+      details: {
+        message: error && error.message ? String(error.message) : undefined,
+        code: error && error.code ? String(error.code) : undefined
+      }
+    });
   }
 });
 
@@ -1101,6 +1521,19 @@ app.get('/api/payments/paystack/verify/:reference', async (req, res) => {
         'payment_received',
         `💳 Payment received successfully (₦${paidAmount.toLocaleString()}). Your booking remains ${booking.status}.`
       );
+
+      // Optional: email receipt to customer
+      try {
+        await maybeSendPaymentReceiptEmail({
+          booking,
+          provider: 'paystack',
+          paidAmount,
+          reference: booking.paymentReference
+        });
+      } catch (e) {
+        booking.paymentReceiptEmailError = String(e && e.message ? e.message : 'Failed to send receipt email');
+        booking.paymentReceiptEmailErrorAt = new Date().toISOString();
+      }
     }
 
     writeDatabase(db);
@@ -1365,6 +1798,99 @@ app.delete('/api/admin/messages/:id', requireAdminAuth, (req, res) => {
   writeDatabase(db);
 
   res.json({ message: 'Message deleted successfully' });
+});
+
+// Reply to a customer message/complaint via email (Admin)
+app.post('/api/admin/messages/:id/reply', requireAdminAuth, async (req, res) => {
+  try {
+    const messageId = String(req.params.id || '').trim();
+    const subject = String(req.body && req.body.subject ? req.body.subject : '').trim();
+    const bodyText = String(req.body && req.body.message ? req.body.message : '').trim();
+
+    if (!messageId) {
+      return res.status(400).json({ error: 'Message id is required' });
+    }
+
+    if (!subject || !bodyText) {
+      return res.status(400).json({ error: 'subject and message are required' });
+    }
+
+    const db = readDatabase();
+    const msg = db.messages.find(m => String(m.id) === messageId);
+    if (!msg) {
+      return res.status(404).json({ error: 'Message not found' });
+    }
+
+    const toEmail = normalizeEmail(msg.email);
+    if (!toEmail) {
+      return res.status(400).json({ error: 'Customer email is missing on this message' });
+    }
+
+    const adminName = req.admin && req.admin.name ? String(req.admin.name) : 'Admin';
+    const adminEmail = req.admin && req.admin.email ? String(req.admin.email) : '';
+
+    const safeOriginalSubject = String(msg.subject || '').trim();
+    const safeOriginalMessage = String(msg.message || '').trim();
+
+    const emailText = `${bodyText}\n\n---\nOriginal message from ${msg.name || 'Customer'} (${toEmail})\nSubject: ${safeOriginalSubject}\n\n${safeOriginalMessage}`;
+    const emailHtml = `
+      <div style="font-family: Arial, sans-serif; line-height: 1.5;">
+        <p>${bodyText.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/\n/g, '<br>')}</p>
+        <hr>
+        <p style="color:#555; font-size: 13px; margin:0;">Original message from <strong>${String(msg.name || 'Customer').replace(/</g, '&lt;').replace(/>/g, '&gt;')}</strong> (${toEmail})</p>
+        <p style="color:#555; font-size: 13px; margin:0;">Subject: ${safeOriginalSubject.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+        <p style="white-space: pre-wrap; color:#333;">${safeOriginalMessage.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</p>
+        <p style="color:#777; font-size: 12px;">Sent by ${adminName}${adminEmail ? ` (${adminEmail})` : ''}</p>
+      </div>
+    `;
+
+    const info = await sendEmail({
+      to: toEmail,
+      subject,
+      text: emailText,
+      html: emailHtml
+    });
+
+    if (!Array.isArray(msg.replies)) {
+      msg.replies = [];
+    }
+
+    msg.replies.push({
+      id: uuidv4(),
+      subject,
+      message: bodyText,
+      to: toEmail,
+      admin: {
+        id: req.admin && req.admin.id ? req.admin.id : undefined,
+        name: adminName,
+        email: adminEmail
+      },
+      transport: {
+        messageId: info && info.messageId ? info.messageId : undefined,
+        accepted: info && info.accepted ? info.accepted : undefined,
+        rejected: info && info.rejected ? info.rejected : undefined
+      },
+      sentAt: new Date().toISOString()
+    });
+
+    msg.lastRepliedAt = new Date().toISOString();
+    msg.status = 'read';
+    msg.updatedAt = new Date().toISOString();
+    writeDatabase(db);
+
+    res.json({
+      message: 'Reply sent successfully',
+      replyCount: msg.replies.length,
+      to: toEmail
+    });
+  } catch (error) {
+    const code = error && error.code ? error.code : 'REPLY_FAILED';
+    const status = code === 'SMTP_NOT_CONFIGURED' ? 503 : 500;
+    res.status(status).json({
+      error: error && error.message ? error.message : 'Failed to send reply',
+      code
+    });
+  }
 });
 
 // Delete booking (Admin)

@@ -5,6 +5,51 @@ const API_URL = '/api/admin';
 let currentBookingId = null;
 let currentMessageId = null;
 
+function ensureToastContainer() {
+  let container = document.querySelector('.toast-container');
+  if (container) return container;
+
+  container = document.createElement('div');
+  container.className = 'toast-container';
+  document.body.appendChild(container);
+  return container;
+}
+
+function showToast({ title, message, type = 'info', timeoutMs = 3500 }) {
+  const container = ensureToastContainer();
+
+  const toast = document.createElement('div');
+  toast.className = `toast toast-${type}`;
+
+  const iconMap = {
+    success: '✅',
+    error: '❌',
+    info: 'ℹ️'
+  };
+
+  toast.innerHTML = `
+    <div class="toast-icon">${iconMap[type] || iconMap.info}</div>
+    <div class="toast-body">
+      <div class="toast-title">${String(title || '').trim() || 'Notice'}</div>
+      <div class="toast-text">${String(message || '').trim() || ''}</div>
+    </div>
+  `;
+
+  let removed = false;
+  const remove = () => {
+    if (removed) return;
+    removed = true;
+    if (toast && toast.parentNode) toast.parentNode.removeChild(toast);
+  };
+
+  toast.addEventListener('click', remove);
+  container.appendChild(toast);
+
+  if (timeoutMs > 0) {
+    setTimeout(remove, timeoutMs);
+  }
+}
+
 function getStoredAdminToken() {
   return localStorage.getItem('adminToken');
 }
@@ -470,7 +515,7 @@ function displayBookings(bookings) {
     const isCompleted = normalizedStatus === 'completed';
 
     const approveDisabled = isApproved || isCancelled || isCompleted;
-    const rejectDisabled = isCancelled || isCompleted;
+    const rejectDisabled = isApproved || isCancelled || isCompleted;
 
     const card = document.createElement('div');
     card.className = 'booking-card';
@@ -498,8 +543,8 @@ function displayBookings(bookings) {
         </div>
       </div>
       <div class="booking-actions">
-        <button class="btn btn-accept" ${approveDisabled ? 'disabled' : ''} onclick="updateBookingStatus('${booking.id}', 'approved')">✓ Approve</button>
-        <button class="btn btn-decline" ${rejectDisabled ? 'disabled' : ''} onclick="updateBookingStatus('${booking.id}', 'cancelled')">✗ Reject</button>
+        <button class="btn btn-accept" ${approveDisabled ? 'disabled' : ''} onclick="updateBookingStatus('${booking.id}', 'accepted')">✓ Accept</button>
+        <button class="btn btn-decline" ${rejectDisabled ? 'disabled' : ''} onclick="updateBookingStatus('${booking.id}', 'declined')">✗ Decline</button>
         <button class="btn btn-accept" onclick="openBookingModal('${booking.id}')">View Details</button>
         <button class="btn btn-decline" onclick="deleteBooking('${booking.id}')">Delete</button>
       </div>
@@ -655,12 +700,12 @@ async function openBookingModal(bookingId) {
 
       if (acceptBtn) {
         acceptBtn.disabled = isApproved || isCancelled || isCompleted;
-        acceptBtn.onclick = () => updateBookingStatus(bookingId, 'approved');
+        acceptBtn.onclick = () => updateBookingStatus(bookingId, 'accepted');
       }
 
       if (declineBtn) {
-        declineBtn.disabled = isCancelled || isCompleted;
-        declineBtn.onclick = () => updateBookingStatus(bookingId, 'cancelled');
+        declineBtn.disabled = isApproved || isCancelled || isCompleted;
+        declineBtn.onclick = () => updateBookingStatus(bookingId, 'declined');
       }
     }
   } catch (error) {
@@ -678,13 +723,39 @@ async function updateBookingStatus(bookingId, status) {
       },
       body: JSON.stringify({ status })
     });
-    
-    if (response.ok) {
-      closeBookingModal();
-      loadBookings();
+
+    const result = await response.json().catch(() => null);
+
+    if (!response.ok) {
+      showToast({
+        type: 'error',
+        title: 'Booking update failed',
+        message: (result && result.error) ? result.error : 'Unable to update booking status.'
+      });
+      return;
     }
+
+    const normalized = normalizeBookingStatus(status);
+    const actionLabel = normalized === 'approved'
+      ? 'accepted'
+      : (normalized === 'cancelled' ? 'declined' : 'updated');
+
+    showToast({
+      type: 'success',
+      title: 'Booking updated',
+      message: `Booking ${actionLabel} successfully.`
+    });
+
+    closeBookingModal();
+    loadBookings();
   } catch (error) {
     console.error('Error updating booking:', error);
+
+    showToast({
+      type: 'error',
+      title: 'Network error',
+      message: 'Could not update booking. Please try again.'
+    });
   }
 }
 
@@ -695,12 +766,27 @@ async function deleteBooking(bookingId) {
       const response = await adminFetch(`/bookings/${bookingId}`, {
         method: 'DELETE'
       });
-      
-      if (response.ok) {
-        loadBookings();
+
+      const result = await response.json().catch(() => null);
+      if (!response.ok) {
+        showToast({
+          type: 'error',
+          title: 'Delete failed',
+          message: (result && result.error) ? result.error : 'Unable to delete booking.'
+        });
+        return;
       }
+
+      showToast({ type: 'success', title: 'Deleted', message: 'Booking deleted successfully.' });
+      loadBookings();
     } catch (error) {
       console.error('Error deleting booking:', error);
+
+      showToast({
+        type: 'error',
+        title: 'Network error',
+        message: 'Could not delete booking. Please try again.'
+      });
     }
   }
 }
@@ -722,6 +808,24 @@ async function openMessageModal(messageId) {
     
     if (message) {
       const modalBody = document.getElementById('messageModalBody');
+      const replies = Array.isArray(message.replies) ? message.replies : [];
+      const repliesHtml = replies.length
+        ? `
+          <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color);">
+            <label>Previous Replies</label>
+            <div style="display:flex; flex-direction:column; gap:10px;">
+              ${replies.slice(-5).reverse().map(r => `
+                <div style="padding:10px; border:1px solid var(--border-color); border-radius:8px; background: rgba(0,0,0,0.02);">
+                  <div style="font-size:12px; opacity:0.85;"><strong>${(r.admin && r.admin.name) ? r.admin.name : 'Admin'}</strong> • ${new Date(r.sentAt).toLocaleString()}</div>
+                  <div style="font-weight:700; margin-top:4px;">${String(r.subject || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+                  <div style="white-space: pre-wrap; margin-top:6px;">${String(r.message || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+                </div>
+              `).join('')}
+            </div>
+          </div>
+        `
+        : '';
+
       modalBody.innerHTML = `
         <div>
           <label>From</label>
@@ -741,6 +845,18 @@ async function openMessageModal(messageId) {
           
           <label>Status</label>
           <div class="value" style="text-transform: uppercase; color: var(--primary-color);">${message.status}</div>
+
+          <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color);">
+            <label>Reply via Email</label>
+            <div class="value" style="margin-bottom: 10px;">Replying to: <strong>${message.email}</strong></div>
+            <input id="replySubject" type="text" placeholder="Subject" value="Re: ${String(message.subject || '').replace(/"/g,'&quot;')}" style="width:100%; margin-bottom: 10px; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px;">
+            <textarea id="replyMessage" placeholder="Type your reply..." style="width:100%; min-height: 120px; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px;"></textarea>
+            <div style="display:flex; gap:10px; margin-top: 10px;">
+              <button class="btn btn-accept" id="sendReplyBtn">Send Reply</button>
+            </div>
+          </div>
+
+          ${repliesHtml}
         </div>
       `;
       
@@ -751,9 +867,58 @@ async function openMessageModal(messageId) {
       
       // Setup delete button
       document.getElementById('deleteMessageBtn').onclick = () => deleteMessage(messageId);
+
+      const sendBtn = document.getElementById('sendReplyBtn');
+      if (sendBtn) {
+        sendBtn.onclick = () => sendMessageReplyEmail(messageId);
+      }
     }
   } catch (error) {
     console.error('Error opening message modal:', error);
+  }
+}
+
+async function sendMessageReplyEmail(messageId) {
+  const subjectEl = document.getElementById('replySubject');
+  const messageEl = document.getElementById('replyMessage');
+  const sendBtn = document.getElementById('sendReplyBtn');
+
+  const subject = subjectEl ? String(subjectEl.value || '').trim() : '';
+  const message = messageEl ? String(messageEl.value || '').trim() : '';
+
+  if (!subject || !message) {
+    showToast({ type: 'error', title: 'Missing fields', message: 'Please enter a subject and reply message.' });
+    return;
+  }
+
+  if (sendBtn) sendBtn.disabled = true;
+
+  try {
+    const response = await adminFetch(`/messages/${messageId}/reply`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ subject, message })
+    });
+
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      showToast({
+        type: 'error',
+        title: 'Reply failed',
+        message: (result && result.error) ? result.error : 'Unable to send reply email.'
+      });
+      return;
+    }
+
+    showToast({ type: 'success', title: 'Reply sent', message: `Email sent to ${result.to || 'customer'}.` });
+    // Reload messages so reply history shows
+    closeMessageModal();
+    loadMessages();
+  } catch (error) {
+    console.error('Error sending reply:', error);
+    showToast({ type: 'error', title: 'Network error', message: 'Could not send reply. Please try again.' });
+  } finally {
+    if (sendBtn) sendBtn.disabled = false;
   }
 }
 
@@ -1010,6 +1175,7 @@ async function viewReportDetails(messageId) {
     const msg = messages.find(m => m.id === messageId);
     
     if (msg) {
+      const replies = Array.isArray(msg.replies) ? msg.replies : [];
       const reportTypeMap = {
         'service_feedback': '😊 Service Feedback',
         'complaint': '⚠️ Complaint',
@@ -1046,6 +1212,31 @@ async function viewReportDetails(messageId) {
           <div class="value" style="white-space: pre-wrap; max-height: 300px; overflow-y: auto;">${msg.message}</div>
           
           ${fileSection}
+
+          <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color);">
+            <label>Reply via Email</label>
+            <div class="value" style="margin-bottom: 10px;">Replying to: <strong>${msg.email}</strong></div>
+            <input id="replySubject" type="text" placeholder="Subject" value="Re: ${String(msg.subject || '').replace(/"/g,'&quot;')}" style="width:100%; margin-bottom: 10px; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px;">
+            <textarea id="replyMessage" placeholder="Type your reply..." style="width:100%; min-height: 120px; padding: 10px; border: 1px solid var(--border-color); border-radius: 8px;"></textarea>
+            <div style="display:flex; gap:10px; margin-top: 10px;">
+              <button class="btn btn-accept" id="sendReplyBtn">Send Reply</button>
+            </div>
+          </div>
+
+          ${replies.length ? `
+            <div style="margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border-color);">
+              <label>Previous Replies</label>
+              <div style="display:flex; flex-direction:column; gap:10px;">
+                ${replies.slice(-5).reverse().map(r => `
+                  <div style="padding:10px; border:1px solid var(--border-color); border-radius:8px; background: rgba(0,0,0,0.02);">
+                    <div style="font-size:12px; opacity:0.85;"><strong>${(r.admin && r.admin.name) ? r.admin.name : 'Admin'}</strong> • ${new Date(r.sentAt).toLocaleString()}</div>
+                    <div style="font-weight:700; margin-top:4px;">${String(r.subject || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+                    <div style="white-space: pre-wrap; margin-top:6px;">${String(r.message || '').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
+                  </div>
+                `).join('')}
+              </div>
+            </div>
+          ` : ''}
           
           <label>Submitted</label>
           <div class="value">${new Date(msg.createdAt).toLocaleString()}</div>
@@ -1054,6 +1245,11 @@ async function viewReportDetails(messageId) {
       
       document.getElementById('messageModal').classList.add('show');
       document.getElementById('deleteMessageBtn').onclick = () => deleteReport(messageId);
+
+      const sendBtn = document.getElementById('sendReplyBtn');
+      if (sendBtn) {
+        sendBtn.onclick = () => sendMessageReplyEmail(messageId);
+      }
     }
   } catch (error) {
     console.error('Error loading report details:', error);
@@ -1114,7 +1310,7 @@ function getStatusLabel(status) {
   const labels = {
     pending: '⏳ Pending',
     approved: '✓ Approved',
-    cancelled: '✗ Rejected',
+    cancelled: '✗ Declined',
     completed: '✓ Completed'
   };
 

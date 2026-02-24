@@ -469,6 +469,7 @@
             <option value="" data-i18n="booking_select_payment">Select payment method...</option>
             <option value="Credit Card">💳 Credit Card</option>
             <option value="Debit Card">💳 Debit Card</option>
+            <option value="Paystack Bank Transfer">🏦 Paystack Bank Transfer (Instant)</option>
             <option value="Bank Transfer">🏦 Bank Transfer</option>
             <option value="USSD">📱 USSD (Mobile Money)</option>
             <option value="Cash">💵 Cash Payment</option>
@@ -490,6 +491,7 @@
             <option value="">Auto (use what is configured)</option>
             <option value="paystack">Paystack</option>
             <option value="monnify">Monnify</option>
+            <option value="stripe">Stripe</option>
           </select>
           <small style="display:block; margin-top: 6px; color: #666;">If one provider is not configured, Auto will use the other.</small>
         </div>
@@ -549,6 +551,15 @@
       <div id="payNowPanel" style="display:none; margin-top: 15px; text-align: center;">
         <button id="payNowBtn" type="button" class="submit-btn">Pay Now</button>
         <small id="payNowHint" style="display:block; margin-top: 8px; color: #666;">You will be redirected to a secure payment page.</small>
+
+        <div class="products-paystack hidden" id="paystackPaymentBlock">
+          <a id="paystackPaymentLink" class="paystack-pay-btn" href="#" target="_blank" rel="noopener">
+            💳 Pay with Paystack
+          </a>
+          <p class="products-paystack-hint" id="paystackPaymentHint">
+            Use this only if you were instructed to pay via a Paystack payment link.
+          </p>
+        </div>
       </div>
 
       <div id="bankPayPanel" style="display:none; margin-top: 15px;">
@@ -663,6 +674,11 @@
 
   <!-- Contact Section -->
   <section id="contact" class="contact">
+    <div class="contact-bg" aria-hidden="true">
+      <span class="contact-bg__slide contact-bg__slide--1"></span>
+      <span class="contact-bg__slide contact-bg__slide--2"></span>
+      <span class="contact-bg__slide contact-bg__slide--3"></span>
+    </div>
     <div class="container">
       <h2 data-i18n="contact_title">Get In Touch</h2>
       <p class="section-subtitle" data-i18n="contact_subtitle">Send us a message</p>
