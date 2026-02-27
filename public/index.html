@@ -4,9 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>CEO UNISEX SALON - Professional Hair & Beauty Services</title>
-  <meta name="theme-color" content="#ff1493">
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="/images/logo.svg">
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
@@ -104,11 +104,52 @@
       <div class="products-grid" id="productsGrid">
         <!-- Products loaded from API -->
       </div>
+
+      <div id="productCartPanel" class="product-cart-panel">
+        <h3 class="product-cart-title">🛒 Product Cart & Checkout</h3>
+        <div id="productCartItems" class="product-cart-items">Your cart is empty.</div>
+        <div id="productCartTotal" class="product-cart-total">Total: ₦0</div>
+
+        <div class="product-cart-checkout-grid">
+          <input type="text" id="productOrderName" placeholder="Full Name">
+          <input type="email" id="productOrderEmail" placeholder="Email Address">
+          <input type="tel" id="productOrderPhone" placeholder="Phone Number">
+          <input type="text" id="productOrderAddress" placeholder="Delivery Address">
+          <select id="productOrderPaymentMethod" title="Product order payment method" aria-label="Product order payment method">
+            <option value="">Select payment method...</option>
+            <option value="Credit Card">💳 Credit Card</option>
+            <option value="Debit Card">💳 Debit Card</option>
+            <option value="Paystack Bank Transfer">🏦 Paystack Bank Transfer (Instant)</option>
+            <option value="Bank Transfer">🏦 Bank Transfer</option>
+            <option value="USSD">📱 USSD (Mobile Money)</option>
+            <option value="Cash">💵 Cash Payment</option>
+          </select>
+          <select id="productOrderPaymentChannel" title="Product order payment channel" aria-label="Product order payment channel">
+            <option value="">Auto payment channel</option>
+            <option value="card">Card</option>
+            <option value="bank_transfer">Bank Transfer</option>
+            <option value="ussd">USSD</option>
+          </select>
+        </div>
+
+        <div class="product-cart-actions">
+          <button id="placeProductOrderBtn" type="button" class="submit-btn">Place Product Order</button>
+          <button id="payProductOrderBtn" type="button" class="submit-btn hidden">Pay for Product Order</button>
+          <button id="clearProductCartBtn" type="button" class="submit-btn product-cart-clear-btn">Clear Cart</button>
+        </div>
+
+        <div id="productOrderMessage" class="message"></div>
+      </div>
     </div>
   </section>
 
   <!-- Booking Section -->
   <section id="booking" class="booking-section">
+    <div class="booking-bg" aria-hidden="true">
+      <span class="booking-bg__slide booking-bg__slide--1"></span>
+      <span class="booking-bg__slide booking-bg__slide--2"></span>
+      <span class="booking-bg__slide booking-bg__slide--3"></span>
+    </div>
     <div class="container">
       <h2 data-i18n="booking_title">Book Your Appointment</h2>
       <form id="bookingForm" class="booking-form">
@@ -476,7 +517,7 @@
           </select>
         </div>
 
-        <div class="form-group" id="onlinePaymentChannelGroup" style="display:none;">
+        <div class="form-group is-initially-hidden" id="onlinePaymentChannelGroup">
           <label for="paymentChannel">Online Payment Option</label>
           <select id="paymentChannel">
             <option value="">Auto (recommended)</option>
@@ -484,16 +525,16 @@
             <option value="bank_transfer">Bank Transfer</option>
             <option value="ussd">USSD</option>
           </select>
-          <small style="display:block; margin-top: 6px; color: #666;">Choose how you want to pay instantly (optional).</small>
+          <small class="form-help-text">Choose how you want to pay instantly (optional).</small>
 
-          <label for="paymentProvider" style="margin-top: 10px;">Payment Provider</label>
+          <label for="paymentProvider" class="form-label-spaced">Payment Provider</label>
           <select id="paymentProvider">
             <option value="">Auto (use what is configured)</option>
             <option value="paystack">Paystack</option>
             <option value="monnify">Monnify</option>
             <option value="stripe">Stripe</option>
           </select>
-          <small style="display:block; margin-top: 6px; color: #666;">If one provider is not configured, Auto will use the other.</small>
+          <small class="form-help-text">If one provider is not configured, Auto will use the other.</small>
         </div>
 
         <div class="form-group">
@@ -503,17 +544,17 @@
             <option value="full">Pay Full Amount</option>
             <option value="deposit_50">Pay 50% Deposit</option>
           </select>
-          <small id="paymentSummary" style="display:block; margin-top: 6px; color: #666;">Select a service to see payment details.</small>
+          <small id="paymentSummary" class="form-help-text">Select a service to see payment details.</small>
         </div>
 
         <div class="form-group">
-          <label class="radio-label" style="align-items: center;">
+          <label class="radio-label">
             <input type="checkbox" id="homeServiceRequested">
             <span>Request Home Service (Optional)</span>
           </label>
         </div>
 
-        <div class="form-group" id="homeServiceAddressGroup" style="display:none;">
+        <div class="form-group is-initially-hidden" id="homeServiceAddressGroup">
           <label for="homeServiceAddress">Home Service Address *</label>
           <textarea id="homeServiceAddress" rows="3" placeholder="Enter your address for home service..."></textarea>
         </div>
@@ -539,18 +580,18 @@
 
         <div class="form-group">
           <label for="styleImage" data-i18n="booking_image">📸 Upload Style Reference Image (Optional)</label>
-          <input type="file" id="styleImage" accept="image/*" style="padding: 8px; cursor: pointer;">
-          <small style="display: block; margin-top: 5px; color: #666;" data-i18n="booking_image_help">Upload a photo of the hairstyle you want. This helps our stylists understand your vision better.</small>
-          <div id="imagePreview" style="margin-top: 10px;"></div>
+          <input type="file" id="styleImage" accept="image/*" class="compact-file-input">
+          <small class="form-help-text-tight" data-i18n="booking_image_help">Upload a photo of the hairstyle you want. This helps our stylists understand your vision better.</small>
+          <div id="imagePreview" class="preview-space-top"></div>
         </div>
 
         <button type="submit" class="submit-btn" data-i18n="booking_submit">Book Appointment</button>
       </form>
       <div id="bookingMessage" class="message"></div>
 
-      <div id="payNowPanel" style="display:none; margin-top: 15px; text-align: center;">
+      <div id="payNowPanel" class="is-initially-hidden pay-now-panel">
         <button id="payNowBtn" type="button" class="submit-btn">Pay Now</button>
-        <small id="payNowHint" style="display:block; margin-top: 8px; color: #666;">You will be redirected to a secure payment page.</small>
+        <small id="payNowHint" class="form-help-text pay-now-hint">You will be redirected to a secure payment page.</small>
 
         <div class="products-paystack hidden" id="paystackPaymentBlock">
           <a id="paystackPaymentLink" class="paystack-pay-btn" href="#" target="_blank" rel="noopener">
@@ -562,9 +603,9 @@
         </div>
       </div>
 
-      <div id="bankPayPanel" style="display:none; margin-top: 15px;">
+      <div id="bankPayPanel" class="is-initially-hidden panel-space-top">
         <div class="bank-pay-card">
-          <h3 style="margin-bottom: 10px;">Bank Transfer Payment</h3>
+          <h3 class="bank-pay-heading">Bank Transfer Payment</h3>
           <p class="bank-pay-muted">Transfer the amount due to the salon account below and use the reference exactly as shown.</p>
 
           <div class="bank-pay-grid">
@@ -584,7 +625,7 @@
               <div class="bank-pay-label">Amount Due Now</div>
               <div id="bankPayAmount" class="bank-pay-value">—</div>
             </div>
-            <div style="grid-column: 1 / -1;">
+            <div class="bank-pay-full-span">
               <div class="bank-pay-label">Reference</div>
               <div id="bankPayRef" class="bank-pay-ref">—</div>
             </div>
@@ -592,11 +633,12 @@
 
           <small class="bank-pay-muted">After payment, our team will validate your booking and contact you.</small>
 
-          <hr style="border:none; border-top: 1px solid rgba(0,0,0,0.1); margin: 14px 0;">
-          <h4 style="margin-bottom: 8px; color: var(--secondary-color);">Upload Payment Receipt (Optional)</h4>
+          <hr class="bank-pay-divider">
+          <h4 class="bank-pay-subheading">Upload Payment Receipt (Optional)</h4>
           <p class="bank-pay-muted">After you transfer, upload your receipt (image or PDF) so we can confirm faster.</p>
+          <label for="paymentReceiptFile" class="bank-pay-label">Receipt File</label>
           <input type="file" id="paymentReceiptFile" accept="image/*,application/pdf">
-          <button id="uploadReceiptBtn" type="button" class="submit-btn" style="margin-top: 10px;">Upload Receipt</button>
+          <button id="uploadReceiptBtn" type="button" class="submit-btn upload-receipt-btn">Upload Receipt</button>
         </div>
       </div>
     </div>
@@ -718,9 +760,9 @@
 
           <div class="form-group">
             <label for="reportFile" data-i18n="contact_file">📎 Attach Report Evidence/Images (Optional)</label>
-            <input type="file" id="reportFile" accept="image/*,.pdf,.doc,.docx" style="padding: 8px; cursor: pointer;">
-            <small style="display: block; margin-top: 5px; color: #666;" data-i18n="contact_file_help">You can upload images, PDF, or documents as proof/evidence for your report.</small>
-            <div id="reportFilePreview" style="margin-top: 10px;"></div>
+            <input type="file" id="reportFile" accept="image/*,.pdf,.doc,.docx" class="compact-file-input">
+            <small class="form-help-text-tight" data-i18n="contact_file_help">You can upload images, PDF, or documents as proof/evidence for your report.</small>
+            <div id="reportFilePreview" class="preview-space-top"></div>
           </div>
 
           <button type="submit" class="submit-btn" data-i18n="contact_submit">Send Message</button>
@@ -763,11 +805,11 @@
           <div class="form-group">
             <label for="loginSecretPasscode">Admin Secret Passcode *</label>
             <input type="password" id="loginSecretPasscode" required>
-            <small>Enter this passcode to login directly. You can also use it to generate a one-time access code.</small>
+            <small>Enter this passcode to login directly, or request an OTP that will be sent to your admin email.</small>
           </div>
 
           <div class="form-group">
-            <button type="button" class="submit-btn secondary-action-btn" id="requestAccessCodeBtn">Generate One-Time Access Code</button>
+            <button type="button" class="submit-btn secondary-action-btn" id="requestAccessCodeBtn">Send One-Time Access Code (Email OTP)</button>
             <label for="loginAccessCode">One-Time Access Code (Optional)</label>
             <input type="text" id="loginAccessCode" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit code (optional)">
           </div>
@@ -781,7 +823,7 @@
         <div id="loginMessage" class="message"></div>
       </div>
       
-      <div id="registerForm" class="auth-form" style="display: none;">
+      <div id="registerForm" class="auth-form is-initially-hidden">
         <h3 data-i18n="admin_register">Admin Registration</h3>
         <form id="adminRegisterForm">
           <div class="form-group">

@@ -274,7 +274,8 @@ function showTab(tabName) {
     'messages': 'Messages Management',
     'images': 'Style Images - Approval Report',
     'reports': 'Customer Service Reports',
-    'products': 'Products Management'
+    'products': 'Products Management',
+    'productOrders': 'Product Orders Management'
   };
   document.getElementById('pageTitle').textContent = titleMap[tabName] || 'Dashboard';
   
@@ -289,6 +290,8 @@ function showTab(tabName) {
     loadServiceReports();
   } else if (tabName === 'products') {
     loadProducts();
+  } else if (tabName === 'productOrders') {
+    loadProductOrders();
   }
 }
 
@@ -518,7 +521,7 @@ function displayBookings(bookings) {
     const rejectDisabled = isApproved || isCancelled || isCompleted;
 
     const card = document.createElement('div');
-    card.className = 'booking-card';
+    card.className = 'booking-card product-order-card';
     card.innerHTML = `
       <div class="booking-header">
         <h4>${booking.name}</h4>
@@ -548,6 +551,12 @@ function displayBookings(bookings) {
         <button class="btn btn-accept" onclick="openBookingModal('${booking.id}')">View Details</button>
         <button class="btn btn-decline" onclick="deleteBooking('${booking.id}')">Delete</button>
       </div>
+      ${booking.styleImage ? `
+        <div class="booking-field" style="margin-top:10px;">
+          <label>Style Image</label>
+          <div><a href="${booking.styleImage}" target="_blank" rel="noopener">🖼️ View uploaded style image</a></div>
+        </div>
+      ` : ''}
     `;
     container.appendChild(card);
   });
@@ -682,6 +691,9 @@ async function openBookingModal(bookingId) {
           <label>Special Requests</label>
           <div class="value">${booking.specialRequests || 'None'}</div>
 
+          <label>Style Image</label>
+          <div class="value">${booking.styleImage ? `<a href="${booking.styleImage}" target="_blank" rel="noopener">🖼️ View uploaded style image</a>` : 'No style image uploaded'}</div>
+
           <label>Current Status</label>
           <div class="value" style="text-transform: uppercase; color: var(--primary-color);">${getStatusLabel(normalizeBookingStatus(booking.status))}</div>
         </div>
@@ -714,7 +726,7 @@ async function openBookingModal(bookingId) {
 }
 
 // Update Booking Status
-async function updateBookingStatus(bookingId, status) {
+async function updateBookingStatus(bookingId, status, options = {}) {
   try {
     const response = await adminFetch(`/bookings/${bookingId}`, {
       method: 'PUT',
@@ -740,14 +752,36 @@ async function updateBookingStatus(bookingId, status) {
       ? 'accepted'
       : (normalized === 'cancelled' ? 'declined' : 'updated');
 
+    const notif = result && result.notifications ? result.notifications : null;
+    const emailRes = notif && notif.email ? notif.email : null;
+    const smsRes = notif && notif.sms ? notif.sms : null;
+
+    const formatNotif = (label, r) => {
+      if (!r) return `${label}: unknown`;
+      if (r.sent === true) return `${label}: sent ✅`;
+      if (r.skipped === true) return `${label}: skipped (${r.reason || 'n/a'})`;
+      if (r.error) return `${label}: error (${r.reason || 'failed'})`;
+      return `${label}: not sent`;
+    };
+
+    const shouldShowNotify = ['approved', 'cancelled'].includes(normalized);
+    const notifySummary = shouldShowNotify
+      ? `${formatNotif('Email', emailRes)} • ${formatNotif('SMS', smsRes)}`
+      : '';
+
     showToast({
       type: 'success',
       title: 'Booking updated',
-      message: `Booking ${actionLabel} successfully.`
+      message: `Booking ${actionLabel} successfully.${notifySummary ? `\n${notifySummary}` : ''}`
     });
 
-    closeBookingModal();
-    loadBookings();
+    if (!options.skipCloseModal) {
+      closeBookingModal();
+    }
+
+    if (!options.skipReload) {
+      loadBookings();
+    }
   } catch (error) {
     console.error('Error updating booking:', error);
 
@@ -999,14 +1033,42 @@ function displayStyleImages(bookings) {
   
   const grid = document.createElement('div');
   grid.className = 'images-grid';
+
+  const getImageApprovalStatus = (booking) => {
+    const explicit = String(booking.imageApprovalStatus || '').trim().toLowerCase();
+    if (['pending', 'approved', 'rejected'].includes(explicit)) return explicit;
+    if (booking.imageApproved === true) return 'approved';
+    // Older data uses imageApprovedAt for both approve/reject; if set but not approved, treat as rejected.
+    if (booking.imageApprovedAt) return 'rejected';
+    return 'pending';
+  };
+
+  const getBookingStatus = (booking) => normalizeBookingStatus(booking.status);
   
   bookings.forEach(booking => {
     const card = document.createElement('div');
     card.className = 'image-card';
-    
-    const statusBadge = booking.imageApproved ? 
-      '<span class="status-badge status-approved">✓ Approved</span>' : 
-      '<span class="status-badge status-pending">⏳ Pending</span>';
+
+    const imageStatus = getImageApprovalStatus(booking);
+    const statusBadge = imageStatus === 'approved'
+      ? '<span class="status-badge status-approved">✓ Approved</span>'
+      : imageStatus === 'rejected'
+        ? '<span class="status-badge status-rejected">✗ Rejected</span>'
+        : '<span class="status-badge status-pending">⏳ Pending</span>';
+
+    const bookingStatus = getBookingStatus(booking);
+    const bookingStatusBadge = bookingStatus === 'approved'
+      ? '<span class="status-badge status-approved">✓ Service Approved</span>'
+      : bookingStatus === 'cancelled'
+        ? '<span class="status-badge status-cancelled">✗ Service Declined</span>'
+        : '<span class="status-badge status-pending">⏳ Service Pending</span>';
+
+    const canChangeService = !['completed'].includes(bookingStatus);
+    const approveServiceDisabled = !canChangeService || bookingStatus === 'approved';
+    const declineServiceDisabled = !canChangeService || bookingStatus === 'cancelled';
+
+    const approveImageDisabled = imageStatus === 'approved';
+    const rejectImageDisabled = imageStatus === 'rejected';
     
     card.innerHTML = `
       <div class="image-preview">
@@ -1036,21 +1098,74 @@ function displayStyleImages(bookings) {
         <div class="status-row">
           ${statusBadge}
         </div>
+        <div class="status-row">
+          ${bookingStatusBadge}
+        </div>
       </div>
-      <div class="image-actions">
-        <button class="btn btn-accept" onclick="approveStyleImage('${booking.id}', true)">✓ Approve</button>
-        <button class="btn btn-decline" onclick="approveStyleImage('${booking.id}', false)">✗ Reject</button>
-      </div>
+        <div class="image-actions">
+          <button class="btn btn-accept" data-action="image-approve" data-booking-id="${booking.id}" ${approveImageDisabled ? 'disabled' : ''}>✓ Approve Image</button>
+          <button class="btn btn-decline" data-action="image-reject" data-booking-id="${booking.id}" ${rejectImageDisabled ? 'disabled' : ''}>✗ Reject Image</button>
+        </div>
+        <div class="image-actions image-actions-secondary">
+          <button class="btn btn-accept" data-action="service-approve" data-booking-id="${booking.id}" ${approveServiceDisabled ? 'disabled' : ''}>✓ Approve Service</button>
+          <button class="btn btn-decline" data-action="service-decline" data-booking-id="${booking.id}" ${declineServiceDisabled ? 'disabled' : ''}>✗ Decline Service</button>
+        </div>
     `;
     
     grid.appendChild(card);
   });
   
   container.appendChild(grid);
+
+  // Event delegation: reliable clicks even after re-render.
+  grid.addEventListener('click', async (event) => {
+    const button = event.target && event.target.closest ? event.target.closest('button[data-action]') : null;
+    if (!button) return;
+    if (button.disabled) return;
+
+    const bookingId = String(button.getAttribute('data-booking-id') || '').trim();
+    const action = String(button.getAttribute('data-action') || '').trim();
+    if (!bookingId || !action) return;
+
+    const setBusy = (busy) => {
+      const parent = button.parentElement;
+      const allButtons = parent ? parent.querySelectorAll('button') : [];
+      allButtons.forEach(b => {
+        if (busy) {
+          b.dataset.prevDisabled = String(b.disabled);
+          b.disabled = true;
+        } else {
+          if (b.dataset.prevDisabled === 'true') b.disabled = true;
+          else b.disabled = false;
+          delete b.dataset.prevDisabled;
+        }
+      });
+    };
+
+    try {
+      setBusy(true);
+
+      if (action === 'image-approve') {
+        await approveStyleImage(bookingId, true, { silentReload: true });
+        showToast({ type: 'success', title: 'Image approved', message: 'Style reference image approved.' });
+      } else if (action === 'image-reject') {
+        await approveStyleImage(bookingId, false, { silentReload: true });
+        showToast({ type: 'success', title: 'Image rejected', message: 'Style reference image rejected.' });
+      } else if (action === 'service-approve') {
+        await updateBookingStatus(bookingId, 'accepted', { skipCloseModal: true, skipReload: true });
+        await loadStyleImages();
+      } else if (action === 'service-decline') {
+        await updateBookingStatus(bookingId, 'declined', { skipCloseModal: true, skipReload: true });
+        await loadStyleImages();
+      }
+    } finally {
+      setBusy(false);
+    }
+  });
 }
 
 // Approve or Disapprove Style Image
-async function approveStyleImage(bookingId, approved) {
+async function approveStyleImage(bookingId, approved, options = {}) {
   try {
     const response = await adminFetch(`/bookings/${bookingId}/approve-image`, {
       method: 'PUT',
@@ -1059,15 +1174,28 @@ async function approveStyleImage(bookingId, approved) {
       },
       body: JSON.stringify({ approved })
     });
+
+    const result = await response.json().catch(() => null);
     
     if (response.ok) {
-      loadStyleImages();
+      if (!options.silentReload) {
+        showToast({
+          type: 'success',
+          title: approved ? 'Approved' : 'Rejected',
+          message: approved ? 'Image approved successfully.' : 'Image rejected successfully.'
+        });
+      }
+      await loadStyleImages();
     } else {
-      alert('Error updating image approval status');
+      showToast({
+        type: 'error',
+        title: 'Update failed',
+        message: (result && result.error) ? result.error : 'Error updating image approval status.'
+      });
     }
   } catch (error) {
     console.error('Error approving image:', error);
-    alert('Error updating image approval status');
+    showToast({ type: 'error', title: 'Network error', message: 'Could not update image approval. Please try again.' });
   }
 }
 
@@ -1322,6 +1450,138 @@ function truncateText(text, length) {
     return text.substring(0, length) + '...';
   }
   return text;
+}
+
+// Product Orders (Admin)
+async function loadProductOrders() {
+  const container = document.getElementById('productOrdersList');
+  if (!container) return;
+
+  try {
+    const response = await adminFetch('/product-orders');
+    const orders = await response.json();
+    displayProductOrders(Array.isArray(orders) ? orders : []);
+  } catch (error) {
+    console.error('Error loading product orders:', error);
+    container.innerHTML = '<div class="loading">Error loading product orders</div>';
+  }
+}
+
+function displayProductOrders(orders) {
+  const container = document.getElementById('productOrdersList');
+  if (!container) return;
+
+  container.innerHTML = '';
+
+  if (!orders.length) {
+    container.innerHTML = '<div class="loading">No product orders found</div>';
+    return;
+  }
+
+  orders.forEach(order => {
+    const normalizedStatus = normalizeBookingStatus(order.status || 'pending');
+    const statusLabel = getStatusLabel(normalizedStatus);
+    const approveDisabled = ['approved', 'cancelled', 'completed'].includes(normalizedStatus);
+    const rejectDisabled = ['approved', 'cancelled', 'completed'].includes(normalizedStatus);
+
+    const itemsHtml = Array.isArray(order.items)
+      ? order.items.map(i => `<li>${i.name} × ${i.quantity} — ₦${Number(i.lineTotal || 0).toLocaleString()}</li>`).join('')
+      : '';
+
+    const card = document.createElement('div');
+    card.className = 'booking-card';
+    card.innerHTML = `
+      <div class="booking-header">
+        <h4>${order.name}</h4>
+        <span class="status-badge status-${normalizedStatus}">${statusLabel}</span>
+      </div>
+      <div class="booking-info">
+        <div class="booking-field">
+          <label>Order ID</label>
+          <strong>${order.id}</strong>
+        </div>
+        <div class="booking-field">
+          <label>Email / Phone</label>
+          <strong>${order.email}<br>${order.phone}</strong>
+        </div>
+        <div class="booking-field">
+          <label>Total</label>
+          <strong>₦${Number(order.totalAmount || 0).toLocaleString()}</strong>
+        </div>
+        <div class="booking-field">
+          <label>Payment</label>
+          <strong>${order.paymentMethod || 'N/A'}<br>Status: ${order.paymentStatus || 'pending'}</strong>
+        </div>
+      </div>
+      <div class="booking-field product-order-address" style="margin:10px 0;">
+        <label>Items</label>
+        <ul class="product-order-items">${itemsHtml || '<li>No items</li>'}</ul>
+      </div>
+      <div class="booking-field" style="margin-bottom:10px;">
+        <label>Address</label>
+        <strong>${order.address || 'N/A'}</strong>
+      </div>
+      <div class="booking-actions">
+        <button class="btn btn-accept" ${approveDisabled ? 'disabled' : ''} onclick="updateProductOrderStatus('${order.id}', 'approved')">✓ Approve</button>
+        <button class="btn btn-decline" ${rejectDisabled ? 'disabled' : ''} onclick="updateProductOrderStatus('${order.id}', 'cancelled')">✗ Reject</button>
+        <button class="btn btn-decline" onclick="deleteProductOrder('${order.id}')">Delete</button>
+      </div>
+    `;
+
+    container.appendChild(card);
+  });
+}
+
+async function updateProductOrderStatus(orderId, status) {
+  try {
+    const response = await adminFetch(`/product-orders/${orderId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status })
+    });
+
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      showToast({
+        type: 'error',
+        title: 'Update failed',
+        message: (result && result.error) ? result.error : 'Could not update product order status.'
+      });
+      return;
+    }
+
+    showToast({ type: 'success', title: 'Updated', message: 'Product order updated successfully.' });
+    loadProductOrders();
+  } catch (error) {
+    console.error('Error updating product order:', error);
+    showToast({ type: 'error', title: 'Network error', message: 'Could not update product order.' });
+  }
+}
+
+async function deleteProductOrder(orderId) {
+  if (!confirm('Are you sure you want to delete this product order?')) return;
+
+  try {
+    const response = await adminFetch(`/product-orders/${orderId}`, {
+      method: 'DELETE'
+    });
+
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      showToast({
+        type: 'error',
+        title: 'Delete failed',
+        message: (result && result.error) ? result.error : 'Could not delete product order.'
+      });
+      return;
+    }
+
+    showToast({ type: 'success', title: 'Deleted', message: 'Product order deleted successfully.' });
+    loadProductOrders();
+  } catch (error) {
+    console.error('Error deleting product order:', error);
+    showToast({ type: 'error', title: 'Network error', message: 'Could not delete product order.' });
+  }
 }
 
 // Show Welcome Message

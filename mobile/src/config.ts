@@ -74,7 +74,9 @@ function getDefaultHost(): string {
   return 'localhost';
 }
 
-const DEFAULT_WEB_BASE_URL = `http://${getDefaultHost()}:3000`;
+// Local dev default: this repo typically runs the Express server on 3001.
+// You can override via EXPO_PUBLIC_WEB_BASE_URL / EXPO_PUBLIC_API_BASE_URL.
+const DEFAULT_WEB_BASE_URL = `http://${getDefaultHost()}:3001`;
 
 const rawWebBase = normalizeBaseUrl((process.env.EXPO_PUBLIC_WEB_BASE_URL || '').trim() || DEFAULT_WEB_BASE_URL);
 const rawApiBase = normalizeBaseUrl((process.env.EXPO_PUBLIC_API_BASE_URL || '').trim() || rawWebBase);

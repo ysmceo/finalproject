@@ -695,13 +695,179 @@ body.dark-mode .product-stock {
   color: #d7d7d7;
 }
 
+/* Product cart & checkout panel */
+.product-cart-panel {
+  margin-top: 20px;
+  padding: 16px;
+  border: 1px solid rgba(0,0,0,0.1);
+  border-radius: 12px;
+  background: linear-gradient(160deg, #fff8fc, #fff);
+  box-shadow: 0 8px 24px rgba(74,14,78,0.08);
+}
+
+.product-cart-title {
+  margin-bottom: 8px;
+  color: var(--secondary-color);
+}
+
+.product-cart-items {
+  margin-bottom: 10px;
+}
+
+.product-cart-total {
+  font-weight: 700;
+  margin-bottom: 12px;
+  color: var(--secondary-color);
+}
+
+.product-cart-checkout-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 10px;
+}
+
+.product-cart-actions {
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 12px;
+}
+
+.product-cart-clear-btn {
+  background: #666;
+}
+
+.product-cart-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+  padding: 8px 10px;
+  border: 1px solid rgba(255,20,147,0.2);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.75);
+}
+
+.product-cart-unit,
+.product-cart-line {
+  color: #444;
+  font-weight: 600;
+}
+
+.product-cart-qty {
+  width: 72px;
+  padding: 6px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+}
+
+.product-cart-remove-btn {
+  background: #666;
+  padding: 6px 10px;
+  width: auto;
+}
+
+body.dark-mode .product-cart-panel {
+  background: linear-gradient(160deg, #2d1f3a, #352244);
+  border-color: rgba(255, 215, 0, 0.2);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.35);
+}
+
+body.dark-mode .product-cart-title,
+body.dark-mode .product-cart-total {
+  color: var(--accent-color);
+}
+
+body.dark-mode .product-cart-row {
+  background: rgba(0,0,0,0.25);
+  border-color: rgba(255, 215, 0, 0.22);
+}
+
+body.dark-mode .product-cart-unit,
+body.dark-mode .product-cart-line {
+  color: var(--dark-text);
+}
+
+body.dark-mode .product-cart-qty {
+  background: #1a1a1a;
+  color: var(--dark-text);
+  border-color: var(--dark-border);
+}
+
 /* Booking Section */
 .booking-section {
-  background: linear-gradient(135deg, rgba(255,255,255,0.96), rgba(248,249,250,0.96)),
-              url('https://images.unsplash.com/photo-1460661419201-fd4cecdf8a8b?w=1400&h=800&fit=crop') center/cover;
+  position: relative;
+  overflow: hidden;
+  background: radial-gradient(circle at 15% 20%, rgba(255, 20, 147, 0.15), transparent 60%),
+              linear-gradient(135deg, rgba(255,255,255,0.92), rgba(248,249,250,0.92));
   padding: 80px 0;
-  background-attachment: fixed;
-  background-position: center center;
+}
+
+/* Animated background slideshow behind the Booking section */
+.booking-bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.booking-bg::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(135deg, rgba(255,255,255,0.88), rgba(255,240,248,0.78));
+}
+
+.booking-bg__slide {
+  position: absolute;
+  inset: -20px;
+  background-size: cover;
+  background-position: center;
+  opacity: 0;
+  transform: scale(1.06);
+  filter: saturate(1.05) contrast(1.02);
+  animation: bookingSlideShow 18s infinite;
+}
+
+/* NOTE: Put your uploaded salon photo in /images as booking-bg.jpg to use it here. */
+.booking-bg__slide--1 {
+  background-image: url('/images/booking-bg.jpg');
+  animation-delay: 0s;
+}
+
+.booking-bg__slide--2 {
+  background-image: url('/images/p6%20styling.jpg');
+  animation-delay: 6s;
+}
+
+.booking-bg__slide--3 {
+  background-image: url('/images/p5%20relaxation%20services.jpg');
+  animation-delay: 12s;
+}
+
+@keyframes bookingSlideShow {
+  0% { opacity: 0; transform: scale(1.08) translate3d(0, 0, 0); }
+  10% { opacity: 1; }
+  33% { opacity: 1; transform: scale(1.02) translate3d(-1.2%, -0.8%, 0); }
+  45% { opacity: 0; }
+  100% { opacity: 0; transform: scale(1.08) translate3d(0, 0, 0); }
+}
+
+.booking-section > .container {
+  position: relative;
+  z-index: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .booking-bg__slide {
+    animation: none;
+    opacity: 0;
+  }
+  .booking-bg__slide--2 {
+    opacity: 1;
+    transform: none;
+  }
 }
 
 .booking-form {
@@ -714,6 +880,48 @@ body.dark-mode .product-stock {
 
 .form-group {
   margin-bottom: 20px;
+}
+
+.is-initially-hidden {
+  display: none;
+}
+
+.form-help-text {
+  display: block;
+  margin-top: 6px;
+  color: #666;
+}
+
+.form-help-text-tight {
+  display: block;
+  margin-top: 5px;
+  color: #666;
+}
+
+.form-label-spaced {
+  margin-top: 10px;
+}
+
+.compact-file-input {
+  padding: 8px !important;
+  cursor: pointer;
+}
+
+.preview-space-top {
+  margin-top: 10px;
+}
+
+.panel-space-top {
+  margin-top: 15px;
+}
+
+.pay-now-panel {
+  margin-top: 15px;
+  text-align: center;
+}
+
+.pay-now-hint {
+  margin-top: 8px;
 }
 
 .form-group label {
@@ -826,6 +1034,29 @@ body.dark-mode .product-stock {
   word-break: break-all;
 }
 
+.bank-pay-heading {
+  margin-bottom: 10px;
+}
+
+.bank-pay-full-span {
+  grid-column: 1 / -1;
+}
+
+.bank-pay-divider {
+  border: none;
+  border-top: 1px solid rgba(0,0,0,0.1);
+  margin: 14px 0;
+}
+
+.bank-pay-subheading {
+  margin-bottom: 8px;
+  color: var(--secondary-color);
+}
+
+.upload-receipt-btn {
+  margin-top: 10px;
+}
+
 body.dark-mode .bank-pay-card {
   background: var(--dark-bg-secondary);
   color: var(--dark-text);
@@ -837,6 +1068,11 @@ body.dark-mode .bank-pay-muted {
 
 body.dark-mode .bank-pay-value {
   color: var(--accent-color);
+}
+
+body.dark-mode .form-help-text,
+body.dark-mode .form-help-text-tight {
+  color: #c9c9c9;
 }
 
 /* Gallery */

@@ -17,6 +17,9 @@ const ONE_TIME_CODE_TTL_MS = 10 * 60 * 1000;
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || '';
 const PAYSTACK_PAYMENT_PAGE_URL = process.env.PAYSTACK_PAYMENT_PAGE_URL || '';
 const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
+const GROK_API_KEY = String(process.env.GROK_API_KEY || '').trim();
+const GROK_BASE_URL = String(process.env.GROK_BASE_URL || 'https://api.x.ai/v1').trim().replace(/\/+$/, '');
+const GROK_MODEL = String(process.env.GROK_MODEL || 'grok-2-latest').trim();
 
 const PAYMENTS_MODE = String(process.env.PAYMENTS_MODE || 'test').trim().toLowerCase();
 const IS_LIVE_MODE = PAYMENTS_MODE === 'live';
@@ -71,7 +74,59 @@ const SMTP_USER = process.env.SMTP_USER || '';
 const SMTP_PASS = process.env.SMTP_PASS || '';
 const SMTP_FROM = process.env.SMTP_FROM || 'CEO Unisex Salon <no-reply@ceosaloon.com>';
 const SEND_PAYMENT_EMAIL_RECEIPTS = String(process.env.SEND_PAYMENT_EMAIL_RECEIPTS || 'false').trim().toLowerCase() === 'true';
+const SEND_BOOKING_STATUS_EMAILS = String(process.env.SEND_BOOKING_STATUS_EMAILS || 'false').trim().toLowerCase() === 'true';
+const SEND_ADMIN_NEW_BOOKING_EMAILS = String(process.env.SEND_ADMIN_NEW_BOOKING_EMAILS || 'false').trim().toLowerCase() === 'true';
 const PAYMENT_RECEIPTS_BCC = process.env.PAYMENT_RECEIPTS_BCC || '';
+const SEND_ADMIN_LOGIN_OTP_EMAILS = String(process.env.SEND_ADMIN_LOGIN_OTP_EMAILS || 'true').trim().toLowerCase() === 'true';
+const SEND_ADMIN_LOGIN_OTP_SMS = String(process.env.SEND_ADMIN_LOGIN_OTP_SMS || 'true').trim().toLowerCase() === 'true';
+const ALLOW_ADMIN_OTP_RESPONSE_FALLBACK = String(process.env.ALLOW_ADMIN_OTP_RESPONSE_FALLBACK || 'true').trim().toLowerCase() === 'true';
+
+// SMS (Termii) - optional
+// Termii is commonly used in Nigeria and supports DND routes.
+const SEND_BOOKING_STATUS_SMS = String(process.env.SEND_BOOKING_STATUS_SMS || 'false').trim().toLowerCase() === 'true';
+const TERMII_API_KEY = process.env.TERMII_API_KEY || '';
+// Keep sender ID short to fit common SMS sender-id length limits; override in .env if needed.
+const TERMII_SENDER_ID = process.env.TERMII_SENDER_ID || 'CEO UNISEX';
+const TERMII_CHANNEL = String(process.env.TERMII_CHANNEL || 'generic').trim();
+const TERMII_BASE_URL = String(process.env.TERMII_BASE_URL || 'https://api.ng.termii.com').trim().replace(/\/+$/, '');
+
+function isTermiiConfigured() {
+  return Boolean(String(TERMII_API_KEY || '').trim()) && Boolean(String(TERMII_SENDER_ID || '').trim());
+}
+
+function normalizePhoneToE164(phone) {
+  // Basic Nigeria-friendly normalization.
+  // Accepts: 070..., 80..., +234..., 234...
+  const raw = String(phone || '').trim();
+  if (!raw) return '';
+  const digits = raw.replace(/[^0-9+]/g, '');
+
+  // If already looks like +234xxxxxxxxxx
+  if (digits.startsWith('+') && digits.length >= 11) {
+    return digits;
+  }
+
+  const onlyDigits = digits.replace(/\D/g, '');
+  if (!onlyDigits) return '';
+
+  // 234XXXXXXXXXX
+  if (onlyDigits.startsWith('234') && onlyDigits.length >= 13) {
+    return `+${onlyDigits}`;
+  }
+
+  // 0XXXXXXXXXX -> +234XXXXXXXXXX
+  if (onlyDigits.startsWith('0') && onlyDigits.length >= 11) {
+    return `+234${onlyDigits.slice(1)}`;
+  }
+
+  // XXXXXXXXXX (10/11 digits without leading 0) -> assume Nigeria
+  if (onlyDigits.length === 10 || onlyDigits.length === 11) {
+    return `+234${onlyDigits.replace(/^0/, '')}`;
+  }
+
+  // Fallback: treat as international without plus
+  return `+${onlyDigits}`;
+}
 
 function isSmtpConfigured() {
   return Boolean(String(SMTP_HOST || '').trim()) &&
@@ -98,12 +153,12 @@ function getMailer() {
   });
 }
 
-async function sendEmail({ to, subject, text, html, replyTo }) {
+async function sendEmail({ to, subject, text, html, replyTo, bcc }) {
   const transporter = getMailer();
   const info = await transporter.sendMail({
     from: SMTP_FROM,
     to,
-    bcc: String(PAYMENT_RECEIPTS_BCC || '').trim() || undefined,
+    bcc: String(bcc || '').trim() || undefined,
     subject,
     text,
     html,
@@ -161,12 +216,299 @@ async function maybeSendPaymentReceiptEmail({ booking, provider, paidAmount, ref
     </div>
   `;
 
-  const info = await sendEmail({ to: toEmail, subject, text, html });
+  const info = await sendEmail({
+    to: toEmail,
+    subject,
+    text,
+    html,
+    bcc: String(PAYMENT_RECEIPTS_BCC || '').trim() || undefined
+  });
 
   booking.paymentReceiptEmailSentAt = new Date().toISOString();
   booking.paymentReceiptEmailTo = toEmail;
   booking.paymentReceiptEmailProvider = provider;
   booking.paymentReceiptEmailMessageId = info && info.messageId ? info.messageId : undefined;
+
+  return { sent: true };
+}
+
+async function maybeSendBookingStatusEmail({ booking, previousStatus, newStatus }) {
+  if (!SEND_BOOKING_STATUS_EMAILS) {
+    return { sent: false, skipped: true, reason: 'SEND_BOOKING_STATUS_EMAILS=false' };
+  }
+
+  if (!isSmtpConfigured()) {
+    return { sent: false, skipped: true, reason: 'SMTP not configured' };
+  }
+
+  if (!booking || !booking.email) {
+    return { sent: false, skipped: true, reason: 'Missing booking/email' };
+  }
+
+  const prev = String(previousStatus || '').trim().toLowerCase();
+  const next = String(newStatus || '').trim().toLowerCase();
+
+  // Only notify on transitions.
+  if (prev === next) {
+    return { sent: false, skipped: true, reason: 'No status change' };
+  }
+
+  // Idempotency per status.
+  if (next === 'approved' && booking.bookingAcceptedEmailSentAt) {
+    return { sent: false, skipped: true, reason: 'Already sent (approved)' };
+  }
+  if (next === 'cancelled' && booking.bookingDeclinedEmailSentAt) {
+    return { sent: false, skipped: true, reason: 'Already sent (cancelled)' };
+  }
+
+  if (!['approved', 'cancelled'].includes(next)) {
+    return { sent: false, skipped: true, reason: 'No email for this status' };
+  }
+
+  const toEmail = normalizeEmail(booking.email);
+  const bookingId = String(booking.id || '').trim();
+  const bookingCode = buildBookingStatusCode(bookingId);
+  const serviceName = String(booking.serviceName || '').trim() || 'Salon Service';
+  const date = String(booking.date || '').trim();
+  const time = String(booking.time || '').trim();
+
+  const subject = next === 'approved'
+    ? `CEO Unisex Salon - Appointment Accepted${bookingId ? ` (${bookingId})` : ''}`
+    : `CEO Unisex Salon - Appointment Declined${bookingId ? ` (${bookingId})` : ''}`;
+
+  const safeName = String(booking.name || 'Customer').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safeService = serviceName.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safeBookingId = bookingId.replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safeDateTime = `${date}${time ? ` at ${time}` : ''}`.trim();
+
+  const acceptedText = `Hi ${booking.name || 'Customer'},\n\nCEO Unisex Salon has ACCEPTED your appointment.\n\nService: ${serviceName}\nBooking Code: ${bookingCode}\nBooking ID: ${bookingId || 'N/A'}\nScheduled for: ${safeDateTime || 'N/A'}\n\nYour service will be rendered on the due date/time as requested in your booking.\n\nIf you need to reschedule, please reply to this email or contact the salon.\n\nThank you for choosing CEO Unisex Salon.`;
+  const declinedText = `Hi ${booking.name || 'Customer'},\n\nCEO Unisex Salon has DECLINED your appointment.\n\nService: ${serviceName}\nBooking Code: ${bookingCode}\nBooking ID: ${bookingId || 'N/A'}\nScheduled for: ${safeDateTime || 'N/A'}\n\nPlease contact the salon if you believe this was a mistake or to book another date/time.\n\nThank you.`;
+
+  const html = next === 'approved'
+    ? `
+      <div style="margin:0; padding:24px; background:#f4fff8; font-family:'Segoe UI', Arial, sans-serif; line-height:1.5; color:#1f2d23;">
+        <div style="max-width:620px; margin:0 auto; border-radius:18px; overflow:hidden; border:1px solid #cdeed8; background:#ffffff; box-shadow:0 12px 28px rgba(15,107,47,.12);">
+          <div style="padding:20px 24px; background:linear-gradient(135deg,#0f6b2f 0%,#1e9d53 55%,#55c786 100%); color:#ffffff;">
+            <div style="font-size:13px; opacity:.96; text-transform:uppercase; letter-spacing:.4px;">CEO Unisex Salon</div>
+            <h2 style="margin:8px 0 0; font-size:24px; line-height:1.2;">✅ Appointment Accepted</h2>
+          </div>
+          <div style="padding:24px;">
+            <p style="margin:0 0 10px; font-size:15px;">Hi <strong>${safeName}</strong>,</p>
+            <p style="margin:0 0 14px; font-size:15px; color:#31553c;">Great news! Your appointment has been accepted and your service will be carried out on the due date/time as requested.</p>
+            <div style="padding:14px; border:1px solid #d7f2e1; border-radius:12px; background:linear-gradient(180deg,#f9fffb 0%,#ffffff 100%);">
+              <div><strong>Service:</strong> ${safeService}</div>
+              <div><strong>Booking Code:</strong> ${bookingCode}</div>
+              <div><strong>Booking ID:</strong> ${safeBookingId || 'N/A'}</div>
+              <div><strong>Scheduled for:</strong> ${safeDateTime || 'N/A'}</div>
+            </div>
+            <p style="margin:12px 0 0; color:#5d7665; font-size:13px;">If you need to reschedule, please contact the salon.</p>
+          </div>
+        </div>
+      </div>
+    `
+    : `
+      <div style="margin:0; padding:24px; background:#fff6f8; font-family:'Segoe UI', Arial, sans-serif; line-height:1.5; color:#3b2430;">
+        <div style="max-width:620px; margin:0 auto; border-radius:18px; overflow:hidden; border:1px solid #f2cfdb; background:#ffffff; box-shadow:0 12px 28px rgba(176,0,32,.12);">
+          <div style="padding:20px 24px; background:linear-gradient(135deg,#b00020 0%,#d81b60 55%,#ff6f91 100%); color:#ffffff;">
+            <div style="font-size:13px; opacity:.96; text-transform:uppercase; letter-spacing:.4px;">CEO Unisex Salon</div>
+            <h2 style="margin:8px 0 0; font-size:24px; line-height:1.2;">❌ Appointment Declined</h2>
+          </div>
+          <div style="padding:24px;">
+            <p style="margin:0 0 10px; font-size:15px;">Hi <strong>${safeName}</strong>,</p>
+            <p style="margin:0 0 14px; font-size:15px; color:#6d3d4f;">Unfortunately, your appointment has been declined at this time.</p>
+            <div style="padding:14px; border:1px solid #f4dbe3; border-radius:12px; background:linear-gradient(180deg,#fff9fb 0%,#ffffff 100%);">
+              <div><strong>Service:</strong> ${safeService}</div>
+              <div><strong>Booking Code:</strong> ${bookingCode}</div>
+              <div><strong>Booking ID:</strong> ${safeBookingId || 'N/A'}</div>
+              <div><strong>Scheduled for:</strong> ${safeDateTime || 'N/A'}</div>
+            </div>
+            <p style="margin:12px 0 0; color:#83616f; font-size:13px;">Please contact the salon to book another time.</p>
+          </div>
+        </div>
+      </div>
+    `;
+
+  const info = await sendEmail({
+    to: toEmail,
+    subject,
+    text: next === 'approved' ? acceptedText : declinedText,
+    html
+  });
+
+  const nowIso = new Date().toISOString();
+  if (next === 'approved') {
+    booking.bookingAcceptedEmailSentAt = nowIso;
+  } else if (next === 'cancelled') {
+    booking.bookingDeclinedEmailSentAt = nowIso;
+  }
+  booking.bookingStatusEmailTo = toEmail;
+  booking.bookingStatusEmailLastMessageId = info && info.messageId ? info.messageId : undefined;
+
+  return { sent: true };
+}
+
+async function maybeSendAdminNewBookingEmail({ booking, db }) {
+  if (!SEND_ADMIN_NEW_BOOKING_EMAILS) {
+    return { sent: false, skipped: true, reason: 'SEND_ADMIN_NEW_BOOKING_EMAILS=false' };
+  }
+
+  if (!isSmtpConfigured()) {
+    return { sent: false, skipped: true, reason: 'SMTP not configured' };
+  }
+
+  if (!booking || !db || !Array.isArray(db.admins)) {
+    return { sent: false, skipped: true, reason: 'Missing booking/admin records' };
+  }
+
+  const recipients = Array.from(new Set(
+    db.admins
+      .map(admin => normalizeEmail(admin && admin.email ? admin.email : ''))
+      .filter(Boolean)
+  ));
+
+  if (!recipients.length) {
+    return { sent: false, skipped: true, reason: 'No admin email recipients found' };
+  }
+
+  const bookingId = String(booking.id || '').trim();
+  const bookingCode = buildBookingStatusCode(bookingId);
+  const customerName = String(booking.name || '').trim() || 'Customer';
+  const customerEmail = normalizeEmail(booking.email);
+  const customerPhone = normalizePhone(booking.phone);
+  const serviceName = String(booking.serviceName || '').trim() || 'Salon Service';
+  const date = String(booking.date || '').trim();
+  const time = String(booking.time || '').trim();
+  const when = `${date}${time ? ` at ${time}` : ''}`.trim() || 'N/A';
+  const serviceMode = String(booking.serviceMode || '').trim() || 'in_salon';
+
+  const safe = (v) => String(v || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const subject = `New Booking Received - ${bookingCode}${bookingId ? ` (${bookingId})` : ''}`;
+  const text = `A new booking has been created.\n\nBooking Code: ${bookingCode}\nBooking ID: ${bookingId || 'N/A'}\nCustomer: ${customerName}\nCustomer Email: ${customerEmail || 'N/A'}\nCustomer Phone: ${customerPhone || 'N/A'}\nService: ${serviceName}\nScheduled for: ${when}\nService Mode: ${serviceMode}\nAmount Due Now: ₦${Number(booking.amountDueNow || 0).toLocaleString()}\nPayment Method: ${String(booking.paymentMethod || '').trim() || 'N/A'}\n\nPlease log in to the admin dashboard to review this booking.`;
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height:1.5;">
+      <h2 style="margin:0 0 10px; color:#4a0e4e;">📌 New Booking Received</h2>
+      <p style="margin:0 0 12px;">A new customer booking has been submitted.</p>
+      <div style="padding:12px; border:1px solid #eee; border-radius:10px; background:#faf7ff;">
+        <div><strong>Booking Code:</strong> ${safe(bookingCode)}</div>
+        <div><strong>Booking ID:</strong> ${safe(bookingId || 'N/A')}</div>
+        <div><strong>Customer:</strong> ${safe(customerName)}</div>
+        <div><strong>Customer Email:</strong> ${safe(customerEmail || 'N/A')}</div>
+        <div><strong>Customer Phone:</strong> ${safe(customerPhone || 'N/A')}</div>
+        <div><strong>Service:</strong> ${safe(serviceName)}</div>
+        <div><strong>Scheduled for:</strong> ${safe(when)}</div>
+        <div><strong>Service Mode:</strong> ${safe(serviceMode)}</div>
+        <div><strong>Amount Due Now:</strong> ₦${Number(booking.amountDueNow || 0).toLocaleString()}</div>
+        <div><strong>Payment Method:</strong> ${safe(String(booking.paymentMethod || '').trim() || 'N/A')}</div>
+      </div>
+      <p style="margin:12px 0 0; color:#666; font-size:13px;">Please review this booking in the admin dashboard.</p>
+    </div>
+  `;
+
+  const info = await sendEmail({
+    to: recipients.join(','),
+    subject,
+    text,
+    html,
+    replyTo: customerEmail || undefined
+  });
+
+  booking.adminBookingEmailSentAt = new Date().toISOString();
+  booking.adminBookingEmailRecipients = recipients;
+  booking.adminBookingEmailMessageId = info && info.messageId ? info.messageId : undefined;
+
+  return { sent: true, recipients };
+}
+
+async function sendSmsViaTermii({ to, message }) {
+  if (!isTermiiConfigured()) {
+    const err = new Error('Termii is not configured');
+    err.code = 'TERMII_NOT_CONFIGURED';
+    throw err;
+  }
+
+  const payload = {
+    to: String(to).trim(),
+    from: String(TERMII_SENDER_ID).trim(),
+    sms: String(message || '').trim(),
+    type: 'plain',
+    channel: TERMII_CHANNEL || 'generic',
+    api_key: String(TERMII_API_KEY).trim()
+  };
+
+  const response = await fetch(`${TERMII_BASE_URL}/api/sms/send`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const err = new Error('Failed to send SMS');
+    err.code = 'TERMII_SEND_FAILED';
+    err.details = data;
+    throw err;
+  }
+
+  return data;
+}
+
+async function maybeSendBookingStatusSms({ booking, previousStatus, newStatus }) {
+  if (!SEND_BOOKING_STATUS_SMS) {
+    return { sent: false, skipped: true, reason: 'SEND_BOOKING_STATUS_SMS=false' };
+  }
+
+  if (!booking || !booking.phone) {
+    return { sent: false, skipped: true, reason: 'Missing booking/phone' };
+  }
+
+  const prev = String(previousStatus || '').trim().toLowerCase();
+  const next = String(newStatus || '').trim().toLowerCase();
+  if (prev === next) {
+    return { sent: false, skipped: true, reason: 'No status change' };
+  }
+
+  // Only notify on accepted/declined outcomes.
+  if (!['approved', 'cancelled'].includes(next)) {
+    return { sent: false, skipped: true, reason: 'No SMS for this status' };
+  }
+
+  // Idempotency per status.
+  if (next === 'approved' && booking.bookingAcceptedSmsSentAt) {
+    return { sent: false, skipped: true, reason: 'Already sent (approved)' };
+  }
+  if (next === 'cancelled' && booking.bookingDeclinedSmsSentAt) {
+    return { sent: false, skipped: true, reason: 'Already sent (cancelled)' };
+  }
+
+  const to = normalizePhoneToE164(booking.phone);
+  if (!to) {
+    return { sent: false, skipped: true, reason: 'Invalid phone number' };
+  }
+
+  const bookingId = String(booking.id || '').trim();
+  const bookingCode = buildBookingStatusCode(bookingId);
+  const serviceName = String(booking.serviceName || '').trim() || 'Salon Service';
+  const date = String(booking.date || '').trim();
+  const time = String(booking.time || '').trim();
+  const when = `${date}${time ? ` ${time}` : ''}`.trim();
+
+  const message = next === 'approved'
+    ? `CEO Unisex Salon: Appointment ACCEPTED. ${serviceName}. ${when ? `Due: ${when}. ` : ''}Booking Code: ${bookingCode}. ${bookingId ? `Booking ID: ${bookingId}. ` : ''}Service will be rendered on the due date/time as requested.`
+    : `CEO Unisex Salon: Appointment DECLINED. ${serviceName}. ${when ? `Due: ${when}. ` : ''}Booking Code: ${bookingCode}. ${bookingId ? `Booking ID: ${bookingId}. ` : ''}Please contact the salon to reschedule.`;
+
+  const smsResult = await sendSmsViaTermii({ to, message });
+
+  const nowIso = new Date().toISOString();
+  if (next === 'approved') {
+    booking.bookingAcceptedSmsSentAt = nowIso;
+  } else {
+    booking.bookingDeclinedSmsSentAt = nowIso;
+  }
+  booking.bookingStatusSmsTo = to;
+  booking.bookingStatusSmsProvider = 'termii';
+  booking.bookingStatusSmsResult = smsResult;
 
   return { sent: true };
 }
@@ -310,6 +652,7 @@ function initializeDatabase() {
   if (!fs.existsSync(dbPath)) {
     const initialData = {
       bookings: [],
+      productOrders: [],
       messages: [],
       admins: [],
       adminAccessCodes: [],
@@ -334,6 +677,7 @@ function readDatabase() {
   const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
 
   if (!Array.isArray(db.bookings)) db.bookings = [];
+  if (!Array.isArray(db.productOrders)) db.productOrders = [];
   if (!Array.isArray(db.messages)) db.messages = [];
   if (!Array.isArray(db.services)) db.services = [];
   if (!Array.isArray(db.products)) db.products = [];
@@ -380,6 +724,11 @@ function normalizePhone(phone) {
 function buildBankTransferReference(bookingId) {
   const shortId = String(bookingId || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
   return `CEOSALOON-${shortId || 'BOOKING'}`;
+}
+
+function buildBookingStatusCode(bookingId) {
+  const shortId = String(bookingId || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
+  return `BOOK-${shortId || 'UNKNOWN'}`;
 }
 
 function isPaystackConfigured() {
@@ -538,6 +887,10 @@ function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
 
+function isGrokConfigured() {
+  return Boolean(String(GROK_API_KEY || '').trim());
+}
+
 function extractAdminToken(req) {
   const authHeader = String(req.headers.authorization || '').trim();
 
@@ -630,6 +983,183 @@ app.get('/api/products', (req, res) => {
   res.json(db.products);
 });
 
+// Create product order (Customer)
+app.post('/api/product-orders', async (req, res) => {
+  const {
+    name,
+    email,
+    phone,
+    address,
+    paymentMethod,
+    items
+  } = req.body || {};
+
+  const normalizedName = String(name || '').trim();
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedPhone = normalizePhone(phone);
+  const normalizedAddress = String(address || '').trim();
+  const normalizedPaymentMethod = String(paymentMethod || '').trim();
+  const normalizedItems = Array.isArray(items) ? items : [];
+
+  if (!normalizedName || !normalizedEmail || !normalizedPhone || !normalizedAddress || !normalizedPaymentMethod) {
+    return res.status(400).json({ error: 'name, email, phone, address and paymentMethod are required' });
+  }
+
+  if (!normalizedItems.length) {
+    return res.status(400).json({ error: 'At least one product item is required' });
+  }
+
+  const db = readDatabase();
+  const orderItems = [];
+  let totalAmount = 0;
+
+  for (const item of normalizedItems) {
+    const productId = Number(item && item.productId);
+    const qty = Math.max(1, Number(item && item.quantity) || 0);
+    const product = db.products.find(p => Number(p.id) === productId);
+
+    if (!product) {
+      return res.status(400).json({ error: `Product not found (id: ${productId})` });
+    }
+
+    const stock = Number(product.stock || 0);
+    if (qty > stock) {
+      return res.status(400).json({ error: `Insufficient stock for ${product.name}. Available: ${stock}` });
+    }
+
+    const unitPrice = Number(product.price || 0);
+    const lineTotal = unitPrice * qty;
+    totalAmount += lineTotal;
+
+    orderItems.push({
+      productId: Number(product.id),
+      name: String(product.name || ''),
+      category: String(product.category || ''),
+      unitPrice,
+      quantity: qty,
+      lineTotal
+    });
+  }
+
+  if (totalAmount <= 0) {
+    return res.status(400).json({ error: 'Order amount must be greater than zero' });
+  }
+
+  // Reserve stock at checkout submission.
+  for (const line of orderItems) {
+    const product = db.products.find(p => Number(p.id) === Number(line.productId));
+    if (product) {
+      product.stock = Math.max(0, Number(product.stock || 0) - Number(line.quantity || 0));
+      product.updatedAt = new Date().toISOString();
+    }
+  }
+
+  const order = {
+    id: uuidv4(),
+    orderCode: `ORD-${Date.now().toString(36).toUpperCase()}`,
+    name: normalizedName,
+    email: normalizedEmail,
+    phone: normalizedPhone,
+    address: normalizedAddress,
+    paymentMethod: normalizedPaymentMethod,
+    items: orderItems,
+    totalAmount,
+    amountDueNow: totalAmount,
+    amountRemaining: totalAmount,
+    paymentStatus: 'pending',
+    paymentProvider: '',
+    paymentReference: '',
+    paidAmount: 0,
+    bankTransferReference: '',
+    status: 'pending',
+    createdAt: new Date().toISOString()
+  };
+
+  if (normalizedPaymentMethod === 'Bank Transfer') {
+    order.bankTransferReference = `CEOSALOON-PROD-${String(order.id).replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase()}`;
+  }
+
+  db.productOrders.push(order);
+
+  let adminEmailResult = null;
+  try {
+    if (SEND_ADMIN_NEW_BOOKING_EMAILS && isSmtpConfigured() && Array.isArray(db.admins) && db.admins.length) {
+      const recipients = Array.from(new Set(db.admins.map(a => normalizeEmail(a.email)).filter(Boolean)));
+      if (recipients.length) {
+        const itemsHtml = order.items.map(i => `<li>${String(i.name).replace(/</g,'&lt;').replace(/>/g,'&gt;')} × ${i.quantity} — ₦${Number(i.lineTotal || 0).toLocaleString()}</li>`).join('');
+        const text = `New product order received.\n\nOrder ID: ${order.id}\nCustomer: ${order.name}\nEmail: ${order.email}\nPhone: ${order.phone}\nTotal: ₦${Number(order.totalAmount || 0).toLocaleString()}\nPayment Method: ${order.paymentMethod}`;
+        const html = `
+          <div style="font-family: Arial, sans-serif; line-height:1.5;">
+            <h2 style="margin:0 0 10px; color:#4a0e4e;">🛒 New Product Order</h2>
+            <p><strong>Order ID:</strong> ${String(order.id).replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>
+            <p><strong>Customer:</strong> ${String(order.name).replace(/</g,'&lt;').replace(/>/g,'&gt;')} (${String(order.email).replace(/</g,'&lt;').replace(/>/g,'&gt;')})</p>
+            <p><strong>Phone:</strong> ${String(order.phone).replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>
+            <p><strong>Address:</strong> ${String(order.address).replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>
+            <p><strong>Payment Method:</strong> ${String(order.paymentMethod).replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>
+            <p><strong>Total:</strong> ₦${Number(order.totalAmount || 0).toLocaleString()}</p>
+            <p><strong>Items:</strong></p>
+            <ul>${itemsHtml}</ul>
+          </div>
+        `;
+
+        await sendEmail({
+          to: recipients.join(','),
+          subject: `New Product Order - ${order.orderCode} (${order.id})`,
+          text,
+          html,
+          replyTo: order.email
+        });
+
+        order.adminOrderEmailSentAt = new Date().toISOString();
+        order.adminOrderEmailRecipients = recipients;
+        adminEmailResult = { sent: true, recipients };
+      }
+    }
+  } catch (e) {
+    adminEmailResult = { sent: false, error: true, reason: e && e.message ? String(e.message) : 'Failed to notify admins' };
+  }
+
+  writeDatabase(db);
+
+  return res.status(201).json({
+    message: `Product order created successfully. Order ID: ${order.id}`,
+    notifications: { adminEmail: adminEmailResult },
+    paymentBankDetails: normalizedPaymentMethod === 'Bank Transfer'
+      ? {
+          bankName: SALON_BANK_NAME,
+          accountNumber: SALON_BANK_ACCOUNT_NUMBER,
+          accountName: SALON_BANK_ACCOUNT_NAME,
+          reference: order.bankTransferReference,
+          amountDueNow: order.amountDueNow
+        }
+      : null,
+    order
+  });
+});
+
+// Track product order (Customer)
+app.get('/api/product-orders/:id/track', (req, res) => {
+  const orderId = String(req.params.id || '').trim();
+  const email = normalizeEmail(req.query.email);
+
+  if (!orderId || !email) {
+    return res.status(400).json({ error: 'Order id and email are required' });
+  }
+
+  const db = readDatabase();
+  const order = db.productOrders.find(o => String(o.id) === orderId);
+
+  if (!order) {
+    return res.status(404).json({ error: 'Product order not found' });
+  }
+
+  if (normalizeEmail(order.email) !== email) {
+    return res.status(401).json({ error: 'Email does not match this product order' });
+  }
+
+  return res.json({ order });
+});
+
 // Get all products (Admin)
 app.get('/api/admin/products', requireAdminAuth, (req, res) => {
   const db = readDatabase();
@@ -718,8 +1248,89 @@ app.get('/api/weather', async (req, res) => {
   }
 });
 
+// Grok chatbot (Customer)
+app.post('/api/grok/chat', async (req, res) => {
+  const message = String(req.body && req.body.message ? req.body.message : '').trim();
+  const history = Array.isArray(req.body && req.body.history) ? req.body.history : [];
+
+  if (!message) {
+    return res.status(400).json({ error: 'message is required' });
+  }
+
+  // Dev-friendly fallback so chat UI still works when no key is configured.
+  if (!isGrokConfigured()) {
+    return res.json({
+      provider: 'local-fallback',
+      configured: false,
+      reply: `I can help with your salon booking. You said: "${message}".\n\nTo enable live Grok replies, add GROK_API_KEY to your .env and restart the server.`
+    });
+  }
+
+  try {
+    const priorMessages = history
+      .filter(item => item && typeof item === 'object')
+      .map(item => {
+        const role = String(item.role || '').trim().toLowerCase();
+        const content = String(item.content || '').trim();
+        if (!content) return null;
+        return {
+          role: ['assistant', 'system'].includes(role) ? role : 'user',
+          content
+        };
+      })
+      .filter(Boolean)
+      .slice(-12);
+
+    const messages = [
+      {
+        role: 'system',
+        content: 'You are the helpful virtual assistant for CEO Unisex Salon. Keep answers concise, friendly, and booking-focused.'
+      },
+      ...priorMessages,
+      { role: 'user', content: message }
+    ];
+
+    const response = await fetch(`${GROK_BASE_URL}/chat/completions`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${GROK_API_KEY}`,
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        model: GROK_MODEL,
+        messages,
+        temperature: 0.7
+      })
+    });
+
+    const data = await response.json().catch(() => null);
+    const reply = data && data.choices && data.choices[0] && data.choices[0].message
+      ? String(data.choices[0].message.content || '').trim()
+      : '';
+
+    if (!response.ok || !reply) {
+      return res.status(502).json({
+        error: 'Failed to get response from Grok',
+        details: data && data.error ? data.error : undefined
+      });
+    }
+
+    return res.json({
+      provider: 'xai-grok',
+      configured: true,
+      model: GROK_MODEL,
+      reply
+    });
+  } catch (error) {
+    return res.status(500).json({
+      error: 'Grok chat request failed',
+      details: error && error.message ? String(error.message) : undefined
+    });
+  }
+});
+
 // Create booking
-app.post('/api/bookings', upload.single('styleImage'), (req, res) => {
+app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
   const {
     name,
     email,
@@ -789,7 +1400,11 @@ app.post('/api/bookings', upload.single('styleImage'), (req, res) => {
     refreshment: refreshment || 'No',
     specialRequests: specialRequests || '',
     styleImage: req.file ? `/uploads/${req.file.filename}` : null,
+    // Image approval state (admin)
     imageApproved: false,
+    imageApprovalStatus: req.file ? 'pending' : '',
+    imageApprovedAt: '',
+    imageRejectedAt: '',
     status: 'pending',
     createdAt: new Date().toISOString()
   };
@@ -806,6 +1421,18 @@ app.post('/api/bookings', upload.single('styleImage'), (req, res) => {
     );
   }
 
+  let adminBookingEmail = null;
+  try {
+    adminBookingEmail = await maybeSendAdminNewBookingEmail({ booking, db });
+  } catch (error) {
+    adminBookingEmail = {
+      sent: false,
+      error: true,
+      reason: error && error.message ? String(error.message) : 'Failed to notify admins'
+    };
+    // Never block booking creation due to admin email errors.
+  }
+
   writeDatabase(db);
 
   res.status(201).json({
@@ -819,6 +1446,9 @@ app.post('/api/bookings', upload.single('styleImage'), (req, res) => {
           amountDueNow: booking.amountDueNow
         }
       : null,
+    notifications: {
+      adminEmail: adminBookingEmail
+    },
     booking
   });
 });
@@ -1665,8 +2295,199 @@ app.get('/api/admin/bookings', requireAdminAuth, (req, res) => {
   res.json(db.bookings);
 });
 
+// Get all product orders (Admin)
+app.get('/api/admin/product-orders', requireAdminAuth, (req, res) => {
+  const db = readDatabase();
+  res.json(db.productOrders || []);
+});
+
+// Update product order status (Admin)
+app.put('/api/admin/product-orders/:id', requireAdminAuth, (req, res) => {
+  const orderId = String(req.params.id || '').trim();
+  const status = String((req.body && req.body.status) || '').trim().toLowerCase();
+
+  if (!['pending', 'approved', 'cancelled', 'completed'].includes(status)) {
+    return res.status(400).json({ error: 'Invalid status' });
+  }
+
+  const db = readDatabase();
+  const order = (db.productOrders || []).find(o => String(o.id) === orderId);
+
+  if (!order) {
+    return res.status(404).json({ error: 'Product order not found' });
+  }
+
+  order.status = status;
+  order.updatedAt = new Date().toISOString();
+  writeDatabase(db);
+
+  return res.json({ message: 'Product order updated successfully', order });
+});
+
+// Delete product order (Admin)
+app.delete('/api/admin/product-orders/:id', requireAdminAuth, (req, res) => {
+  const orderId = String(req.params.id || '').trim();
+  const db = readDatabase();
+  const before = (db.productOrders || []).length;
+  db.productOrders = (db.productOrders || []).filter(o => String(o.id) !== orderId);
+
+  if (db.productOrders.length === before) {
+    return res.status(404).json({ error: 'Product order not found' });
+  }
+
+  writeDatabase(db);
+  return res.json({ message: 'Product order deleted successfully' });
+});
+
+// Initialize Paystack payment for product order (Customer)
+app.post('/api/product-orders/payments/paystack/initialize', async (req, res) => {
+  const { orderId, email, paymentChannel } = req.body || {};
+  const normalizedOrderId = String(orderId || '').trim();
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedChannel = String(paymentChannel || '').trim();
+
+  if (!normalizedOrderId || !normalizedEmail) {
+    return res.status(400).json({ error: 'orderId and email are required' });
+  }
+
+  const db = readDatabase();
+  const order = (db.productOrders || []).find(o => String(o.id) === normalizedOrderId);
+  if (!order) {
+    return res.status(404).json({ error: 'Product order not found' });
+  }
+
+  if (normalizeEmail(order.email) !== normalizedEmail) {
+    return res.status(401).json({ error: 'Email does not match this order' });
+  }
+
+  const amountInKobo = Math.round(Math.max(0, Number(order.amountDueNow || 0)) * 100);
+  if (!amountInKobo) {
+    return res.status(400).json({ error: 'No payable amount found for this order' });
+  }
+
+  const callbackUrl = `${PUBLIC_BASE_URL}/paystack-callback.html`;
+  const channels = [];
+  if (normalizedChannel) channels.push(normalizedChannel);
+
+  try {
+    const init = await paystackRequest('/transaction/initialize', {
+      email: order.email,
+      amount: amountInKobo,
+      callback_url: callbackUrl,
+      channels: channels.length ? channels : undefined,
+      metadata: {
+        productOrderId: order.id,
+        orderCode: order.orderCode || '',
+        amountDueNow: order.amountDueNow,
+        phone: order.phone
+      }
+    });
+
+    if (!init.ok || !init.data || init.data.status !== true) {
+      return res.status(502).json({ error: 'Failed to initialize payment', details: init.data });
+    }
+
+    order.paymentProvider = 'paystack';
+    order.paymentReference = init.data.data.reference;
+    order.paymentStatus = 'initiated';
+    order.paymentInitiatedAt = new Date().toISOString();
+    writeDatabase(db);
+
+    return res.json({
+      message: 'Payment initialized',
+      authorizationUrl: init.data.data.authorization_url,
+      reference: init.data.data.reference
+    });
+  } catch (error) {
+    if (error && error.code === 'PAYSTACK_NOT_CONFIGURED') {
+      return res.status(503).json({
+        error: 'Paystack is not configured on the server',
+        hint: 'Set PAYSTACK_SECRET_KEY in .env and restart the server.'
+      });
+    }
+
+    return res.status(500).json({
+      error: 'Failed to initialize payment',
+      details: {
+        message: error && error.message ? String(error.message) : undefined,
+        code: error && error.code ? String(error.code) : undefined
+      }
+    });
+  }
+});
+
+// Verify Paystack payment for product order (Customer)
+app.get('/api/product-orders/payments/paystack/verify/:reference', async (req, res) => {
+  const reference = String(req.params.reference || '').trim();
+  if (!reference) {
+    return res.status(400).json({ error: 'reference is required' });
+  }
+
+  if (!isPaystackConfigured()) {
+    return res.status(503).json({
+      error: 'Paystack is not configured on the server',
+      hint: 'Set PAYSTACK_SECRET_KEY in .env and restart the server.'
+    });
+  }
+
+  try {
+    const response = await fetch(`https://api.paystack.co/transaction/verify/${encodeURIComponent(reference)}`, {
+      method: 'GET',
+      headers: {
+        Authorization: `Bearer ${PAYSTACK_SECRET_KEY}`
+      }
+    });
+
+    const data = await response.json().catch(() => null);
+    if (!response.ok || !data || data.status !== true) {
+      return res.status(502).json({ error: 'Failed to verify payment', details: data });
+    }
+
+    const payData = data.data;
+    const orderId = payData && payData.metadata ? String(payData.metadata.productOrderId || '').trim() : '';
+    const db = readDatabase();
+    const order = orderId
+      ? (db.productOrders || []).find(o => String(o.id) === orderId)
+      : (db.productOrders || []).find(o => String(o.paymentReference || '').trim() === reference);
+
+    if (!order) {
+      return res.status(404).json({ error: 'Product order not found for this payment reference' });
+    }
+
+    const paid = payData.status === 'success';
+    const paidAmount = Math.round(Number(payData.amount || 0) / 100);
+
+    order.paymentProvider = 'paystack';
+    order.paymentReference = reference;
+    order.paidAmount = paid ? paidAmount : 0;
+    order.paymentStatus = paid ? 'paid' : 'failed';
+    order.paymentVerifiedAt = new Date().toISOString();
+    if (paid) {
+      order.amountRemaining = Math.max(0, Number(order.totalAmount || 0) - paidAmount);
+    }
+
+    writeDatabase(db);
+
+    return res.json({
+      ok: true,
+      paid,
+      order: {
+        id: order.id,
+        status: order.status,
+        paymentStatus: order.paymentStatus,
+        totalAmount: order.totalAmount,
+        amountRemaining: order.amountRemaining,
+        paidAmount: order.paidAmount,
+        paymentReference: order.paymentReference
+      }
+    });
+  } catch (error) {
+    return res.status(500).json({ error: 'Verification failed' });
+  }
+});
+
 // Update booking status (Admin)
-app.put('/api/admin/bookings/:id', requireAdminAuth, (req, res) => {
+app.put('/api/admin/bookings/:id', requireAdminAuth, async (req, res) => {
   const { status } = req.body;
   const bookingId = req.params.id;
 
@@ -1710,9 +2531,41 @@ app.put('/api/admin/bookings/:id', requireAdminAuth, (req, res) => {
     );
   }
 
+  let bookingStatusEmailResult = null;
+  let bookingStatusSmsResult = null;
+
+  try {
+    bookingStatusEmailResult = await maybeSendBookingStatusEmail({ booking, previousStatus, newStatus: normalizedStatus });
+  } catch (e) {
+    bookingStatusEmailResult = {
+      sent: false,
+      error: true,
+      reason: e && e.message ? String(e.message) : 'Email send failed'
+    };
+    // Never block admin updates due to email errors.
+  }
+
+  try {
+    bookingStatusSmsResult = await maybeSendBookingStatusSms({ booking, previousStatus, newStatus: normalizedStatus });
+  } catch (e) {
+    bookingStatusSmsResult = {
+      sent: false,
+      error: true,
+      reason: e && e.message ? String(e.message) : 'SMS send failed'
+    };
+    // Never block admin updates due to SMS errors.
+  }
+
   writeDatabase(db);
 
-  res.json({ message: 'Booking updated successfully', booking });
+  res.json({
+    message: 'Booking updated successfully',
+    booking,
+    notifications: {
+      email: bookingStatusEmailResult,
+      sms: bookingStatusSmsResult
+    }
+  });
 });
 
 // Approve or disapprove booking image
@@ -1731,11 +2584,64 @@ app.put('/api/admin/bookings/:id/approve-image', requireAdminAuth, (req, res) =>
     return res.status(400).json({ error: 'No image to approve' });
   }
 
-  booking.imageApproved = approved === true || approved === 'true';
-  booking.imageApprovedAt = new Date().toISOString();
+  const approvedBool = approved === true || approved === 'true';
+  const nowIso = new Date().toISOString();
+
+  booking.imageApproved = approvedBool;
+  booking.imageApprovalStatus = approvedBool ? 'approved' : 'rejected';
+
+  // Backward compatibility: older UI/data used imageApprovedAt only.
+  booking.imageApprovedAt = nowIso;
+  if (approvedBool) {
+    booking.imageRejectedAt = '';
+  } else {
+    booking.imageRejectedAt = nowIso;
+  }
   writeDatabase(db);
 
   res.json({ message: 'Image approval updated successfully', booking });
+});
+
+// Test booking status notifications (Admin)
+// This endpoint helps confirm email/SMS delivery config without changing booking status.
+app.post('/api/admin/bookings/:id/test-notify', requireAdminAuth, async (req, res) => {
+  const bookingId = String(req.params.id || '').trim();
+  const status = String((req.body && req.body.status) || 'approved').trim().toLowerCase();
+
+  if (!bookingId) {
+    return res.status(400).json({ error: 'Booking id is required' });
+  }
+
+  if (!['approved', 'cancelled'].includes(status)) {
+    return res.status(400).json({ error: 'status must be approved or cancelled' });
+  }
+
+  const db = readDatabase();
+  const booking = db.bookings.find(b => String(b.id) === bookingId);
+  if (!booking) {
+    return res.status(404).json({ error: 'Booking not found' });
+  }
+
+  // Use a fake previous status to force the notification helpers to run.
+  const previousStatus = status === 'approved' ? 'pending' : 'approved';
+
+  let email = null;
+  let sms = null;
+
+  try {
+    email = await maybeSendBookingStatusEmail({ booking, previousStatus, newStatus: status });
+  } catch (e) {
+    email = { sent: false, error: true, reason: e && e.message ? String(e.message) : 'Email send failed' };
+  }
+
+  try {
+    sms = await maybeSendBookingStatusSms({ booking, previousStatus, newStatus: status });
+  } catch (e) {
+    sms = { sent: false, error: true, reason: e && e.message ? String(e.message) : 'SMS send failed' };
+  }
+
+  writeDatabase(db);
+  return res.json({ message: 'Notification test completed', bookingId, status, notifications: { email, sms } });
 });
 
 // Send message
@@ -1906,10 +2812,11 @@ app.delete('/api/admin/bookings/:id', requireAdminAuth, (req, res) => {
 // Admin Authentication Routes
 
 // Request one-time admin login access code (requires secret passcode)
-app.post('/api/admin/request-login-access', (req, res) => {
-  const { email, secretPasscode } = req.body;
+app.post('/api/admin/request-login-access', async (req, res) => {
+  const { email, secretPasscode, phone } = req.body;
   const normalizedEmail = normalizeEmail(email);
   const normalizedSecretPasscode = String(secretPasscode || '').trim();
+  const normalizedPhone = normalizePhone(phone);
 
   if (!normalizedEmail || !normalizedSecretPasscode) {
     return res.status(400).json({ error: 'Email and secret passcode are required' });
@@ -1939,7 +2846,123 @@ app.post('/api/admin/request-login-access', (req, res) => {
     return !isExpired && !code.used;
   });
 
+  // If admin phone is not yet saved, allow setting it during OTP request.
+  if (!normalizePhone(admin.phone) && normalizedPhone) {
+    admin.phone = normalizedPhone;
+    admin.updatedAt = new Date().toISOString();
+  }
+
   const accessCode = generateOneTimeCode();
+  const otpMessage = `This is your OTP code: ${accessCode}`;
+  const safeCode = String(accessCode || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+
+  const secureOtpDeliveryEnabled = SEND_ADMIN_LOGIN_OTP_EMAILS || SEND_ADMIN_LOGIN_OTP_SMS;
+  const delivery = {
+    email: { attempted: false, sent: false, skipped: false, reason: '' },
+    sms: { attempted: false, sent: false, skipped: false, reason: '' }
+  };
+
+  if (SEND_ADMIN_LOGIN_OTP_EMAILS) {
+    delivery.email.attempted = true;
+
+    if (!isSmtpConfigured()) {
+      delivery.email.skipped = true;
+      delivery.email.reason = 'SMTP not configured';
+    } else {
+      try {
+        const subject = 'CEO Unisex Salon Admin OTP Code';
+        const text = `${otpMessage}\n\nThis code expires in 10 minutes. If you did not request this, ignore this message.`;
+        const decoratedCode = String(accessCode || '')
+          .split('')
+          .map(char => `<span style="display:inline-block; min-width:42px; padding:10px 0; margin:0 4px; text-align:center; border-radius:10px; background:#ffffff; color:#4a0e4e; border:1px solid #f1d3f6; box-shadow:0 4px 10px rgba(74,14,78,.08); font-weight:800; font-size:26px; letter-spacing:0;">${char.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>`)
+          .join('');
+        const html = `
+          <div style="margin:0; padding:24px; background:#f7f2ff; font-family:'Segoe UI', Arial, sans-serif; line-height:1.5; color:#2f2340;">
+            <div style="max-width:620px; margin:0 auto; border-radius:18px; overflow:hidden; border:1px solid #ead6ff; background:#ffffff; box-shadow:0 12px 28px rgba(74,14,78,.12);">
+              <div style="padding:22px 24px; background:linear-gradient(135deg,#5c1b66 0%,#8f2aa8 45%,#ff5fa2 100%); color:#ffffff;">
+                <div style="font-size:13px; opacity:.95; letter-spacing:.4px; text-transform:uppercase;">CEO Unisex Salon</div>
+                <h2 style="margin:8px 0 0; font-size:24px; line-height:1.2;">Admin Login OTP</h2>
+              </div>
+
+              <div style="padding:24px;">
+                <p style="margin:0 0 12px; font-size:15px; color:#4b3b62;">Hi Admin,</p>
+                <p style="margin:0 0 14px; font-size:15px; color:#4b3b62;">This is your OTP code. Use it to complete your admin login:</p>
+
+                <div style="margin:0 0 16px; padding:18px 12px; border-radius:14px; background:linear-gradient(180deg,#fff7ff 0%,#fff 100%); border:1px solid #f1d3f6; text-align:center;">
+                  <div style="margin:0 0 8px; font-size:12px; color:#8a6292; text-transform:uppercase; letter-spacing:.7px;">One-Time Password</div>
+                  <div aria-label="OTP code" style="white-space:nowrap;">${decoratedCode}</div>
+                  <div style="margin-top:10px; font-size:12px; color:#8a6292;">Code (plain): <strong style="color:#4a0e4e; letter-spacing:2px;">${safeCode}</strong></div>
+                </div>
+
+                <div style="margin:0 0 14px; padding:10px 12px; border-radius:10px; background:#eefbf3; border:1px solid #caedd7; color:#1e6a3a; font-size:14px;">
+                  ⏱ This code expires in <strong>10 minutes</strong>.
+                </div>
+
+                <p style="margin:0; font-size:13px; color:#7a6c8f;">If you did not request this code, please ignore this email.</p>
+              </div>
+            </div>
+          </div>
+        `;
+
+        await sendEmail({
+          to: normalizeEmail(admin.email),
+          subject,
+          text,
+          html
+        });
+
+        delivery.email.sent = true;
+      } catch (error) {
+        delivery.email.reason = error && error.message ? String(error.message) : 'Failed to send OTP email';
+      }
+    }
+  }
+
+  if (SEND_ADMIN_LOGIN_OTP_SMS) {
+    delivery.sms.attempted = true;
+    const adminPhone = normalizePhone(admin.phone);
+    const smsTo = normalizePhoneToE164(adminPhone);
+
+    if (!adminPhone) {
+      delivery.sms.skipped = true;
+      delivery.sms.reason = 'Admin phone is not configured';
+    } else if (!isTermiiConfigured()) {
+      delivery.sms.skipped = true;
+      delivery.sms.reason = 'Termii is not configured';
+    } else if (!smsTo) {
+      delivery.sms.skipped = true;
+      delivery.sms.reason = 'Invalid admin phone number';
+    } else {
+      try {
+        await sendSmsViaTermii({
+          to: smsTo,
+          message: `${otpMessage}. It expires in 10 minutes.`
+        });
+        delivery.sms.sent = true;
+      } catch (error) {
+        delivery.sms.reason = error && error.message ? String(error.message) : 'Failed to send OTP SMS';
+      }
+    }
+  }
+
+  const deliveredBy = [];
+  if (delivery.email.sent) deliveredBy.push('email');
+  if (delivery.sms.sent) deliveredBy.push('sms');
+
+  let fallbackToResponse = false;
+  if (secureOtpDeliveryEnabled && deliveredBy.length === 0) {
+    if (ALLOW_ADMIN_OTP_RESPONSE_FALLBACK) {
+      fallbackToResponse = true;
+      deliveredBy.push('response');
+    } else {
+      return res.status(503).json({
+        error: 'Failed to deliver OTP to admin email/phone',
+        hint: 'Configure SMTP for email OTP and/or Termii + admin phone for SMS OTP.',
+        delivery
+      });
+    }
+  }
+
   const accessCodeRecord = {
     id: uuidv4(),
     email: admin.email,
@@ -1952,10 +2975,18 @@ app.post('/api/admin/request-login-access', (req, res) => {
   db.adminAccessCodes.push(accessCodeRecord);
   writeDatabase(db);
 
-  res.json({
-    message: 'One-time access code generated successfully',
-    accessCode,
-    expiresInMinutes: 10
+  return res.json({
+    message: fallbackToResponse
+      ? 'OTP delivery channels failed. One-time access code returned in response as fallback.'
+      : deliveredBy.length
+      ? `One-time access code sent via ${deliveredBy.join(' & ')}`
+      : 'One-time access code generated successfully',
+    expiresInMinutes: 10,
+    deliveredBy: deliveredBy.length ? deliveredBy : ['response'],
+    delivery,
+    // Backward-compatibility fallback when secure OTP channels are disabled,
+    // or when channel delivery fails and response fallback is enabled.
+    accessCode: (!secureOtpDeliveryEnabled || fallbackToResponse) ? accessCode : undefined
   });
 });
 
@@ -1974,11 +3005,12 @@ app.get('/api/admin/registration-status', (req, res) => {
 
 // Admin Registration
 app.post('/api/admin/register', (req, res) => {
-  const { email, password, name, secretPasscode } = req.body;
+  const { email, password, name, secretPasscode, phone } = req.body;
   const normalizedEmail = normalizeEmail(email);
   const normalizedPassword = String(password || '').trim();
   const normalizedName = String(name || '').trim();
   const normalizedSecretPasscode = String(secretPasscode || '').trim();
+  const normalizedPhone = normalizePhone(phone);
 
   if (!normalizedEmail || !normalizedPassword || !normalizedName || !normalizedSecretPasscode) {
     return res.status(400).json({ error: 'Name, email, password, and secret passcode are required' });
@@ -2007,6 +3039,7 @@ app.post('/api/admin/register', (req, res) => {
     email: normalizedEmail,
     password: normalizedPassword,
     name: normalizedName,
+    phone: normalizedPhone || '',
     createdAt: new Date().toISOString()
   };
 

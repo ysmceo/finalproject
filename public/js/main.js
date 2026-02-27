@@ -3,6 +3,9 @@
 const API_URL = '/api';
 let cachedServices = [];
 let cachedProducts = [];
+let productCart = [];
+let lastProductOrderId = '';
+let lastProductOrderEmail = '';
 let paystackPaymentPageUrl = '';
 const serviceNameKeyMap = {
   1: 'service_hair_cut',
@@ -32,6 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
   setupPaystackPaymentPageLink();
   showRecentPaymentResult();
   setupEventListeners();
+  setupProductOrderListeners();
   initializePasswordVisibilityToggles();
   setMinDate();
   initializeClockAndWeather();
@@ -287,9 +291,200 @@ function displayProducts(products) {
       <div class="product-meta">${product.category}</div>
       <div class="product-price">₦${Number(product.price || 0).toLocaleString()}</div>
       <div class="product-stock">In stock: ${product.stock}</div>
+      <button class="submit-btn" style="margin-top:10px;" onclick="addProductToCart(${Number(product.id)})">Add to Cart</button>
     `;
     grid.appendChild(card);
   });
+}
+
+function setupProductOrderListeners() {
+  const placeBtn = document.getElementById('placeProductOrderBtn');
+  const payBtn = document.getElementById('payProductOrderBtn');
+  const clearBtn = document.getElementById('clearProductCartBtn');
+
+  if (placeBtn) placeBtn.addEventListener('click', handlePlaceProductOrder);
+  if (payBtn) payBtn.addEventListener('click', handlePayProductOrder);
+  if (clearBtn) {
+    clearBtn.addEventListener('click', () => {
+      productCart = [];
+      renderProductCart();
+      lastProductOrderId = '';
+      lastProductOrderEmail = '';
+      if (payBtn) payBtn.classList.add('hidden');
+    });
+  }
+
+  renderProductCart();
+}
+
+function addProductToCart(productId) {
+  const product = cachedProducts.find(p => Number(p.id) === Number(productId));
+  if (!product) return;
+
+  const existing = productCart.find(i => Number(i.productId) === Number(product.id));
+  if (existing) {
+    if (existing.quantity < Number(product.stock || 0)) {
+      existing.quantity += 1;
+    }
+  } else {
+    productCart.push({
+      productId: Number(product.id),
+      name: String(product.name || ''),
+      unitPrice: Number(product.price || 0),
+      stock: Number(product.stock || 0),
+      quantity: 1
+    });
+  }
+
+  renderProductCart();
+}
+
+function updateCartItemQuantity(productId, nextQty) {
+  const qty = Math.max(1, Number(nextQty) || 1);
+  const item = productCart.find(i => Number(i.productId) === Number(productId));
+  if (!item) return;
+  item.quantity = Math.min(qty, Math.max(1, Number(item.stock || 1)));
+  renderProductCart();
+}
+
+function removeProductFromCart(productId) {
+  productCart = productCart.filter(i => Number(i.productId) !== Number(productId));
+  renderProductCart();
+}
+
+function renderProductCart() {
+  const itemsEl = document.getElementById('productCartItems');
+  const totalEl = document.getElementById('productCartTotal');
+  if (!itemsEl || !totalEl) return;
+
+  if (!productCart.length) {
+    itemsEl.innerHTML = 'Your cart is empty.';
+    totalEl.textContent = 'Total: ₦0';
+    return;
+  }
+
+  let total = 0;
+  const rows = productCart.map(item => {
+    const lineTotal = Number(item.unitPrice || 0) * Number(item.quantity || 0);
+    total += lineTotal;
+    return `
+      <div class="product-cart-row">
+        <strong>${item.name}</strong>
+        <span class="product-cart-unit">₦${Number(item.unitPrice || 0).toLocaleString()}</span>
+        <input type="number" min="1" max="${Math.max(1, Number(item.stock || 1))}" value="${Number(item.quantity || 1)}" class="product-cart-qty" onchange="updateCartItemQuantity(${Number(item.productId)}, this.value)">
+        <span class="product-cart-line">Line: ₦${lineTotal.toLocaleString()}</span>
+        <button type="button" class="submit-btn product-cart-remove-btn" onclick="removeProductFromCart(${Number(item.productId)})">Remove</button>
+      </div>
+    `;
+  }).join('');
+
+  itemsEl.innerHTML = rows;
+  totalEl.textContent = `Total: ₦${Number(total).toLocaleString()}`;
+}
+
+async function handlePlaceProductOrder() {
+  if (!productCart.length) {
+    showMessage('productOrderMessage', 'Please add at least one product to cart.', 'error');
+    return;
+  }
+
+  const name = String(document.getElementById('productOrderName')?.value || '').trim();
+  const email = String(document.getElementById('productOrderEmail')?.value || '').trim().toLowerCase();
+  const phone = String(document.getElementById('productOrderPhone')?.value || '').trim();
+  const address = String(document.getElementById('productOrderAddress')?.value || '').trim();
+  const paymentMethod = String(document.getElementById('productOrderPaymentMethod')?.value || '').trim();
+
+  if (!name || !email || !phone || !address || !paymentMethod) {
+    showMessage('productOrderMessage', 'Please fill all checkout fields.', 'error');
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_URL}/product-orders`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        email,
+        phone,
+        address,
+        paymentMethod,
+        items: productCart.map(i => ({ productId: i.productId, quantity: i.quantity }))
+      })
+    });
+
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      showMessage('productOrderMessage', (result && result.error) ? result.error : 'Failed to place product order', 'error');
+      return;
+    }
+
+    lastProductOrderId = result && result.order ? String(result.order.id || '') : '';
+    lastProductOrderEmail = email;
+
+    showMessage('productOrderMessage', result.message || 'Product order placed successfully.', 'success');
+
+    const payBtn = document.getElementById('payProductOrderBtn');
+    if (payBtn && ['Credit Card', 'Debit Card', 'USSD', 'Paystack Bank Transfer'].includes(paymentMethod)) {
+      payBtn.classList.remove('hidden');
+    } else if (payBtn) {
+      payBtn.classList.add('hidden');
+    }
+
+    if (paymentMethod === 'Bank Transfer' && result && result.paymentBankDetails) {
+      const details = result.paymentBankDetails;
+      showMessage(
+        'productOrderMessage',
+        `Order created. Transfer ₦${Number(details.amountDueNow || 0).toLocaleString()} to ${details.bankName} ${details.accountNumber} (${details.accountName}). Ref: ${details.reference}`,
+        'success'
+      );
+    }
+
+    productCart = [];
+    renderProductCart();
+    loadProducts();
+  } catch (error) {
+    console.error('Product order error:', error);
+    showMessage('productOrderMessage', 'Error placing product order', 'error');
+  }
+}
+
+async function handlePayProductOrder() {
+  if (!lastProductOrderId || !lastProductOrderEmail) {
+    showMessage('productOrderMessage', 'No product order found to pay for.', 'error');
+    return;
+  }
+
+  const paymentChannel = String(document.getElementById('productOrderPaymentChannel')?.value || '').trim();
+
+  try {
+    const response = await fetch(`${API_URL}/product-orders/payments/paystack/initialize`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        orderId: lastProductOrderId,
+        email: lastProductOrderEmail,
+        paymentChannel
+      })
+    });
+
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      const hint = result && result.hint ? ` ${result.hint}` : '';
+      showMessage('productOrderMessage', ((result && result.error) ? result.error : 'Failed to start order payment') + hint, 'error');
+      return;
+    }
+
+    if (result.authorizationUrl) {
+      window.location.href = result.authorizationUrl;
+      return;
+    }
+
+    showMessage('productOrderMessage', 'Payment initialization did not return a payment URL.', 'error');
+  } catch (error) {
+    console.error('Product payment error:', error);
+    showMessage('productOrderMessage', 'Error starting product order payment', 'error');
+  }
 }
 
 // Populate Service Select
@@ -1066,12 +1261,52 @@ async function handleRequestAccessCode() {
     const result = await response.json();
 
     if (!response.ok) {
-      showAdminMessage('loginMessage', result.error || 'Failed to generate access code', 'error');
+      const hint = result && result.hint ? ` ${result.hint}` : '';
+      const delivery = result && result.delivery ? result.delivery : null;
+      const parts = [];
+
+      if (delivery && delivery.email && delivery.email.reason) {
+        parts.push(`Email: ${delivery.email.reason}`);
+      }
+
+      if (delivery && delivery.sms && delivery.sms.reason) {
+        parts.push(`SMS: ${delivery.sms.reason}`);
+      }
+
+      const details = parts.length ? ` (${parts.join(' | ')})` : '';
+      showAdminMessage('loginMessage', (result.error || 'Failed to generate access code') + hint + details, 'error');
       return;
     }
 
-    document.getElementById('loginAccessCode').value = result.accessCode;
-    showAdminMessage('loginMessage', `One-time code generated: ${result.accessCode} (valid ${result.expiresInMinutes} minutes).`, 'success');
+    const deliveredByRaw = result && result.deliveredBy ? result.deliveredBy : [];
+    const deliveredByList = Array.isArray(deliveredByRaw)
+      ? deliveredByRaw.map(item => String(item || '').trim().toLowerCase()).filter(Boolean)
+      : [String(deliveredByRaw || '').trim().toLowerCase()].filter(Boolean);
+    const expires = result && result.expiresInMinutes ? result.expiresInMinutes : 10;
+
+    if (deliveredByList.includes('email') && deliveredByList.includes('sms')) {
+      showAdminMessage('loginMessage', `OTP successfully sent to email/phone number. Enter it below (valid ${expires} minutes).`, 'success');
+      return;
+    }
+
+    if (deliveredByList.includes('email')) {
+      showAdminMessage('loginMessage', `OTP successfully sent to email. Enter it below (valid ${expires} minutes).`, 'success');
+      return;
+    }
+
+    if (deliveredByList.includes('sms')) {
+      showAdminMessage('loginMessage', `OTP successfully sent to phone number. Enter it below (valid ${expires} minutes).`, 'success');
+      return;
+    }
+
+    // Backward compatibility if email OTP is disabled.
+    if (result && result.accessCode) {
+      document.getElementById('loginAccessCode').value = result.accessCode;
+      showAdminMessage('loginMessage', `One-time code generated: ${result.accessCode} (valid ${expires} minutes).`, 'success');
+      return;
+    }
+
+    showAdminMessage('loginMessage', `OTP requested successfully. Enter the code (valid ${expires} minutes).`, 'success');
   } catch (error) {
     showAdminMessage('loginMessage', 'Error generating one-time access code', 'error');
   }
