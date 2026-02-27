@@ -521,8 +521,8 @@ const MONNIFY_ENV = String(process.env.MONNIFY_ENV || 'live').trim().toLowerCase
 const MONNIFY_BASE_URL = process.env.MONNIFY_BASE_URL || (MONNIFY_ENV === 'sandbox' ? 'https://sandbox.monnify.com' : 'https://api.monnify.com');
 
 const SALON_BANK_ACCOUNT_NUMBER = process.env.SALON_BANK_ACCOUNT_NUMBER || '0204661552';
-const SALON_BANK_NAME = process.env.SALON_BANK_NAME || 'GTBank';
-const SALON_BANK_ACCOUNT_NAME = process.env.SALON_BANK_ACCOUNT_NAME || 'CEO Saloon';
+const SALON_BANK_NAME = process.env.SALON_BANK_NAME || 'YSMBANK CEOS';
+const SALON_BANK_ACCOUNT_NAME = process.env.SALON_BANK_ACCOUNT_NAME || 'CEO SALOON';
 
 let monnifyAccessTokenCache = {
   token: '',
@@ -1344,7 +1344,8 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
     homeServiceRequested,
     homeServiceAddress,
     refreshment,
-    specialRequests
+    specialRequests,
+    productSelections
   } = req.body;
 
   const normalizedPaymentPlan = String(paymentPlan || '').trim();
@@ -1375,6 +1376,56 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
   const amountDueNow = normalizedPaymentPlan === 'deposit_50' ? Math.ceil(totalAmount * 0.5) : totalAmount;
   const amountRemaining = Math.max(0, totalAmount - amountDueNow);
 
+  let parsedProductSelections = [];
+  if (productSelections !== undefined && productSelections !== null && String(productSelections).trim() !== '') {
+    try {
+      const rawSelections = typeof productSelections === 'string'
+        ? JSON.parse(productSelections)
+        : productSelections;
+
+      if (!Array.isArray(rawSelections)) {
+        return res.status(400).json({ error: 'productSelections must be an array' });
+      }
+
+      parsedProductSelections = rawSelections
+        .map(item => ({
+          productId: Number(item && item.productId),
+          quantity: Math.max(1, Number(item && item.quantity) || 1)
+        }))
+        .filter(item => Number.isFinite(item.productId) && item.productId > 0);
+    } catch (error) {
+      return res.status(400).json({ error: 'Invalid productSelections format' });
+    }
+  }
+
+  const requestedProducts = [];
+  let requestedProductsTotal = 0;
+
+  for (const selection of parsedProductSelections) {
+    const product = db.products.find(p => Number(p.id) === Number(selection.productId));
+    if (!product) {
+      return res.status(400).json({ error: `Selected product not found (id: ${selection.productId})` });
+    }
+
+    const stock = Number(product.stock || 0);
+    if (selection.quantity > stock) {
+      return res.status(400).json({ error: `Insufficient stock for ${product.name}. Available: ${stock}` });
+    }
+
+    const unitPrice = Number(product.price || 0);
+    const lineTotal = unitPrice * selection.quantity;
+    requestedProductsTotal += lineTotal;
+
+    requestedProducts.push({
+      productId: Number(product.id),
+      name: String(product.name || ''),
+      category: String(product.category || ''),
+      unitPrice,
+      quantity: selection.quantity,
+      lineTotal
+    });
+  }
+
   const booking = {
     id: uuidv4(),
     name,
@@ -1399,6 +1450,9 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
     homeServiceAddress: isHomeServiceRequested ? normalizedHomeServiceAddress : '',
     refreshment: refreshment || 'No',
     specialRequests: specialRequests || '',
+    requestedProducts,
+    requestedProductsTotal,
+    hasProductRequest: requestedProducts.length > 0,
     styleImage: req.file ? `/uploads/${req.file.filename}` : null,
     // Image approval state (admin)
     imageApproved: false,

@@ -522,6 +522,10 @@ function displayBookings(bookings) {
 
     const card = document.createElement('div');
     card.className = 'booking-card product-order-card';
+    const requestedProducts = Array.isArray(booking.requestedProducts) ? booking.requestedProducts : [];
+    const requestedProductsSummary = requestedProducts.length
+      ? requestedProducts.map(item => `${item.name} × ${item.quantity}`).join(', ')
+      : 'None';
     card.innerHTML = `
       <div class="booking-header">
         <h4>${booking.name}</h4>
@@ -543,6 +547,10 @@ function displayBookings(bookings) {
         <div class="booking-field">
           <label>Contact</label>
           <strong>${booking.email}<br>${booking.phone}</strong>
+        </div>
+        <div class="booking-field">
+          <label>Store Products</label>
+          <strong>${requestedProductsSummary}</strong>
         </div>
       </div>
       <div class="booking-actions">
@@ -631,6 +639,10 @@ async function openBookingModal(bookingId) {
     const booking = bookings.find(b => b.id === bookingId);
     
     if (booking) {
+      const requestedProducts = Array.isArray(booking.requestedProducts) ? booking.requestedProducts : [];
+      const requestedProductsHtml = requestedProducts.length
+        ? `<ul class="product-order-items">${requestedProducts.map(item => `<li>${item.name} × ${item.quantity} — ₦${Number(item.lineTotal || 0).toLocaleString()}</li>`).join('')}</ul>`
+        : 'None';
       const modalBody = document.getElementById('modalBody');
       modalBody.innerHTML = `
         <div>
@@ -690,6 +702,12 @@ async function openBookingModal(bookingId) {
 
           <label>Special Requests</label>
           <div class="value">${booking.specialRequests || 'None'}</div>
+
+          <label>Store Products Requested</label>
+          <div class="value">${requestedProductsHtml}</div>
+
+          <label>Requested Products Total</label>
+          <div class="value">₦${Number(booking.requestedProductsTotal || 0).toLocaleString()}</div>
 
           <label>Style Image</label>
           <div class="value">${booking.styleImage ? `<a href="${booking.styleImage}" target="_blank" rel="noopener">🖼️ View uploaded style image</a>` : 'No style image uploaded'}</div>

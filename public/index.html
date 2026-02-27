@@ -105,41 +105,6 @@
         <!-- Products loaded from API -->
       </div>
 
-      <div id="productCartPanel" class="product-cart-panel">
-        <h3 class="product-cart-title">🛒 Product Cart & Checkout</h3>
-        <div id="productCartItems" class="product-cart-items">Your cart is empty.</div>
-        <div id="productCartTotal" class="product-cart-total">Total: ₦0</div>
-
-        <div class="product-cart-checkout-grid">
-          <input type="text" id="productOrderName" placeholder="Full Name">
-          <input type="email" id="productOrderEmail" placeholder="Email Address">
-          <input type="tel" id="productOrderPhone" placeholder="Phone Number">
-          <input type="text" id="productOrderAddress" placeholder="Delivery Address">
-          <select id="productOrderPaymentMethod" title="Product order payment method" aria-label="Product order payment method">
-            <option value="">Select payment method...</option>
-            <option value="Credit Card">💳 Credit Card</option>
-            <option value="Debit Card">💳 Debit Card</option>
-            <option value="Paystack Bank Transfer">🏦 Paystack Bank Transfer (Instant)</option>
-            <option value="Bank Transfer">🏦 Bank Transfer</option>
-            <option value="USSD">📱 USSD (Mobile Money)</option>
-            <option value="Cash">💵 Cash Payment</option>
-          </select>
-          <select id="productOrderPaymentChannel" title="Product order payment channel" aria-label="Product order payment channel">
-            <option value="">Auto payment channel</option>
-            <option value="card">Card</option>
-            <option value="bank_transfer">Bank Transfer</option>
-            <option value="ussd">USSD</option>
-          </select>
-        </div>
-
-        <div class="product-cart-actions">
-          <button id="placeProductOrderBtn" type="button" class="submit-btn">Place Product Order</button>
-          <button id="payProductOrderBtn" type="button" class="submit-btn hidden">Pay for Product Order</button>
-          <button id="clearProductCartBtn" type="button" class="submit-btn product-cart-clear-btn">Clear Cart</button>
-        </div>
-
-        <div id="productOrderMessage" class="message"></div>
-      </div>
     </div>
   </section>
 
@@ -576,6 +541,14 @@
         <div class="form-group">
           <label for="specialRequests" data-i18n="booking_requests">Special Requests or Notes</label>
           <textarea id="specialRequests" rows="4" placeholder="Let us know any special requests, allergies, or preferences you may have..."></textarea>
+        </div>
+
+        <div class="form-group">
+          <label>🛍️ Pick Products to Buy with This Booking (Optional)</label>
+          <div id="bookingProductPicker" class="booking-product-picker">
+            <div class="booking-product-empty">Products will load here...</div>
+          </div>
+          <small class="form-help-text-tight">Select any product(s) you want to buy from the store while booking your service.</small>
         </div>
 
         <div class="form-group">

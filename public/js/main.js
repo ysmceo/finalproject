@@ -3,10 +3,12 @@
 const API_URL = '/api';
 let cachedServices = [];
 let cachedProducts = [];
-let productCart = [];
-let lastProductOrderId = '';
-let lastProductOrderEmail = '';
 let paystackPaymentPageUrl = '';
+const BOOKING_BANK_DETAILS_DEFAULT = {
+  bankName: 'YSMBANK CEOS',
+  accountNumber: '0204661552',
+  accountName: 'CEO SALOON'
+};
 const serviceNameKeyMap = {
   1: 'service_hair_cut',
   2: 'service_hair_coloring',
@@ -35,7 +37,6 @@ document.addEventListener('DOMContentLoaded', () => {
   setupPaystackPaymentPageLink();
   showRecentPaymentResult();
   setupEventListeners();
-  setupProductOrderListeners();
   initializePasswordVisibilityToggles();
   setMinDate();
   initializeClockAndWeather();
@@ -233,12 +234,71 @@ async function loadServices() {
 async function loadProducts() {
   try {
     const response = await fetch(`${API_URL}/products`);
+    if (!response.ok) {
+      throw new Error(`Failed to load products (${response.status})`);
+    }
+
     const products = await response.json();
-    cachedProducts = products;
+    cachedProducts = Array.isArray(products) ? products : [];
     displayProducts(cachedProducts);
+    renderBookingProductPicker(cachedProducts);
   } catch (error) {
     console.error('Error loading products:', error);
+    cachedProducts = [];
+    displayProducts([]);
+    const picker = document.getElementById('bookingProductPicker');
+    if (picker) {
+      picker.innerHTML = '<div class="booking-product-empty">Unable to load products right now. Please refresh and try again.</div>';
+    }
   }
+}
+
+function renderBookingProductPicker(products) {
+  const picker = document.getElementById('bookingProductPicker');
+  if (!picker) return;
+
+  if (!Array.isArray(products) || !products.length) {
+    picker.innerHTML = '<div class="booking-product-empty">No products available right now.</div>';
+    return;
+  }
+
+  picker.innerHTML = products.map(product => {
+    const id = Number(product.id);
+    const stock = Math.max(0, Number(product.stock || 0));
+    return `
+      <label class="booking-product-row">
+        <input type="checkbox" class="booking-product-check" data-product-id="${id}" ${stock <= 0 ? 'disabled' : ''}>
+        <span class="booking-product-meta">
+          <span class="booking-product-name">${String(product.name || '')}</span>
+          <span class="booking-product-sub">${String(product.category || '')} • In stock: ${stock}</span>
+        </span>
+        <span class="booking-product-price">₦${Number(product.price || 0).toLocaleString()}</span>
+        <input type="number" min="1" max="${Math.max(1, stock)}" value="1" class="booking-product-qty" data-product-id="${id}" disabled>
+      </label>
+    `;
+  }).join('');
+}
+
+function collectBookingProductSelections() {
+  const picker = document.getElementById('bookingProductPicker');
+  if (!picker) return [];
+
+  const checks = picker.querySelectorAll('.booking-product-check');
+  const selected = [];
+
+  checks.forEach(check => {
+    if (!(check instanceof HTMLInputElement) || !check.checked) return;
+
+    const productId = Number(check.dataset.productId || 0);
+    const qtyInput = picker.querySelector(`.booking-product-qty[data-product-id="${productId}"]`);
+    const quantity = qtyInput instanceof HTMLInputElement ? Math.max(1, Number(qtyInput.value || 1)) : 1;
+
+    if (Number.isFinite(productId) && productId > 0) {
+      selected.push({ productId, quantity });
+    }
+  });
+
+  return selected;
 }
 
 function getTranslatedServiceName(service) {
@@ -291,200 +351,9 @@ function displayProducts(products) {
       <div class="product-meta">${product.category}</div>
       <div class="product-price">₦${Number(product.price || 0).toLocaleString()}</div>
       <div class="product-stock">In stock: ${product.stock}</div>
-      <button class="submit-btn" style="margin-top:10px;" onclick="addProductToCart(${Number(product.id)})">Add to Cart</button>
     `;
     grid.appendChild(card);
   });
-}
-
-function setupProductOrderListeners() {
-  const placeBtn = document.getElementById('placeProductOrderBtn');
-  const payBtn = document.getElementById('payProductOrderBtn');
-  const clearBtn = document.getElementById('clearProductCartBtn');
-
-  if (placeBtn) placeBtn.addEventListener('click', handlePlaceProductOrder);
-  if (payBtn) payBtn.addEventListener('click', handlePayProductOrder);
-  if (clearBtn) {
-    clearBtn.addEventListener('click', () => {
-      productCart = [];
-      renderProductCart();
-      lastProductOrderId = '';
-      lastProductOrderEmail = '';
-      if (payBtn) payBtn.classList.add('hidden');
-    });
-  }
-
-  renderProductCart();
-}
-
-function addProductToCart(productId) {
-  const product = cachedProducts.find(p => Number(p.id) === Number(productId));
-  if (!product) return;
-
-  const existing = productCart.find(i => Number(i.productId) === Number(product.id));
-  if (existing) {
-    if (existing.quantity < Number(product.stock || 0)) {
-      existing.quantity += 1;
-    }
-  } else {
-    productCart.push({
-      productId: Number(product.id),
-      name: String(product.name || ''),
-      unitPrice: Number(product.price || 0),
-      stock: Number(product.stock || 0),
-      quantity: 1
-    });
-  }
-
-  renderProductCart();
-}
-
-function updateCartItemQuantity(productId, nextQty) {
-  const qty = Math.max(1, Number(nextQty) || 1);
-  const item = productCart.find(i => Number(i.productId) === Number(productId));
-  if (!item) return;
-  item.quantity = Math.min(qty, Math.max(1, Number(item.stock || 1)));
-  renderProductCart();
-}
-
-function removeProductFromCart(productId) {
-  productCart = productCart.filter(i => Number(i.productId) !== Number(productId));
-  renderProductCart();
-}
-
-function renderProductCart() {
-  const itemsEl = document.getElementById('productCartItems');
-  const totalEl = document.getElementById('productCartTotal');
-  if (!itemsEl || !totalEl) return;
-
-  if (!productCart.length) {
-    itemsEl.innerHTML = 'Your cart is empty.';
-    totalEl.textContent = 'Total: ₦0';
-    return;
-  }
-
-  let total = 0;
-  const rows = productCart.map(item => {
-    const lineTotal = Number(item.unitPrice || 0) * Number(item.quantity || 0);
-    total += lineTotal;
-    return `
-      <div class="product-cart-row">
-        <strong>${item.name}</strong>
-        <span class="product-cart-unit">₦${Number(item.unitPrice || 0).toLocaleString()}</span>
-        <input type="number" min="1" max="${Math.max(1, Number(item.stock || 1))}" value="${Number(item.quantity || 1)}" class="product-cart-qty" onchange="updateCartItemQuantity(${Number(item.productId)}, this.value)">
-        <span class="product-cart-line">Line: ₦${lineTotal.toLocaleString()}</span>
-        <button type="button" class="submit-btn product-cart-remove-btn" onclick="removeProductFromCart(${Number(item.productId)})">Remove</button>
-      </div>
-    `;
-  }).join('');
-
-  itemsEl.innerHTML = rows;
-  totalEl.textContent = `Total: ₦${Number(total).toLocaleString()}`;
-}
-
-async function handlePlaceProductOrder() {
-  if (!productCart.length) {
-    showMessage('productOrderMessage', 'Please add at least one product to cart.', 'error');
-    return;
-  }
-
-  const name = String(document.getElementById('productOrderName')?.value || '').trim();
-  const email = String(document.getElementById('productOrderEmail')?.value || '').trim().toLowerCase();
-  const phone = String(document.getElementById('productOrderPhone')?.value || '').trim();
-  const address = String(document.getElementById('productOrderAddress')?.value || '').trim();
-  const paymentMethod = String(document.getElementById('productOrderPaymentMethod')?.value || '').trim();
-
-  if (!name || !email || !phone || !address || !paymentMethod) {
-    showMessage('productOrderMessage', 'Please fill all checkout fields.', 'error');
-    return;
-  }
-
-  try {
-    const response = await fetch(`${API_URL}/product-orders`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        name,
-        email,
-        phone,
-        address,
-        paymentMethod,
-        items: productCart.map(i => ({ productId: i.productId, quantity: i.quantity }))
-      })
-    });
-
-    const result = await response.json().catch(() => null);
-    if (!response.ok) {
-      showMessage('productOrderMessage', (result && result.error) ? result.error : 'Failed to place product order', 'error');
-      return;
-    }
-
-    lastProductOrderId = result && result.order ? String(result.order.id || '') : '';
-    lastProductOrderEmail = email;
-
-    showMessage('productOrderMessage', result.message || 'Product order placed successfully.', 'success');
-
-    const payBtn = document.getElementById('payProductOrderBtn');
-    if (payBtn && ['Credit Card', 'Debit Card', 'USSD', 'Paystack Bank Transfer'].includes(paymentMethod)) {
-      payBtn.classList.remove('hidden');
-    } else if (payBtn) {
-      payBtn.classList.add('hidden');
-    }
-
-    if (paymentMethod === 'Bank Transfer' && result && result.paymentBankDetails) {
-      const details = result.paymentBankDetails;
-      showMessage(
-        'productOrderMessage',
-        `Order created. Transfer ₦${Number(details.amountDueNow || 0).toLocaleString()} to ${details.bankName} ${details.accountNumber} (${details.accountName}). Ref: ${details.reference}`,
-        'success'
-      );
-    }
-
-    productCart = [];
-    renderProductCart();
-    loadProducts();
-  } catch (error) {
-    console.error('Product order error:', error);
-    showMessage('productOrderMessage', 'Error placing product order', 'error');
-  }
-}
-
-async function handlePayProductOrder() {
-  if (!lastProductOrderId || !lastProductOrderEmail) {
-    showMessage('productOrderMessage', 'No product order found to pay for.', 'error');
-    return;
-  }
-
-  const paymentChannel = String(document.getElementById('productOrderPaymentChannel')?.value || '').trim();
-
-  try {
-    const response = await fetch(`${API_URL}/product-orders/payments/paystack/initialize`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        orderId: lastProductOrderId,
-        email: lastProductOrderEmail,
-        paymentChannel
-      })
-    });
-
-    const result = await response.json().catch(() => null);
-    if (!response.ok) {
-      const hint = result && result.hint ? ` ${result.hint}` : '';
-      showMessage('productOrderMessage', ((result && result.error) ? result.error : 'Failed to start order payment') + hint, 'error');
-      return;
-    }
-
-    if (result.authorizationUrl) {
-      window.location.href = result.authorizationUrl;
-      return;
-    }
-
-    showMessage('productOrderMessage', 'Payment initialization did not return a payment URL.', 'error');
-  } catch (error) {
-    console.error('Product payment error:', error);
-    showMessage('productOrderMessage', 'Error starting product order payment', 'error');
-  }
 }
 
 // Populate Service Select
@@ -550,6 +419,23 @@ function setupEventListeners() {
   const uploadReceiptBtn = document.getElementById('uploadReceiptBtn');
   if (uploadReceiptBtn) {
     uploadReceiptBtn.addEventListener('click', handleUploadReceipt);
+  }
+
+  const bookingProductPicker = document.getElementById('bookingProductPicker');
+  if (bookingProductPicker && !bookingProductPicker.dataset.bindingsReady) {
+    bookingProductPicker.addEventListener('change', event => {
+      const target = event.target;
+      if (!(target instanceof HTMLInputElement)) return;
+
+      if (target.classList.contains('booking-product-check')) {
+        const productId = target.dataset.productId;
+        const qtyInput = bookingProductPicker.querySelector(`.booking-product-qty[data-product-id="${productId}"]`);
+        if (qtyInput instanceof HTMLInputElement) {
+          qtyInput.disabled = !target.checked || target.disabled;
+        }
+      }
+    });
+    bookingProductPicker.dataset.bindingsReady = 'true';
   }
   
   // Add report file preview listener
@@ -651,10 +537,27 @@ function updateOnlinePaymentVisibility() {
   const onlineGroup = document.getElementById('onlinePaymentChannelGroup');
   const providerSelect = document.getElementById('paymentProvider');
   const channelSelect = document.getElementById('paymentChannel');
+  const isBankTransfer = paymentMethod === 'Bank Transfer';
 
   const isOnline = ['Credit Card', 'Debit Card', 'USSD', 'Paystack Bank Transfer'].includes(paymentMethod);
   if (onlineGroup) {
     onlineGroup.style.display = isOnline ? '' : 'none';
+  }
+
+  // Only show bank transfer panel when bank transfer payment method is selected.
+  if (isBankTransfer) {
+    const draftDetails = {
+      bankName: BOOKING_BANK_DETAILS_DEFAULT.bankName,
+      accountNumber: BOOKING_BANK_DETAILS_DEFAULT.accountNumber,
+      accountName: BOOKING_BANK_DETAILS_DEFAULT.accountName,
+      amountDueNow: inferCurrentBookingAmountDueNow(),
+      reference: 'Will be generated after booking submission'
+    };
+    fillBankPayPanel(draftDetails);
+    setBankPayPanelVisible(true);
+    setPayNowPanelVisible(false);
+  } else {
+    setBankPayPanelVisible(false);
   }
 
   // If user explicitly chooses Paystack bank transfer, lock in Paystack + bank_transfer.
@@ -662,6 +565,21 @@ function updateOnlinePaymentVisibility() {
     if (providerSelect) providerSelect.value = 'paystack';
     if (channelSelect) channelSelect.value = 'bank_transfer';
   }
+}
+
+function inferCurrentBookingAmountDueNow() {
+  const serviceId = Number(document.getElementById('service')?.value || 0);
+  const paymentPlan = String(document.getElementById('paymentPlan')?.value || '').trim();
+  const service = cachedServices.find(s => Number(s.id) === serviceId);
+
+  if (!service) return 0;
+
+  const total = Number(service.price || 0);
+  if (paymentPlan === 'deposit_50') {
+    return Math.ceil(total * 0.5);
+  }
+
+  return total;
 }
 
 function setPayNowPanelVisible(visible) {
@@ -1025,6 +943,8 @@ function initializePasswordVisibilityToggles() {
 // Handle Booking Submission
 async function handleBooking(e) {
   e.preventDefault();
+
+  const selectedProducts = collectBookingProductSelections();
   
   const formData = new FormData();
   formData.append('name', document.getElementById('name').value);
@@ -1041,6 +961,7 @@ async function handleBooking(e) {
   formData.append('homeServiceAddress', document.getElementById('homeServiceAddress').value);
   formData.append('refreshment', document.querySelector('input[name="refreshment"]:checked').value);
   formData.append('specialRequests', document.getElementById('specialRequests').value);
+  formData.append('productSelections', JSON.stringify(selectedProducts));
   
   // Add file if selected
   const styleImageFile = document.getElementById('styleImage').files[0];
@@ -1087,6 +1008,7 @@ async function handleBooking(e) {
 
       document.getElementById('bookingForm').reset();
       document.getElementById('imagePreview').innerHTML = '';
+      renderBookingProductPicker(cachedProducts);
     } else {
       showMessage('bookingMessage', languageManager.translate('booking_error'), 'error');
     }
