@@ -37,6 +37,9 @@ document.addEventListener('DOMContentLoaded', () => {
   setupPaystackPaymentPageLink();
   showRecentPaymentResult();
   setupEventListeners();
+  updateOnlinePaymentVisibility();
+  setPayNowPanelVisible(false);
+  setBankPayPanelVisible(false);
   initializePasswordVisibilityToggles();
   setMinDate();
   initializeClockAndWeather();
@@ -1009,6 +1012,7 @@ async function handleBooking(e) {
       document.getElementById('bookingForm').reset();
       document.getElementById('imagePreview').innerHTML = '';
       renderBookingProductPicker(cachedProducts);
+      updateOnlinePaymentVisibility();
     } else {
       showMessage('bookingMessage', languageManager.translate('booking_error'), 'error');
     }
