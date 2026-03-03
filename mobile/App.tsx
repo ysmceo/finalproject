@@ -1,6 +1,6 @@
 import 'react-native-gesture-handler';
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { NavigationContainer } from '@react-navigation/native';
@@ -12,6 +12,7 @@ import HomeWebScreen from './src/screens/HomeWebScreen';
 import BookScreen from './src/screens/BookScreen';
 import TrackScreen from './src/screens/TrackScreen';
 import AdminScreen from './src/screens/AdminScreen';
+import { applyHapticPreset } from './src/lib/haptics';
 import { ThemeProvider, useThemePrefs } from './src/theme';
 import SettingsScreen from './src/screens/SettingsScreen';
 
@@ -73,6 +74,10 @@ export default function App() {
 
 function AppShell() {
   const { navigationTheme, resolvedColorScheme } = useThemePrefs();
+
+  useEffect(() => {
+    applyHapticPreset('balanced');
+  }, []);
 
   return (
     <SafeAreaProvider>

@@ -73,6 +73,7 @@ export default function SettingsHomeScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    paddingBottom: 30
+    paddingBottom: 30,
+    backgroundColor: '#f6f8fc'
   }
 });

@@ -5,6 +5,7 @@ import Constants from 'expo-constants';
 import { Ionicons } from '@expo/vector-icons';
 
 import { API_BASE_URL, WEB_BASE_URL, buildApiUrl } from '../config';
+import { applyHapticPreset, HapticPreset, triggerLightHaptic, triggerMediumHaptic, triggerWarningHaptic } from '../lib/haptics';
 import { themeStorageKeys, ThemeMode, useThemePrefs } from '../theme';
 
 const LAST_BOOKING_ID_KEY = 'ceosalon:lastBookingId';
@@ -23,7 +24,13 @@ function Header({ title, onBack }: { title: string; onBack?: () => void }) {
   return (
     <View style={styles.header}>
       {onBack ? (
-        <Pressable onPress={onBack} style={({ pressed }) => [styles.backBtn, pressed && styles.pressed]}>
+        <Pressable
+          onPress={() => {
+            triggerLightHaptic();
+            onBack();
+          }}
+          style={({ pressed }) => [styles.backBtn, pressed && styles.pressed, pressed && styles.tapScale]}
+        >
           <Ionicons name="chevron-back" size={22} color="#111827" />
         </Pressable>
       ) : (
@@ -50,16 +57,13 @@ function MenuRow({
   right?: React.ReactNode;
   danger?: boolean;
 }) {
-  const Wrapper = onPress ? Pressable : View;
   const titleColor = danger ? '#d92d20' : '#111827';
+  const baseStyle = [styles.row];
 
-  return (
-    <Wrapper
-      {...(onPress ? { onPress } : {})}
-      style={({ pressed }: any) => [styles.row, onPress && pressed && styles.rowPressed]}
-    >
+  const content = (
+    <>
       <View style={[styles.iconWrap, danger && { backgroundColor: '#fef3f2' }]}>
-        <Ionicons name={icon} size={18} color={danger ? '#d92d20' : '#344054'} />
+        <Ionicons name={icon} size={18} color={danger ? '#d92d20' : '#5a31b3'} />
       </View>
 
       <View style={{ flex: 1 }}>
@@ -67,13 +71,25 @@ function MenuRow({
         {subtitle ? <Text style={styles.rowSub}>{subtitle}</Text> : null}
       </View>
 
-      {right ? (
-        <View style={styles.rowRight}>{right}</View>
-      ) : onPress ? (
-        <Ionicons name="chevron-forward" size={18} color="#98a2b3" />
-      ) : null}
-    </Wrapper>
+      {right ? <View style={styles.rowRight}>{right}</View> : onPress ? <Ionicons name="chevron-forward" size={18} color="#ad9ad2" /> : null}
+    </>
   );
+
+  if (onPress) {
+    return (
+      <Pressable
+        onPress={() => {
+          triggerLightHaptic();
+          onPress();
+        }}
+        style={({ pressed }) => [baseStyle, pressed && styles.rowPressed, pressed && styles.tapScale]}
+      >
+        {content}
+      </Pressable>
+    );
+  }
+
+  return <View style={baseStyle}>{content}</View>;
 }
 
 function Divider() {
@@ -93,6 +109,7 @@ export default function SettingsScreen() {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [apiTestBusy, setApiTestBusy] = useState(false);
   const [apiTestResult, setApiTestResult] = useState<string>('');
+  const [devHapticPreset, setDevHapticPreset] = useState<HapticPreset>('balanced');
 
   const { mode: themeMode, setMode: setThemeMode } = useThemePrefs();
 
@@ -135,6 +152,7 @@ export default function SettingsScreen() {
         onPress: async () => {
           try {
             await AsyncStorage.multiRemove([LAST_BOOKING_ID_KEY, LAST_BOOKING_EMAIL_KEY]);
+            triggerWarningHaptic();
             Alert.alert('Done', 'Saved booking info cleared.');
           } catch {
             Alert.alert('Error', 'Failed to clear saved booking info.');
@@ -159,6 +177,7 @@ export default function SettingsScreen() {
             setNotificationsEnabled(true);
             setThemeMode('system');
             setPage('root');
+            triggerWarningHaptic();
             Alert.alert('Logged out', 'Device data cleared.');
           } catch {
             Alert.alert('Error', 'Failed to logout/clear data.');
@@ -170,6 +189,7 @@ export default function SettingsScreen() {
 
   async function testApi() {
     setApiTestBusy(true);
+    triggerMediumHaptic();
     setApiTestResult('');
     try {
       const url = buildApiUrl('/api/services');
@@ -180,6 +200,16 @@ export default function SettingsScreen() {
     } finally {
       setApiTestBusy(false);
     }
+  }
+
+  function cycleHapticPresetDevOnly() {
+    if (!__DEV__) return;
+    const presets: HapticPreset[] = ['subtle', 'balanced', 'strong'];
+    const next = presets[(presets.indexOf(devHapticPreset) + 1) % presets.length];
+    setDevHapticPreset(next);
+    applyHapticPreset(next);
+    triggerMediumHaptic();
+    Alert.alert('Haptics preset', `Switched to ${next}.`);
   }
 
   if (page === 'notifications') {
@@ -348,7 +378,16 @@ export default function SettingsScreen() {
       </Card>
 
       <Text style={styles.footerSmall}>Theme: {themeMode} • Notifications: {notificationsEnabled ? 'On' : 'Off'}</Text>
-      <Text style={styles.footerTiny}>Stored keys: {themeStorageKeys.THEME_MODE_KEY}, {NOTIFICATIONS_ENABLED_KEY}</Text>
+      <Pressable
+        onLongPress={cycleHapticPresetDevOnly}
+        delayLongPress={450}
+        style={({ pressed }) => [pressed && styles.pressed, pressed && styles.tapScale]}
+      >
+        <Text style={styles.footerTiny}>
+          Stored keys: {themeStorageKeys.THEME_MODE_KEY}, {NOTIFICATIONS_ENABLED_KEY}
+          {__DEV__ ? ` • Haptics: ${devHapticPreset} (hold to switch)` : ''}
+        </Text>
+      </Pressable>
     </ScrollView>
   );
 }
@@ -357,7 +396,7 @@ const styles = StyleSheet.create({
   container: {
     padding: 16,
     paddingBottom: 34,
-    backgroundColor: '#f6f7fb'
+    backgroundColor: '#f6f8fc'
   },
   header: {
     flexDirection: 'row',
@@ -373,7 +412,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: '#ffffff',
     borderWidth: 1,
-    borderColor: '#eaecf0'
+    borderColor: '#e8e2f6'
   },
   backBtnPlaceholder: {
     width: 40,
@@ -382,17 +421,25 @@ const styles = StyleSheet.create({
   pressed: {
     opacity: 0.85
   },
+  tapScale: {
+    transform: [{ scale: 0.985 }]
+  },
   headerTitle: {
     fontSize: 20,
     fontWeight: '800',
-    color: '#111827'
+    color: '#2d2342'
   },
   card: {
     backgroundColor: '#ffffff',
     borderRadius: 18,
     borderWidth: 1,
-    borderColor: '#eaecf0',
-    overflow: 'hidden'
+    borderColor: '#ece7f6',
+    overflow: 'hidden',
+    shadowColor: '#1f1238',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 18,
+    elevation: 3
   },
   row: {
     flexDirection: 'row',
@@ -401,13 +448,13 @@ const styles = StyleSheet.create({
     paddingVertical: 14
   },
   rowPressed: {
-    backgroundColor: '#f9fafb'
+    backgroundColor: '#f7f3ff'
   },
   iconWrap: {
     width: 34,
     height: 34,
     borderRadius: 12,
-    backgroundColor: '#f2f4f7',
+    backgroundColor: '#f4edff',
     alignItems: 'center',
     justifyContent: 'center',
     marginRight: 12
@@ -419,7 +466,7 @@ const styles = StyleSheet.create({
   rowSub: {
     marginTop: 4,
     fontSize: 12,
-    color: '#667085'
+    color: '#746a90'
   },
   rowRight: {
     marginLeft: 12,
@@ -427,26 +474,26 @@ const styles = StyleSheet.create({
   },
   divider: {
     height: 1,
-    backgroundColor: '#f2f4f7',
+    backgroundColor: '#f2edf9',
     marginLeft: 60
   },
   actionText: {
-    color: '#b78a2a',
+    color: '#7c46e8',
     fontWeight: '900'
   },
   note: {
     marginTop: 12,
-    color: '#667085',
+    color: '#6b5f86',
     lineHeight: 18
   },
   footerSmall: {
     marginTop: 12,
-    color: '#667085',
+    color: '#6b5f86',
     fontSize: 12
   },
   footerTiny: {
     marginTop: 6,
-    color: '#98a2b3',
+    color: '#a494c7',
     fontSize: 11
   }
 });

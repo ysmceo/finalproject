@@ -1,9 +1,12 @@
 // CEO SALOON - Main Website JavaScript
 
 const API_URL = '/api';
+const SUNNY_MODE_KEY = 'sunnyMode';
 let cachedServices = [];
 let cachedProducts = [];
 let paystackPaymentPageUrl = '';
+const LAST_PRODUCT_ORDER_CODE_KEY = 'lastProductOrderCode';
+const LAST_PRODUCT_ORDER_EMAIL_KEY = 'lastProductOrderEmail';
 const BOOKING_BANK_DETAILS_DEFAULT = {
   bankName: 'YSMBANK CEOS',
   accountNumber: '0204661552',
@@ -19,6 +22,33 @@ const serviceNameKeyMap = {
   7: 'service_beard_trim',
   8: 'service_full_body_massage'
 };
+
+function isValidEmailAddress(email) {
+  const normalized = String(email || '').trim().toLowerCase();
+  if (!normalized) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(normalized);
+}
+
+function markFieldInvalid(fieldEl) {
+  if (!fieldEl) return;
+  fieldEl.classList.add('field-error');
+  fieldEl.setAttribute('aria-invalid', 'true');
+}
+
+function clearFieldInvalid(fieldEl) {
+  if (!fieldEl) return;
+  fieldEl.classList.remove('field-error');
+  fieldEl.removeAttribute('aria-invalid');
+}
+
+function escapeHtmlText(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
 
 // Initialize
 document.addEventListener('DOMContentLoaded', () => {
@@ -41,9 +71,12 @@ document.addEventListener('DOMContentLoaded', () => {
   setPayNowPanelVisible(false);
   setBankPayPanelVisible(false);
   initializePasswordVisibilityToggles();
+  initializeTrackingLookup();
+  initializeProductTrackingLookup();
   setMinDate();
   initializeClockAndWeather();
   initializeDarkMode();
+  initializeSunnyMode();
 });
 
 function showRecentPaymentResult() {
@@ -219,6 +252,48 @@ function toggleDarkMode() {
   darkModeBtn.textContent = isDarkMode ? '☀️' : '🌙';
 }
 
+function initializeSunnyMode() {
+  const sunnyBtn = document.getElementById('sunnyModeToggle');
+  if (!sunnyBtn) return;
+
+  const storedMode = String(localStorage.getItem(SUNNY_MODE_KEY) || '').trim().toLowerCase();
+  const mode = storedMode === 'bright' ? 'bright' : 'soft';
+  applySunnyMode(mode);
+
+  sunnyBtn.addEventListener('click', () => {
+    const current = document.body.classList.contains('sunny-bright') ? 'bright' : 'soft';
+    const next = current === 'bright' ? 'soft' : 'bright';
+    applySunnyMode(next);
+  });
+}
+
+function applySunnyMode(mode) {
+  const normalized = String(mode || '').trim().toLowerCase() === 'bright' ? 'bright' : 'soft';
+  const sunnyBtn = document.getElementById('sunnyModeToggle');
+
+  document.body.classList.remove('sunny-soft', 'sunny-bright');
+  document.body.classList.add(normalized === 'bright' ? 'sunny-bright' : 'sunny-soft');
+
+  localStorage.setItem(SUNNY_MODE_KEY, normalized);
+
+  if (sunnyBtn) {
+    sunnyBtn.classList.remove('is-switching');
+    void sunnyBtn.offsetWidth;
+    sunnyBtn.classList.add('is-switching');
+
+    const modeLabel = normalized === 'bright' ? 'Bright' : 'Soft';
+    sunnyBtn.innerHTML = `<span class="sunny-toggle-inner"><span class="sunny-toggle-icon" aria-hidden="true">☀️</span><span class="sunny-toggle-label">${modeLabel}</span></span>`;
+    sunnyBtn.title = normalized === 'bright'
+      ? 'Switch to Soft Sunny background'
+      : 'Switch to Bright Sunny background';
+    sunnyBtn.setAttribute('aria-label', sunnyBtn.title);
+
+    window.setTimeout(() => {
+      sunnyBtn.classList.remove('is-switching');
+    }, 280);
+  }
+}
+
 // Load Services
 async function loadServices() {
   try {
@@ -388,10 +463,21 @@ function setMinDate() {
 function setupEventListeners() {
   document.getElementById('bookingForm').addEventListener('submit', handleBooking);
   document.getElementById('contactForm').addEventListener('submit', handleContact);
+  const trackForm = document.getElementById('trackBookingForm');
+  if (trackForm) {
+    trackForm.addEventListener('submit', handleTrackingLookup);
+  }
+  const trackProductForm = document.getElementById('trackProductForm');
+  if (trackProductForm) {
+    trackProductForm.addEventListener('submit', handleProductTrackingLookup);
+  }
   document.getElementById('adminLoginBtn').addEventListener('click', openAdminModal);
   document.getElementById('adminLoginForm').addEventListener('submit', handleAdminLogin);
   document.getElementById('adminRegisterForm').addEventListener('submit', handleAdminRegister);
   document.getElementById('requestAccessCodeBtn').addEventListener('click', handleRequestAccessCode);
+  document.getElementById('showForgotPasswordBtn').addEventListener('click', toggleForgotPasswordPanel);
+  document.getElementById('requestPasswordResetCodeBtn').addEventListener('click', handleRequestPasswordResetCode);
+  document.getElementById('resetPasswordBtn').addEventListener('click', handleResetPassword);
 
   const serviceSelect = document.getElementById('service');
   const paymentPlanSelect = document.getElementById('paymentPlan');
@@ -492,6 +578,305 @@ function setupEventListeners() {
       preview.innerHTML = '';
     }
   });
+}
+
+function initializeTrackingLookup() {
+  const trackCodeInput = document.getElementById('trackCode');
+  const trackEmailInput = document.getElementById('trackEmail');
+  if (!trackCodeInput || !trackEmailInput) return;
+
+  const lastTrackingCode = String(localStorage.getItem('lastTrackingCode') || '').trim();
+  const lastBookingEmail = String(localStorage.getItem('lastBookingEmail') || '').trim();
+
+  if (!trackCodeInput.value && lastTrackingCode) {
+    trackCodeInput.value = lastTrackingCode;
+  }
+
+  if (!trackEmailInput.value && lastBookingEmail) {
+    trackEmailInput.value = lastBookingEmail;
+  }
+}
+
+function initializeProductTrackingLookup() {
+  const codeInput = document.getElementById('trackProductCode');
+  const emailInput = document.getElementById('trackProductEmail');
+  if (!codeInput || !emailInput) return;
+
+  const lastCode = String(localStorage.getItem(LAST_PRODUCT_ORDER_CODE_KEY) || '').trim();
+  const lastEmail = String(localStorage.getItem(LAST_PRODUCT_ORDER_EMAIL_KEY) || '').trim();
+
+  if (!codeInput.value && lastCode) {
+    codeInput.value = lastCode;
+  }
+
+  if (!emailInput.value && lastEmail) {
+    emailInput.value = lastEmail;
+  }
+}
+
+function normalizeTrackStatus(status) {
+  const s = String(status || '').trim().toLowerCase();
+  if (['approved', 'accepted'].includes(s)) return 'approved';
+  if (['cancelled', 'declined', 'rejected'].includes(s)) return 'cancelled';
+  if (s === 'completed') return 'completed';
+  return 'pending';
+}
+
+function getTrackStatusMeta(status) {
+  const normalized = normalizeTrackStatus(status);
+  if (normalized === 'approved') {
+    return {
+      normalized,
+      label: '✅ Approved',
+      summary: 'Your booking has been approved by admin.'
+    };
+  }
+
+  if (normalized === 'cancelled') {
+    return {
+      normalized,
+      label: '❌ Rejected / Declined',
+      summary: 'Your booking request was rejected or declined by admin.'
+    };
+  }
+
+  if (normalized === 'completed') {
+    return {
+      normalized,
+      label: '🎉 Completed',
+      summary: 'Your booking has been completed.'
+    };
+  }
+
+  return {
+    normalized,
+    label: '⏳ Pending',
+    summary: 'Your booking is still pending admin review.'
+  };
+}
+
+function buildTrackStatusSteps(status) {
+  const current = normalizeTrackStatus(status);
+  const pendingClass = current === 'pending' ? 'is-current' : 'is-done';
+  const approvedClass = current === 'approved' || current === 'completed' ? 'is-done' : current === 'pending' ? '' : '';
+  const rejectedClass = current === 'cancelled' ? 'is-done' : '';
+  const completedClass = current === 'completed' ? 'is-done' : '';
+
+  return `
+    <div class="track-status-steps">
+      <div class="track-step ${pendingClass}">Pending</div>
+      <div class="track-step ${approvedClass}">Approved</div>
+      <div class="track-step ${rejectedClass}">Rejected / Declined</div>
+      <div class="track-step ${completedClass}">Completed</div>
+    </div>
+  `;
+}
+
+function normalizeProductOrderStatus(status) {
+  const s = String(status || '').trim().toLowerCase();
+  if (s === 'approved') return 'approved';
+  if (s === 'cancelled') return 'cancelled';
+  if (s === 'completed') return 'completed';
+  return 'pending';
+}
+
+function getProductOrderStatusMeta(status) {
+  const normalized = normalizeProductOrderStatus(status);
+  if (normalized === 'approved') {
+    return {
+      normalized,
+      label: '✅ Approved',
+      summary: 'Your product order has been approved and is being processed.'
+    };
+  }
+
+  if (normalized === 'cancelled') {
+    return {
+      normalized,
+      label: '❌ Cancelled',
+      summary: 'Your product order was cancelled.'
+    };
+  }
+
+  if (normalized === 'completed') {
+    return {
+      normalized,
+      label: '🎉 Completed',
+      summary: 'Your product order has been completed.'
+    };
+  }
+
+  return {
+    normalized,
+    label: '⏳ Pending',
+    summary: 'Your product order is pending admin review.'
+  };
+}
+
+function buildProductTrackStatusSteps(status) {
+  const current = normalizeProductOrderStatus(status);
+  const pendingClass = current === 'pending' ? 'is-current' : 'is-done';
+  const approvedClass = current === 'approved' || current === 'completed' ? 'is-done' : '';
+  const cancelledClass = current === 'cancelled' ? 'is-done' : '';
+  const completedClass = current === 'completed' ? 'is-done' : '';
+
+  return `
+    <div class="track-status-steps">
+      <div class="track-step ${pendingClass}">Pending</div>
+      <div class="track-step ${approvedClass}">Approved</div>
+      <div class="track-step ${cancelledClass}">Cancelled</div>
+      <div class="track-step ${completedClass}">Completed</div>
+    </div>
+  `;
+}
+
+function renderTrackResult(payload) {
+  const box = document.getElementById('trackResult');
+  if (!box) return;
+
+  const booking = payload && payload.booking ? payload.booking : null;
+  const notifications = payload && Array.isArray(payload.notifications) ? payload.notifications : [];
+
+  if (!booking) {
+    box.innerHTML = '<div class="message error">No booking data found.</div>';
+    return;
+  }
+
+  const latestNote = notifications.length ? notifications[notifications.length - 1] : null;
+  const latestNoteText = latestNote ? String(latestNote.message || '') : 'No update yet. Please check again later.';
+  const statusMeta = getTrackStatusMeta(booking.status);
+
+  box.innerHTML = `
+    <div class="bank-pay-card" style="margin-top:12px;">
+      <h3 class="bank-pay-heading">Tracking Result</h3>
+      <div class="bank-pay-grid">
+        <div><div class="bank-pay-label">Tracking Code</div><div class="bank-pay-value">${String(booking.trackingCode || '').trim() || 'N/A'}</div></div>
+        <div><div class="bank-pay-label">Status</div><div class="bank-pay-value">${statusMeta.label}</div></div>
+        <div><div class="bank-pay-label">Service</div><div class="bank-pay-value">${String(booking.serviceName || 'N/A')}</div></div>
+        <div><div class="bank-pay-label">Date / Time</div><div class="bank-pay-value">${String(booking.date || '')} ${String(booking.time || '')}</div></div>
+      </div>
+      <div class="track-status-summary">${statusMeta.summary}</div>
+      ${buildTrackStatusSteps(booking.status)}
+      <div class="bank-pay-muted" style="margin-top:10px;"><strong>Latest update:</strong> ${latestNoteText}</div>
+    </div>
+  `;
+}
+
+async function handleTrackingLookup(e) {
+  if (e) e.preventDefault();
+
+  const trackCodeInput = document.getElementById('trackCode');
+  const trackEmailInput = document.getElementById('trackEmail');
+
+  const trackingCode = String(trackCodeInput && trackCodeInput.value ? trackCodeInput.value : '').trim().toUpperCase();
+  const email = String(trackEmailInput && trackEmailInput.value ? trackEmailInput.value : '').trim().toLowerCase();
+
+  if (!trackingCode || !email) {
+    showMessage('trackMessage', 'Enter your tracking code and booking email.', 'error');
+    return;
+  }
+
+  if (!isValidEmailAddress(email)) {
+    markFieldInvalid(trackEmailInput);
+    trackEmailInput.focus();
+    showMessage('trackMessage', 'Please enter a valid booking email address.', 'error');
+    return;
+  }
+  clearFieldInvalid(trackEmailInput);
+
+  try {
+    const response = await fetch(`${API_URL}/bookings/track?trackingCode=${encodeURIComponent(trackingCode)}&email=${encodeURIComponent(email)}`);
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      showMessage('trackMessage', result.error || 'Unable to track booking right now.', 'error');
+      return;
+    }
+
+    localStorage.setItem('lastTrackingCode', trackingCode);
+    localStorage.setItem('lastBookingEmail', email);
+    renderTrackResult(result);
+    showMessage('trackMessage', 'Tracking result loaded successfully.', 'success');
+  } catch (error) {
+    console.error('Tracking lookup error:', error);
+    showMessage('trackMessage', 'Error checking tracking status. Please try again.', 'error');
+  }
+}
+
+function renderProductTrackResult(payload) {
+  const box = document.getElementById('trackProductResult');
+  if (!box) return;
+
+  const order = payload && payload.order ? payload.order : null;
+  if (!order) {
+    box.innerHTML = '<div class="message error">No product order data found.</div>';
+    return;
+  }
+
+  const statusMeta = getProductOrderStatusMeta(order.status);
+  const items = Array.isArray(order.items) ? order.items : [];
+  const itemsHtml = items.length
+    ? `<ul style="margin:8px 0 0 16px; color:#555;">${items.map(item => `<li>${escapeHtmlText(String(item.name || 'Product'))} × ${Number(item.quantity || 0)} — ₦${Number(item.lineTotal || 0).toLocaleString()}</li>`).join('')}</ul>`
+    : '<div class="bank-pay-muted">No item details available.</div>';
+
+  box.innerHTML = `
+    <div class="bank-pay-card" style="margin-top:12px;">
+      <h3 class="bank-pay-heading">Product Order Tracking Result</h3>
+      <div class="bank-pay-grid">
+        <div><div class="bank-pay-label">Order Code</div><div class="bank-pay-value">${String(order.orderCode || '').trim() || 'N/A'}</div></div>
+        <div><div class="bank-pay-label">Status</div><div class="bank-pay-value">${statusMeta.label}</div></div>
+        <div><div class="bank-pay-label">Payment Status</div><div class="bank-pay-value">${String(order.paymentStatus || 'pending')}</div></div>
+        <div><div class="bank-pay-label">Payment Method</div><div class="bank-pay-value">${String(order.paymentMethod || 'N/A')}</div></div>
+        <div><div class="bank-pay-label">Total</div><div class="bank-pay-value">₦${Number(order.totalAmount || 0).toLocaleString()}</div></div>
+        <div><div class="bank-pay-label">Amount Remaining</div><div class="bank-pay-value">₦${Number(order.amountRemaining || 0).toLocaleString()}</div></div>
+      </div>
+      <div class="track-status-summary">${statusMeta.summary}</div>
+      ${buildProductTrackStatusSteps(order.status)}
+      <div class="bank-pay-label" style="margin-top:6px;">Items</div>
+      ${itemsHtml}
+    </div>
+  `;
+}
+
+async function handleProductTrackingLookup(e) {
+  if (e) e.preventDefault();
+
+  const codeInput = document.getElementById('trackProductCode');
+  const emailInput = document.getElementById('trackProductEmail');
+
+  const orderCode = String(codeInput && codeInput.value ? codeInput.value : '').trim().toUpperCase();
+  const email = String(emailInput && emailInput.value ? emailInput.value : '').trim().toLowerCase();
+
+  if (!orderCode || !email) {
+    showMessage('trackProductMessage', 'Enter your product order code and order email.', 'error');
+    return;
+  }
+
+  if (!isValidEmailAddress(email)) {
+    markFieldInvalid(emailInput);
+    emailInput.focus();
+    showMessage('trackProductMessage', 'Please enter a valid order email address.', 'error');
+    return;
+  }
+  clearFieldInvalid(emailInput);
+
+  try {
+    const response = await fetch(`${API_URL}/product-orders/track?orderCode=${encodeURIComponent(orderCode)}&email=${encodeURIComponent(email)}`);
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      showMessage('trackProductMessage', result.error || 'Unable to track product order right now.', 'error');
+      return;
+    }
+
+    localStorage.setItem(LAST_PRODUCT_ORDER_CODE_KEY, orderCode);
+    localStorage.setItem(LAST_PRODUCT_ORDER_EMAIL_KEY, email);
+    renderProductTrackResult(result);
+    showMessage('trackProductMessage', 'Product order tracking result loaded successfully.', 'success');
+  } catch (error) {
+    console.error('Product tracking lookup error:', error);
+    showMessage('trackProductMessage', 'Error checking product order status. Please try again.', 'error');
+  }
 }
 
 async function handleUploadReceipt() {
@@ -786,6 +1171,18 @@ function setLastBookingForPayment(booking) {
   if (!booking) return;
   localStorage.setItem('lastBookingId', booking.id);
   localStorage.setItem('lastBookingEmail', booking.email);
+  if (booking.trackingCode) {
+    localStorage.setItem('lastTrackingCode', booking.trackingCode);
+  }
+
+  const trackCodeInput = document.getElementById('trackCode');
+  const trackEmailInput = document.getElementById('trackEmail');
+  if (trackCodeInput && booking.trackingCode) {
+    trackCodeInput.value = booking.trackingCode;
+  }
+  if (trackEmailInput && booking.email) {
+    trackEmailInput.value = booking.email;
+  }
 }
 
 async function handlePayNow() {
@@ -911,7 +1308,7 @@ function initializePasswordVisibilityToggles() {
     </svg>
   `;
 
-  const sensitiveInputIds = ['loginPassword', 'loginSecretPasscode', 'registerPassword', 'registerSecretPasscode'];
+  const sensitiveInputIds = ['loginPassword', 'loginSecretPasscode', 'resetNewPassword', 'registerPassword', 'registerSecretPasscode'];
 
   sensitiveInputIds.forEach(id => {
     const input = document.getElementById(id);
@@ -943,15 +1340,57 @@ function initializePasswordVisibilityToggles() {
   });
 }
 
+function toggleForgotPasswordPanel() {
+  const panel = document.getElementById('forgotPasswordPanel');
+  const toggleBtn = document.getElementById('showForgotPasswordBtn');
+  const toggleLabel = document.getElementById('forgotToggleLabel');
+  const toggleIcon = document.getElementById('forgotToggleIcon');
+  if (!panel) return;
+
+  const isHidden = panel.classList.toggle('is-initially-hidden');
+  const expanded = !isHidden;
+
+  if (toggleBtn) {
+    toggleBtn.setAttribute('aria-expanded', String(expanded));
+  }
+  if (toggleLabel) {
+    toggleLabel.textContent = expanded
+      ? 'Hide password reset options'
+      : 'Forgot password? Tap to reset';
+  }
+  if (toggleIcon) {
+    toggleIcon.textContent = expanded ? '▴' : '▾';
+  }
+}
+
 // Handle Booking Submission
 async function handleBooking(e) {
   e.preventDefault();
 
   const selectedProducts = collectBookingProductSelections();
+  const homeServiceRequested = document.getElementById('homeServiceRequested').checked;
+  const homeServiceAddress = document.getElementById('homeServiceAddress').value;
+
+  if (homeServiceRequested && !String(homeServiceAddress || '').trim()) {
+    showMessage('bookingMessage', 'Please enter your home service address.', 'error');
+    return;
+  }
+
+  const refreshmentSelection = document.querySelector('input[name="refreshment"]:checked');
+  const bookingEmailInput = document.getElementById('email');
+  const emailValue = String(bookingEmailInput.value || '').trim().toLowerCase();
+
+  if (!isValidEmailAddress(emailValue)) {
+    markFieldInvalid(bookingEmailInput);
+    bookingEmailInput.focus();
+    showMessage('bookingMessage', 'Please enter a valid email address before booking.', 'error');
+    return;
+  }
+  clearFieldInvalid(bookingEmailInput);
   
   const formData = new FormData();
   formData.append('name', document.getElementById('name').value);
-  formData.append('email', document.getElementById('email').value);
+  formData.append('email', emailValue);
   formData.append('phone', document.getElementById('phone').value);
   formData.append('serviceId', document.getElementById('service').value);
   formData.append('date', document.getElementById('date').value);
@@ -959,10 +1398,9 @@ async function handleBooking(e) {
   formData.append('language', document.getElementById('language').value);
   formData.append('paymentMethod', document.getElementById('paymentMethod').value);
   formData.append('paymentPlan', document.getElementById('paymentPlan').value);
-  const homeServiceRequested = document.getElementById('homeServiceRequested').checked;
   formData.append('homeServiceRequested', String(homeServiceRequested));
-  formData.append('homeServiceAddress', document.getElementById('homeServiceAddress').value);
-  formData.append('refreshment', document.querySelector('input[name="refreshment"]:checked').value);
+  formData.append('homeServiceAddress', homeServiceAddress);
+  formData.append('refreshment', refreshmentSelection ? refreshmentSelection.value : 'No');
   formData.append('specialRequests', document.getElementById('specialRequests').value);
   formData.append('productSelections', JSON.stringify(selectedProducts));
   
@@ -977,9 +1415,9 @@ async function handleBooking(e) {
       method: 'POST',
       body: formData
     });
+    const result = await response.json().catch(() => ({}));
     
     if (response.ok) {
-      const result = await response.json();
       const successMessage = result.message || languageManager.translate('booking_success');
       showMessage('bookingMessage', successMessage, 'success');
 
@@ -1014,7 +1452,7 @@ async function handleBooking(e) {
       renderBookingProductPicker(cachedProducts);
       updateOnlinePaymentVisibility();
     } else {
-      showMessage('bookingMessage', languageManager.translate('booking_error'), 'error');
+      showMessage('bookingMessage', result.error || languageManager.translate('booking_error'), 'error');
     }
   } catch (error) {
     console.error('Error:', error);
@@ -1025,10 +1463,20 @@ async function handleBooking(e) {
 // Handle Contact Form
 async function handleContact(e) {
   e.preventDefault();
+
+  const contactEmailInput = document.getElementById('contactEmail');
+  const contactEmail = String(contactEmailInput.value || '').trim().toLowerCase();
+  if (!isValidEmailAddress(contactEmail)) {
+    markFieldInvalid(contactEmailInput);
+    contactEmailInput.focus();
+    showMessage('contactMessage', 'Please enter a valid email address.', 'error');
+    return;
+  }
+  clearFieldInvalid(contactEmailInput);
   
   const formData = new FormData();
   formData.append('name', document.getElementById('contactName').value);
-  formData.append('email', document.getElementById('contactEmail').value);
+  formData.append('email', contactEmail);
   formData.append('subject', document.getElementById('contactSubject').value);
   formData.append('message', document.getElementById('contactMessage').value);
   formData.append('reportType', document.getElementById('reportType').value || '');
@@ -1138,10 +1586,19 @@ async function refreshAdminRegistrationState() {
 async function handleAdminLogin(e) {
   e.preventDefault();
   
-  const email = document.getElementById('loginEmail').value.trim().toLowerCase();
+  const loginEmailInput = document.getElementById('loginEmail');
+  const email = loginEmailInput.value.trim().toLowerCase();
   const password = document.getElementById('loginPassword').value.trim();
-  const oneTimeCode = document.getElementById('loginAccessCode').value.trim();
+  const oneTimeCode = String(document.getElementById('loginAccessCode').value || '').replace(/\D/g, '').trim();
   const secretPasscode = document.getElementById('loginSecretPasscode').value.trim();
+
+  if (!isValidEmailAddress(email)) {
+    markFieldInvalid(loginEmailInput);
+    loginEmailInput.focus();
+    showAdminMessage('loginMessage', 'Please enter a valid email address.', 'error');
+    return;
+  }
+  clearFieldInvalid(loginEmailInput);
   
   try {
     const response = await fetch(`${API_URL}/admin/login`, {
@@ -1169,13 +1626,22 @@ async function handleAdminLogin(e) {
 }
 
 async function handleRequestAccessCode() {
-  const email = document.getElementById('loginEmail').value.trim().toLowerCase();
+  const loginEmailInput = document.getElementById('loginEmail');
+  const email = loginEmailInput.value.trim().toLowerCase();
   const secretPasscode = document.getElementById('loginSecretPasscode').value.trim();
 
   if (!email || !secretPasscode) {
     showAdminMessage('loginMessage', 'Enter admin email and secret passcode first.', 'error');
     return;
   }
+
+  if (!isValidEmailAddress(email)) {
+    markFieldInvalid(loginEmailInput);
+    loginEmailInput.focus();
+    showAdminMessage('loginMessage', 'Please enter a valid admin email address.', 'error');
+    return;
+  }
+  clearFieldInvalid(loginEmailInput);
 
   try {
     const response = await fetch(`${API_URL}/admin/request-login-access`, {
@@ -1184,7 +1650,15 @@ async function handleRequestAccessCode() {
       body: JSON.stringify({ email, secretPasscode })
     });
 
-    const result = await response.json();
+    const rawText = await response.text();
+    let result = {};
+    try {
+      result = rawText ? JSON.parse(rawText) : {};
+    } catch {
+      result = {
+        error: rawText || `Server returned an unexpected response (${response.status})`
+      };
+    }
 
     if (!response.ok) {
       const hint = result && result.hint ? ` ${result.hint}` : '';
@@ -1234,7 +1708,111 @@ async function handleRequestAccessCode() {
 
     showAdminMessage('loginMessage', `OTP requested successfully. Enter the code (valid ${expires} minutes).`, 'success');
   } catch (error) {
-    showAdminMessage('loginMessage', 'Error generating one-time access code', 'error');
+    const message = error && error.message
+      ? `Unable to reach server while generating access code. ${error.message}`
+      : 'Unable to reach server while generating access code.';
+    showAdminMessage('loginMessage', message, 'error');
+  }
+}
+
+async function handleRequestPasswordResetCode() {
+  const loginEmailInput = document.getElementById('loginEmail');
+  const email = loginEmailInput.value.trim().toLowerCase();
+  const secretPasscode = document.getElementById('loginSecretPasscode').value.trim();
+
+  if (!email || !secretPasscode) {
+    showAdminMessage('loginMessage', 'Enter admin email and secret passcode first.', 'error');
+    return;
+  }
+
+  if (!isValidEmailAddress(email)) {
+    markFieldInvalid(loginEmailInput);
+    loginEmailInput.focus();
+    showAdminMessage('loginMessage', 'Please enter a valid admin email address.', 'error');
+    return;
+  }
+  clearFieldInvalid(loginEmailInput);
+
+  try {
+    const response = await fetch(`${API_URL}/admin/request-login-access`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, secretPasscode })
+    });
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      showAdminMessage('loginMessage', result.error || 'Failed to send password reset OTP', 'error');
+      return;
+    }
+
+    showAdminMessage('loginMessage', 'Password reset OTP sent. Enter it below with your new password.', 'success');
+  } catch (error) {
+    showAdminMessage('loginMessage', 'Unable to send password reset OTP right now.', 'error');
+  }
+}
+
+async function handleResetPassword() {
+  const loginEmailInput = document.getElementById('loginEmail');
+  const resetCodeInput = document.getElementById('resetAccessCode');
+  const resetPasswordInput = document.getElementById('resetNewPassword');
+  const secretPasscodeInput = document.getElementById('loginSecretPasscode');
+
+  const email = String(loginEmailInput && loginEmailInput.value ? loginEmailInput.value : '').trim().toLowerCase();
+  const oneTimeCode = String(resetCodeInput && resetCodeInput.value ? resetCodeInput.value : '').replace(/\D/g, '').trim();
+  const newPassword = String(resetPasswordInput && resetPasswordInput.value ? resetPasswordInput.value : '').trim();
+  const secretPasscode = String(secretPasscodeInput && secretPasscodeInput.value ? secretPasscodeInput.value : '').trim();
+
+  if (!email || !oneTimeCode || !newPassword || !secretPasscode) {
+    showAdminMessage('loginMessage', 'Enter email, reset OTP, new password, and secret passcode.', 'error');
+    return;
+  }
+
+  if (!isValidEmailAddress(email)) {
+    markFieldInvalid(loginEmailInput);
+    loginEmailInput.focus();
+    showAdminMessage('loginMessage', 'Please enter a valid admin email address.', 'error');
+    return;
+  }
+  clearFieldInvalid(loginEmailInput);
+
+  if (newPassword.length < 6) {
+    markFieldInvalid(resetPasswordInput);
+    resetPasswordInput.focus();
+    showAdminMessage('loginMessage', 'New password must be at least 6 characters long.', 'error');
+    return;
+  }
+  clearFieldInvalid(resetPasswordInput);
+
+  try {
+    const response = await fetch(`${API_URL}/admin/reset-password`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email,
+        oneTimeCode,
+        newPassword,
+        secretPasscode
+      })
+    });
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      showAdminMessage('loginMessage', result.error || 'Failed to reset password', 'error');
+      return;
+    }
+
+    const loginPasswordInput = document.getElementById('loginPassword');
+    if (loginPasswordInput) {
+      loginPasswordInput.value = newPassword;
+    }
+
+    if (resetCodeInput) resetCodeInput.value = '';
+    if (resetPasswordInput) resetPasswordInput.value = '';
+
+    showAdminMessage('loginMessage', 'Password reset successful. You can now login with your new password.', 'success');
+  } catch (error) {
+    showAdminMessage('loginMessage', 'Unable to reset password right now.', 'error');
   }
 }
 
@@ -1242,9 +1820,18 @@ async function handleAdminRegister(e) {
   e.preventDefault();
   
   const name = document.getElementById('registerName').value;
-  const email = document.getElementById('registerEmail').value.trim().toLowerCase();
+  const registerEmailInput = document.getElementById('registerEmail');
+  const email = registerEmailInput.value.trim().toLowerCase();
   const password = document.getElementById('registerPassword').value;
   const secretPasscode = document.getElementById('registerSecretPasscode').value.trim();
+
+  if (!isValidEmailAddress(email)) {
+    markFieldInvalid(registerEmailInput);
+    registerEmailInput.focus();
+    showAdminMessage('registerMessage', 'Please enter a valid email address.', 'error');
+    return;
+  }
+  clearFieldInvalid(registerEmailInput);
   
   try {
     const response = await fetch(`${API_URL}/admin/register`, {

@@ -22,7 +22,7 @@ export default function AdminWebScreen() {
   // For PC preview, embed the admin page with an iframe.
   if (Platform.OS === 'web') {
     return (
-      <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      <View style={{ flex: 1, backgroundColor: '#f6f8fc' }}>
         {/* eslint-disable-next-line react/no-unknown-property */}
         <iframe
           title="CEO Salon Admin"
@@ -59,7 +59,7 @@ export default function AdminWebScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+    <View style={{ flex: 1, backgroundColor: '#f6f8fc' }}>
       <NativeWebView
         source={{ uri: startUrl }}
         originWhitelist={['*']}
@@ -97,22 +97,28 @@ const styles = StyleSheet.create({
     padding: 18,
     alignItems: 'stretch',
     justifyContent: 'center',
-    backgroundColor: '#fff'
+    backgroundColor: '#f6f8fc'
   },
   errorTitle: {
     fontSize: 20,
-    fontWeight: '800'
+    fontWeight: '800',
+    color: '#2d2342'
   },
   errorText: {
     marginTop: 10,
-    color: '#444'
+    color: '#5e5873'
   },
   button: {
     marginTop: 14,
-    backgroundColor: '#b78a2a',
+    backgroundColor: '#7c46e8',
     borderRadius: 12,
     paddingVertical: 12,
-    alignItems: 'center'
+    alignItems: 'center',
+    shadowColor: '#4f22a8',
+    shadowOpacity: 0.22,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 3
   },
   buttonText: {
     color: '#fff',
@@ -121,9 +127,9 @@ const styles = StyleSheet.create({
   buttonAlt: {
     backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: '#b78a2a'
+    borderColor: '#d8cfee'
   },
   buttonAltText: {
-    color: '#b78a2a'
+    color: '#4b3f69'
   }
 });

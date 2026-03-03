@@ -45,6 +45,7 @@
           </button>
         </li>
         <li><button id="adminLoginBtn" class="admin-btn" title="Admin Login/Register" data-i18n="nav_admin">Admin</button></li>
+        <li><button id="sunnyModeToggle" class="dark-mode-btn" title="Toggle Sunny Intensity">☀️ Soft</button></li>
         <li><button id="darkModeToggle" class="dark-mode-btn" title="Toggle Dark Mode">🌙</button></li>
       </ul>
     </div>
@@ -63,6 +64,11 @@
 
   <!-- CEO Spotlight Section -->
   <section id="ceo" class="ceo-section">
+    <div class="ceo-bg" aria-hidden="true">
+      <span class="ceo-bg__slide ceo-bg__slide--1"></span>
+      <span class="ceo-bg__slide ceo-bg__slide--2"></span>
+      <span class="ceo-bg__slide ceo-bg__slide--3"></span>
+    </div>
     <div class="container">
       <h2>Meet Our CEOs</h2>
       <p class="section-subtitle">Leadership behind CEO Unisex Salon</p>
@@ -85,6 +91,11 @@
 
   <!-- Services Section -->
   <section id="services" class="services">
+    <div class="services-bg" aria-hidden="true">
+      <span class="services-bg__slide services-bg__slide--1"></span>
+      <span class="services-bg__slide services-bg__slide--2"></span>
+      <span class="services-bg__slide services-bg__slide--3"></span>
+    </div>
     <div class="container">
       <h2 data-i18n="services_title">Our Services</h2>
       <p class="section-subtitle" data-i18n="services_subtitle">Premium Hair & Beauty Services</p>
@@ -97,6 +108,11 @@
 
   <!-- Products Section -->
   <section id="products" class="products">
+    <div class="products-bg" aria-hidden="true">
+      <span class="products-bg__slide products-bg__slide--1"></span>
+      <span class="products-bg__slide products-bg__slide--2"></span>
+      <span class="products-bg__slide products-bg__slide--3"></span>
+    </div>
     <div class="container">
       <h2>Products We Sell</h2>
       <p class="section-subtitle">Quality hair, beauty, and grooming products available at our salon</p>
@@ -617,8 +633,72 @@
     </div>
   </section>
 
+  <!-- Tracking Section -->
+  <section id="track-booking" class="booking-section">
+    <div class="track-bg" aria-hidden="true">
+      <span class="track-bg__slide track-bg__slide--1"></span>
+      <span class="track-bg__slide track-bg__slide--2"></span>
+      <span class="track-bg__slide track-bg__slide--3"></span>
+    </div>
+    <div class="container">
+      <h2>Track Your Booking</h2>
+      <p class="section-subtitle">Enter your tracking code and booking email to check if your service is approved or rejected.</p>
+
+      <form id="trackBookingForm" class="booking-form">
+        <div class="form-group">
+          <label for="trackCode">Tracking Code *</label>
+          <input type="text" id="trackCode" placeholder="e.g. BOOK-ABC12345" required>
+        </div>
+
+        <div class="form-group">
+          <label for="trackEmail">Booking Email *</label>
+          <input type="email" id="trackEmail" placeholder="you@example.com" required>
+        </div>
+
+        <button type="submit" class="submit-btn">Check Booking Status</button>
+      </form>
+
+      <div id="trackMessage" class="message"></div>
+      <div id="trackResult"></div>
+    </div>
+  </section>
+
+  <section id="track-product-order" class="booking-section">
+    <div class="track-bg" aria-hidden="true">
+      <span class="track-bg__slide track-bg__slide--1"></span>
+      <span class="track-bg__slide track-bg__slide--2"></span>
+      <span class="track-bg__slide track-bg__slide--3"></span>
+    </div>
+    <div class="container">
+      <h2>Track Your Product Order</h2>
+      <p class="section-subtitle">Enter your product order code and order email to check delivery/approval status.</p>
+
+      <form id="trackProductForm" class="booking-form">
+        <div class="form-group">
+          <label for="trackProductCode">Product Order Code *</label>
+          <input type="text" id="trackProductCode" placeholder="e.g. ORD-MA4N7X2" required>
+        </div>
+
+        <div class="form-group">
+          <label for="trackProductEmail">Order Email *</label>
+          <input type="email" id="trackProductEmail" placeholder="you@example.com" required>
+        </div>
+
+        <button type="submit" class="submit-btn">Check Product Order Status</button>
+      </form>
+
+      <div id="trackProductMessage" class="message"></div>
+      <div id="trackProductResult"></div>
+    </div>
+  </section>
+
   <!-- Gallery Section -->
   <section id="gallery" class="gallery">
+    <div class="gallery-bg" aria-hidden="true">
+      <span class="gallery-bg__slide gallery-bg__slide--1"></span>
+      <span class="gallery-bg__slide gallery-bg__slide--2"></span>
+      <span class="gallery-bg__slide gallery-bg__slide--3"></span>
+    </div>
     <div class="container">
       <h2 data-i18n="gallery_title">Gallery</h2>
       <p class="section-subtitle" data-i18n="gallery_subtitle">Our Portfolio</p>
@@ -654,6 +734,11 @@
 
   <!-- Team Section -->
   <section id="team" class="team">
+    <div class="team-bg" aria-hidden="true">
+      <span class="team-bg__slide team-bg__slide--1"></span>
+      <span class="team-bg__slide team-bg__slide--2"></span>
+      <span class="team-bg__slide team-bg__slide--3"></span>
+    </div>
     <div class="container">
       <h2 data-i18n="team_title">Our Professional Team</h2>
       <p class="section-subtitle" data-i18n="team_subtitle">Expert Stylists Dedicated to Your Beauty</p>
@@ -786,6 +871,27 @@
             <label for="loginAccessCode">One-Time Access Code (Optional)</label>
             <input type="text" id="loginAccessCode" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit code (optional)">
           </div>
+
+          <div class="form-group">
+            <button type="button" class="admin-compact-toggle" id="showForgotPasswordBtn" aria-expanded="false">
+              <span id="forgotToggleLabel">Forgot password? Tap to reset</span>
+              <span id="forgotToggleIcon" aria-hidden="true">▾</span>
+            </button>
+            <small class="admin-auth-help">Keep this hidden unless you need to reset your password.</small>
+          </div>
+
+          <div class="form-group is-initially-hidden" id="forgotPasswordPanel">
+            <button type="button" class="submit-btn secondary-action-btn" id="requestPasswordResetCodeBtn">Send Password Reset OTP</button>
+            <label for="resetAccessCode">Reset OTP Code *</label>
+            <input type="text" id="resetAccessCode" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit OTP code">
+
+            <label for="resetNewPassword" class="form-label-spaced">New Password *</label>
+            <input type="password" id="resetNewPassword" placeholder="Enter new password (min 6 chars)">
+
+            <button type="button" class="submit-btn secondary-action-btn" id="resetPasswordBtn">Reset Password</button>
+          </div>
+
+          <small class="admin-auth-help">Tip: Use password + secret passcode for fastest login. OTP is optional.</small>
           
           <button type="submit" class="submit-btn" data-i18n="admin_login_btn">Login</button>
         </form>
@@ -833,9 +939,17 @@
 
   <!-- Footer -->
   <footer class="footer">
+    <div class="footer-bg" aria-hidden="true">
+      <span class="footer-bg__slide footer-bg__slide--1"></span>
+      <span class="footer-bg__slide footer-bg__slide--2"></span>
+      <span class="footer-bg__slide footer-bg__slide--3"></span>
+    </div>
+    <div class="footer-sparkle" aria-hidden="true"></div>
     <div class="container">
-      <p data-i18n="footer_copyright">&copy; 2024 CEO UNISEX SALON. All rights reserved.</p>
-      <p data-i18n="footer_tagline">Professional Hair & Beauty Services | Lagos, Nigeria</p>
+      <div class="footer-glass">
+        <p data-i18n="footer_copyright">&copy; 2024 CEO UNISEX SALON. All rights reserved.</p>
+        <p data-i18n="footer_tagline">Professional Hair & Beauty Services | Lagos, Nigeria</p>
+      </div>
     </div>
   </footer>
 

@@ -7,6 +7,7 @@ export type Service = {
 
 export type Booking = {
   id: string;
+  trackingCode?: string;
   status: string;
   name: string;
   email: string;
@@ -44,6 +45,37 @@ export type TrackResponse = {
     paymentReceiptStatus?: string;
   };
   notifications: BookingNotification[];
+};
+
+export type ProductOrderItem = {
+  productId: number;
+  name: string;
+  category: string;
+  unitPrice: number;
+  quantity: number;
+  lineTotal: number;
+};
+
+export type ProductOrder = {
+  id: string;
+  orderCode: string;
+  status: string;
+  paymentStatus: string;
+  paymentMethod: string;
+  totalAmount: number;
+  amountDueNow: number;
+  amountRemaining: number;
+  paidAmount: number;
+  paymentProvider: string;
+  paymentReference: string;
+  bankTransferReference: string;
+  items: ProductOrderItem[];
+  createdAt: string;
+  updatedAt?: string | null;
+};
+
+export type ProductOrderTrackResponse = {
+  order: ProductOrder;
 };
 
 export type PaystackStatusResponse = {

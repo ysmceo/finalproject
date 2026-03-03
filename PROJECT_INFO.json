@@ -11,7 +11,7 @@
       "sections": [
         "Navigation Bar",
         "Hero Section with CTA",
-        "Services Catalog (8 services with Naira pricing)",
+        "Services Catalog (9 services with Naira pricing)",
         "Online Booking System",
         "Service Gallery",
         "Team Member Profiles",
@@ -92,6 +92,11 @@
       "name": "Full Body Massage",
       "price": 18000,
       "duration": "60 minutes"
+    },
+    {
+      "name": "Wig Revamping",
+      "price": 15000,
+      "duration": "1 day"
     }
   ],
   

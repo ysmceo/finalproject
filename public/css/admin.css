@@ -878,6 +878,15 @@ body.dark-mode .product-image-wrap {
   background: #5a6268;
 }
 
+.btn-info {
+  background: #17a2b8;
+  color: white;
+}
+
+.btn-info:hover {
+  background: #138496;
+}
+
 /* Product Orders tab polish */
 .product-order-card {
   border-left-color: #17a2b8;

@@ -35,6 +35,7 @@ All prices are in Nigerian Naira (₦):
 - Hair Spa - ₦12,000 (60 minutes)
 - Beard Trim - ₦3,000 (20 minutes)
 - Full Body Massage - ₦18,000 (60 minutes)
+- Wig Revamping - ₦15,000 (1 day)
 
 ## Installation
 

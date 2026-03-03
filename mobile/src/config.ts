@@ -64,6 +64,28 @@ function replaceLocalhostHost(inputBaseUrl: string, newHost: string): string {
   return inputBaseUrl;
 }
 
+function withPort(baseUrl: string, nextPort: number): string {
+  try {
+    const url = new URL(normalizeBaseUrl(baseUrl));
+    url.port = String(nextPort);
+    return url.toString().replace(/\/+$/, '');
+  } catch {
+    return normalizeBaseUrl(baseUrl);
+  }
+}
+
+function dedupeUrls(urls: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of urls) {
+    const normalized = normalizeBaseUrl(raw);
+    if (!normalized || seen.has(normalized)) continue;
+    seen.add(normalized);
+    out.push(normalized);
+  }
+  return out;
+}
+
 function getDefaultHost(): string {
   // Android emulator uses a special alias to the host machine.
   if (Platform.OS === 'android' && !isDevice) return '10.0.2.2';
@@ -74,9 +96,9 @@ function getDefaultHost(): string {
   return 'localhost';
 }
 
-// Local dev default: this repo typically runs the Express server on 3001.
+// Local dev default: this repo typically runs the Express server on 3002.
 // You can override via EXPO_PUBLIC_WEB_BASE_URL / EXPO_PUBLIC_API_BASE_URL.
-const DEFAULT_WEB_BASE_URL = `http://${getDefaultHost()}:3001`;
+const DEFAULT_WEB_BASE_URL = `http://${getDefaultHost()}:3002`;
 
 const rawWebBase = normalizeBaseUrl((process.env.EXPO_PUBLIC_WEB_BASE_URL || '').trim() || DEFAULT_WEB_BASE_URL);
 const rawApiBase = normalizeBaseUrl((process.env.EXPO_PUBLIC_API_BASE_URL || '').trim() || rawWebBase);
@@ -86,9 +108,20 @@ const localhostReplacement = inferredHost || (Platform.OS === 'android' && !isDe
 
 export const WEB_BASE_URL = replaceLocalhostHost(rawWebBase, localhostReplacement);
 export const API_BASE_URL = replaceLocalhostHost(rawApiBase, localhostReplacement) || WEB_BASE_URL;
+export const API_BASE_URL_CANDIDATES = dedupeUrls([
+  API_BASE_URL,
+  withPort(API_BASE_URL, 3002),
+  withPort(API_BASE_URL, 3001),
+  withPort(API_BASE_URL, 3000)
+]);
 
 export function buildApiUrl(pathname: string): string {
   const base = API_BASE_URL.replace(/\/+$/, '');
   const path = String(pathname || '').startsWith('/') ? String(pathname) : `/${pathname}`;
   return `${base}${path}`;
+}
+
+export function buildApiUrlCandidates(pathname: string): string[] {
+  const path = String(pathname || '').startsWith('/') ? String(pathname) : `/${pathname}`;
+  return API_BASE_URL_CANDIDATES.map((base) => `${base.replace(/\/+$/, '')}${path}`);
 }

@@ -16,7 +16,8 @@ const ADMIN_SECRET_PASSCODE = process.env.ADMIN_SECRET_PASSCODE || 'CHANGE_ME_AD
 const ONE_TIME_CODE_TTL_MS = 10 * 60 * 1000;
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || '';
 const PAYSTACK_PAYMENT_PAGE_URL = process.env.PAYSTACK_PAYMENT_PAGE_URL || '';
-const PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${PORT}`;
+let ACTIVE_PORT = PORT;
+let PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${ACTIVE_PORT}`;
 const GROK_API_KEY = String(process.env.GROK_API_KEY || '').trim();
 const GROK_BASE_URL = String(process.env.GROK_BASE_URL || 'https://api.x.ai/v1').trim().replace(/\/+$/, '');
 const GROK_MODEL = String(process.env.GROK_MODEL || 'grok-2-latest').trim();
@@ -76,10 +77,14 @@ const SMTP_FROM = process.env.SMTP_FROM || 'CEO Unisex Salon <no-reply@ceosaloon
 const SEND_PAYMENT_EMAIL_RECEIPTS = String(process.env.SEND_PAYMENT_EMAIL_RECEIPTS || 'false').trim().toLowerCase() === 'true';
 const SEND_BOOKING_STATUS_EMAILS = String(process.env.SEND_BOOKING_STATUS_EMAILS || 'false').trim().toLowerCase() === 'true';
 const SEND_ADMIN_NEW_BOOKING_EMAILS = String(process.env.SEND_ADMIN_NEW_BOOKING_EMAILS || 'false').trim().toLowerCase() === 'true';
+const SEND_BOOKING_TRACKING_CODE_EMAILS = String(process.env.SEND_BOOKING_TRACKING_CODE_EMAILS || 'true').trim().toLowerCase() === 'true';
 const PAYMENT_RECEIPTS_BCC = process.env.PAYMENT_RECEIPTS_BCC || '';
 const SEND_ADMIN_LOGIN_OTP_EMAILS = String(process.env.SEND_ADMIN_LOGIN_OTP_EMAILS || 'true').trim().toLowerCase() === 'true';
 const SEND_ADMIN_LOGIN_OTP_SMS = String(process.env.SEND_ADMIN_LOGIN_OTP_SMS || 'true').trim().toLowerCase() === 'true';
 const ALLOW_ADMIN_OTP_RESPONSE_FALLBACK = String(process.env.ALLOW_ADMIN_OTP_RESPONSE_FALLBACK || 'true').trim().toLowerCase() === 'true';
+const ADMIN_OTP_DELIVERY_TIMEOUT_MS = Number(process.env.ADMIN_OTP_DELIVERY_TIMEOUT_MS) > 0
+  ? Number(process.env.ADMIN_OTP_DELIVERY_TIMEOUT_MS)
+  : 8000;
 
 // SMS (Termii) - optional
 // Termii is commonly used in Nigeria and supports DND routes.
@@ -135,27 +140,77 @@ function isSmtpConfigured() {
     Boolean(String(SMTP_PASS || '').trim());
 }
 
-function getMailer() {
+function isGmailHostConfigured() {
+  const host = String(SMTP_HOST || '').trim().toLowerCase();
+  return host === 'smtp.gmail.com' || host.endsWith('.gmail.com');
+}
+
+const mailerCache = new Map();
+
+function shouldRetrySmtpWithFallback(error) {
+  const message = String(error && error.message ? error.message : '').toLowerCase();
+  const code = String(error && error.code ? error.code : '').toUpperCase();
+  return (
+    message.includes('greeting never received') ||
+    message.includes('timeout') ||
+    code === 'ETIMEDOUT' ||
+    code === 'ECONNECTION' ||
+    code === 'ESOCKET'
+  );
+}
+
+function getMailer(overrides = {}) {
   if (!isSmtpConfigured()) {
     const err = new Error('SMTP is not configured');
     err.code = 'SMTP_NOT_CONFIGURED';
     throw err;
   }
 
-  return nodemailer.createTransport({
+  const baseOptions = {
     host: String(SMTP_HOST).trim(),
     port: SMTP_PORT,
     secure: SMTP_SECURE,
+    requireTLS: !SMTP_SECURE,
+    connectionTimeout: 20_000,
+    greetingTimeout: 20_000,
+    socketTimeout: 30_000,
+    tls: {
+      servername: String(SMTP_HOST).trim(),
+      minVersion: 'TLSv1.2'
+    },
     auth: {
       user: String(SMTP_USER).trim(),
       pass: String(SMTP_PASS)
     }
+  };
+
+  const transportOptions = { ...baseOptions, ...overrides };
+  const cacheKey = JSON.stringify({
+    host: transportOptions.host || '',
+    port: Number(transportOptions.port || 0),
+    secure: Boolean(transportOptions.secure),
+    service: String(transportOptions.service || ''),
+    user: String(transportOptions.auth && transportOptions.auth.user ? transportOptions.auth.user : ''),
+    fallback: Boolean(overrides && overrides.service === 'gmail')
   });
+
+  if (mailerCache.has(cacheKey)) {
+    return mailerCache.get(cacheKey);
+  }
+
+  const transporter = nodemailer.createTransport({
+    ...transportOptions,
+    pool: true,
+    maxConnections: 3,
+    maxMessages: 100
+  });
+
+  mailerCache.set(cacheKey, transporter);
+  return transporter;
 }
 
 async function sendEmail({ to, subject, text, html, replyTo, bcc }) {
-  const transporter = getMailer();
-  const info = await transporter.sendMail({
+  const mailPayload = {
     from: SMTP_FROM,
     to,
     bcc: String(bcc || '').trim() || undefined,
@@ -163,8 +218,37 @@ async function sendEmail({ to, subject, text, html, replyTo, bcc }) {
     text,
     html,
     replyTo: replyTo || undefined
-  });
-  return info;
+  };
+
+  try {
+    const transporter = getMailer();
+    return await transporter.sendMail(mailPayload);
+  } catch (primaryError) {
+    // Common Gmail SMTP recovery path when STARTTLS/handshake fails in some networks.
+    if (isGmailHostConfigured() && shouldRetrySmtpWithFallback(primaryError)) {
+      try {
+        const gmailFallbackTransporter = getMailer({
+          service: 'gmail',
+          host: 'smtp.gmail.com',
+          port: 465,
+          secure: true,
+          requireTLS: false,
+          tls: {
+            servername: 'smtp.gmail.com',
+            minVersion: 'TLSv1.2'
+          }
+        });
+        return await gmailFallbackTransporter.sendMail(mailPayload);
+      } catch (fallbackError) {
+        // Preserve original context while surfacing fallback failure details.
+        const err = new Error(`${String(primaryError && primaryError.message ? primaryError.message : 'SMTP send failed')} | Gmail fallback failed: ${String(fallbackError && fallbackError.message ? fallbackError.message : 'unknown')}`);
+        err.code = fallbackError && fallbackError.code ? fallbackError.code : (primaryError && primaryError.code ? primaryError.code : 'SMTP_SEND_FAILED');
+        throw err;
+      }
+    }
+
+    throw primaryError;
+  }
 }
 
 async function maybeSendPaymentReceiptEmail({ booking, provider, paidAmount, reference, receiptUrl }) {
@@ -199,22 +283,24 @@ async function maybeSendPaymentReceiptEmail({ booking, provider, paidAmount, ref
 
   const text = `Hi ${booking.name || 'Customer'},\n\nWe received your payment for your booking.\n\nBooking ID: ${bookingId}\nService: ${serviceName}\nAmount paid: ${amountText}\nProvider: ${providerLabel}\nReference: ${safeRef || 'N/A'}\nReceipt: ${safeReceiptUrl || 'N/A'}\n\nThank you for choosing CEO Unisex Salon.`;
 
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height:1.5;">
-      <h2 style="margin:0 0 10px; color:#4a0e4e;">Payment Receipt</h2>
-      <p style="margin:0 0 12px;">Hi <strong>${String(booking.name || 'Customer').replace(/</g,'&lt;').replace(/>/g,'&gt;')}</strong>,</p>
-      <p style="margin:0 0 12px;">We received your payment for your booking.</p>
-      <div style="padding:12px; border:1px solid #eee; border-radius:10px; background:#faf7ff;">
-        <div><strong>Booking ID:</strong> ${bookingId}</div>
-        <div><strong>Service:</strong> ${serviceName.replace(/</g,'&lt;').replace(/>/g,'&gt;')}</div>
-        <div><strong>Amount paid:</strong> ${amountText}</div>
-        <div><strong>Provider:</strong> ${providerLabel}</div>
-        <div><strong>Reference:</strong> ${safeRef ? safeRef.replace(/</g,'&lt;').replace(/>/g,'&gt;') : 'N/A'}</div>
+  const html = buildColorfulEmailShell({
+    title: 'Payment Receipt',
+    subtitle: `${providerLabel} payment confirmed`,
+    accent: '#1e9d53',
+    bodyHtml: `
+      <p style="margin:0 0 10px;">Hi <strong>${escapeHtml(String(booking.name || 'Customer'))}</strong>,</p>
+      <p style="margin:0 0 14px; color:#4c3f63;">Your payment has been received successfully 🎉</p>
+      <div style="padding:14px; border:1px solid #d9f0e2; border-radius:12px; background:linear-gradient(180deg,#f6fff9 0%,#ffffff 100%);">
+        <div><strong>Booking ID:</strong> ${escapeHtml(bookingId)}</div>
+        <div><strong>Service:</strong> ${escapeHtml(serviceName)}</div>
+        <div><strong>Amount Paid:</strong> ${escapeHtml(amountText)}</div>
+        <div><strong>Provider:</strong> ${escapeHtml(providerLabel)}</div>
+        <div><strong>Reference:</strong> ${safeRef ? escapeHtml(safeRef) : 'N/A'}</div>
         <div><strong>Receipt:</strong> ${safeReceiptUrl ? `<a href="${safeReceiptUrl}" target="_blank" rel="noopener">View receipt</a>` : 'N/A'}</div>
       </div>
-      <p style="margin:12px 0 0; color:#666; font-size: 13px;">Thank you for choosing CEO Unisex Salon.</p>
-    </div>
-  `;
+      <p style="margin:12px 0 0; color:#6a5c80; font-size:13px;">Thank you for choosing CEO Unisex Salon.</p>
+    `
+  });
 
   const info = await sendEmail({
     to: toEmail,
@@ -381,16 +467,17 @@ async function maybeSendAdminNewBookingEmail({ booking, db }) {
   const when = `${date}${time ? ` at ${time}` : ''}`.trim() || 'N/A';
   const serviceMode = String(booking.serviceMode || '').trim() || 'in_salon';
 
-  const safe = (v) => String(v || '').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  const safe = (v) => escapeHtml(v);
 
   const subject = `New Booking Received - ${bookingCode}${bookingId ? ` (${bookingId})` : ''}`;
   const text = `A new booking has been created.\n\nBooking Code: ${bookingCode}\nBooking ID: ${bookingId || 'N/A'}\nCustomer: ${customerName}\nCustomer Email: ${customerEmail || 'N/A'}\nCustomer Phone: ${customerPhone || 'N/A'}\nService: ${serviceName}\nScheduled for: ${when}\nService Mode: ${serviceMode}\nAmount Due Now: ₦${Number(booking.amountDueNow || 0).toLocaleString()}\nPayment Method: ${String(booking.paymentMethod || '').trim() || 'N/A'}\n\nPlease log in to the admin dashboard to review this booking.`;
 
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height:1.5;">
-      <h2 style="margin:0 0 10px; color:#4a0e4e;">📌 New Booking Received</h2>
-      <p style="margin:0 0 12px;">A new customer booking has been submitted.</p>
-      <div style="padding:12px; border:1px solid #eee; border-radius:10px; background:#faf7ff;">
+  const html = buildColorfulEmailShell({
+    title: '📌 New Booking Received',
+    subtitle: 'A customer just placed a new booking request',
+    accent: '#ff1493',
+    bodyHtml: `
+      <div style="padding:14px; border:1px solid #f3d7ef; border-radius:12px; background:linear-gradient(180deg,#fff8fd 0%,#ffffff 100%);">
         <div><strong>Booking Code:</strong> ${safe(bookingCode)}</div>
         <div><strong>Booking ID:</strong> ${safe(bookingId || 'N/A')}</div>
         <div><strong>Customer:</strong> ${safe(customerName)}</div>
@@ -402,9 +489,9 @@ async function maybeSendAdminNewBookingEmail({ booking, db }) {
         <div><strong>Amount Due Now:</strong> ₦${Number(booking.amountDueNow || 0).toLocaleString()}</div>
         <div><strong>Payment Method:</strong> ${safe(String(booking.paymentMethod || '').trim() || 'N/A')}</div>
       </div>
-      <p style="margin:12px 0 0; color:#666; font-size:13px;">Please review this booking in the admin dashboard.</p>
-    </div>
-  `;
+      <p style="margin:12px 0 0; color:#6a5c80; font-size:13px;">Please review this booking in the admin dashboard.</p>
+    `
+  });
 
   const info = await sendEmail({
     to: recipients.join(','),
@@ -419,6 +506,169 @@ async function maybeSendAdminNewBookingEmail({ booking, db }) {
   booking.adminBookingEmailMessageId = info && info.messageId ? info.messageId : undefined;
 
   return { sent: true, recipients };
+}
+
+async function maybeSendAdminBookingStatusEmail({ booking, previousStatus, newStatus, db }) {
+  if (!isSmtpConfigured()) {
+    return { sent: false, skipped: true, reason: 'SMTP not configured' };
+  }
+
+  if (!booking || !db || !Array.isArray(db.admins)) {
+    return { sent: false, skipped: true, reason: 'Missing booking/admin records' };
+  }
+
+  const prev = String(previousStatus || '').trim().toLowerCase();
+  const next = String(newStatus || '').trim().toLowerCase();
+
+  if (prev === next) {
+    return { sent: false, skipped: true, reason: 'No status change' };
+  }
+
+  if (!['approved', 'cancelled'].includes(next)) {
+    return { sent: false, skipped: true, reason: 'No admin email for this status' };
+  }
+
+  if (next === 'approved' && booking.adminBookingApprovedEmailSentAt) {
+    return { sent: false, skipped: true, reason: 'Already sent (approved)' };
+  }
+
+  if (next === 'cancelled' && booking.adminBookingDeclinedEmailSentAt) {
+    return { sent: false, skipped: true, reason: 'Already sent (cancelled)' };
+  }
+
+  const recipients = Array.from(new Set(
+    db.admins
+      .map(admin => normalizeEmail(admin && admin.email ? admin.email : ''))
+      .filter(Boolean)
+  ));
+
+  if (!recipients.length) {
+    return { sent: false, skipped: true, reason: 'No admin email recipients found' };
+  }
+
+  const bookingId = String(booking.id || '').trim();
+  const bookingCode = buildBookingStatusCode(bookingId);
+  const customerName = String(booking.name || '').trim() || 'Customer';
+  const customerEmail = normalizeEmail(booking.email);
+  const customerPhone = normalizePhone(booking.phone);
+  const serviceName = String(booking.serviceName || '').trim() || 'Salon Service';
+  const date = String(booking.date || '').trim();
+  const time = String(booking.time || '').trim();
+  const when = `${date}${time ? ` at ${time}` : ''}`.trim() || 'N/A';
+
+  const safe = (v) => escapeHtml(v);
+  const statusLabel = next === 'approved' ? 'APPROVED' : 'DECLINED';
+  const statusEmoji = next === 'approved' ? '✅' : '❌';
+
+  const subject = `${statusEmoji} Booking ${statusLabel} - ${bookingCode}${bookingId ? ` (${bookingId})` : ''}`;
+  const text = `Booking status changed.
+
+Booking Code: ${bookingCode}
+Booking ID: ${bookingId || 'N/A'}
+Status: ${statusLabel}
+Customer: ${customerName}
+Customer Email: ${customerEmail || 'N/A'}
+Customer Phone: ${customerPhone || 'N/A'}
+Service: ${serviceName}
+Scheduled for: ${when}
+Payment Status: ${String(booking.paymentStatus || 'pending')}`;
+
+  const html = buildColorfulEmailShell({
+    title: `${statusEmoji} Booking ${statusLabel}`,
+    subtitle: 'Admin booking status update notice',
+    accent: next === 'approved' ? '#1e9d53' : '#d81b60',
+    bodyHtml: `
+      <div style="padding:14px; border:1px solid ${next === 'approved' ? '#d7f2e1' : '#f4dbe3'}; border-radius:12px; background:${next === 'approved' ? 'linear-gradient(180deg,#f8fffb 0%,#ffffff 100%)' : 'linear-gradient(180deg,#fff9fb 0%,#ffffff 100%)'};">
+        <div><strong>Booking Code:</strong> ${safe(bookingCode)}</div>
+        <div><strong>Booking ID:</strong> ${safe(bookingId || 'N/A')}</div>
+        <div><strong>Status:</strong> ${safe(statusLabel)}</div>
+        <div><strong>Customer:</strong> ${safe(customerName)}</div>
+        <div><strong>Customer Email:</strong> ${safe(customerEmail || 'N/A')}</div>
+        <div><strong>Customer Phone:</strong> ${safe(customerPhone || 'N/A')}</div>
+        <div><strong>Service:</strong> ${safe(serviceName)}</div>
+        <div><strong>Scheduled for:</strong> ${safe(when)}</div>
+        <div><strong>Payment Status:</strong> ${safe(String(booking.paymentStatus || 'pending'))}</div>
+      </div>
+    `
+  });
+
+  const info = await sendEmail({
+    to: recipients.join(','),
+    subject,
+    text,
+    html,
+    replyTo: customerEmail || undefined
+  });
+
+  const nowIso = new Date().toISOString();
+  if (next === 'approved') {
+    booking.adminBookingApprovedEmailSentAt = nowIso;
+  } else {
+    booking.adminBookingDeclinedEmailSentAt = nowIso;
+  }
+  booking.adminBookingStatusEmailRecipients = recipients;
+  booking.adminBookingStatusEmailLastMessageId = info && info.messageId ? info.messageId : undefined;
+
+  return { sent: true, recipients };
+}
+
+async function maybeSendBookingTrackingCodeEmail({ booking }) {
+  if (!SEND_BOOKING_TRACKING_CODE_EMAILS) {
+    return { sent: false, skipped: true, reason: 'SEND_BOOKING_TRACKING_CODE_EMAILS=false' };
+  }
+
+  if (!isSmtpConfigured()) {
+    return { sent: false, skipped: true, reason: 'SMTP not configured' };
+  }
+
+  if (!booking || !booking.email) {
+    return { sent: false, skipped: true, reason: 'Missing booking/email' };
+  }
+
+  if (booking.trackingCodeEmailSentAt) {
+    return { sent: false, skipped: true, reason: 'Already sent' };
+  }
+
+  const toEmail = normalizeEmail(booking.email);
+  const trackingCode = getBookingTrackingCode(booking);
+  const bookingId = String(booking.id || '').trim();
+  const serviceName = String(booking.serviceName || 'Salon Service').trim();
+  const when = `${String(booking.date || '').trim()}${String(booking.time || '').trim() ? ` at ${String(booking.time || '').trim()}` : ''}`.trim() || 'N/A';
+
+  const subject = `Your Booking Tracking Code - ${trackingCode}`;
+  const text = `Hi ${booking.name || 'Customer'},\n\nYour booking was received successfully.\n\nTracking Code: ${trackingCode}\nBooking ID: ${bookingId || 'N/A'}\nService: ${serviceName}\nScheduled for: ${when}\n\nUse your tracking code + booking email on our website to check if your booking is approved or declined.\n\nThank you for choosing CEO Unisex Salon.`;
+
+  const html = buildColorfulEmailShell({
+    title: '🔎 Booking Tracking Code',
+    subtitle: 'Use this code to track approval status online',
+    accent: '#2b6ef2',
+    bodyHtml: `
+      <p style="margin:0 0 10px;">Hi <strong>${escapeHtml(String(booking.name || 'Customer'))}</strong>,</p>
+      <p style="margin:0 0 14px; color:#4c3f63;">Your booking was received. Keep your tracking code safe and use it with your booking email to track status on the website.</p>
+
+      <div style="padding:14px; border:1px solid #d9e6ff; border-radius:12px; background:linear-gradient(180deg,#f6f9ff 0%,#ffffff 100%);">
+        <div><strong>Tracking Code:</strong> <span style="font-family:monospace; font-size:16px; letter-spacing:1px;">${escapeHtml(trackingCode)}</span></div>
+        <div><strong>Booking ID:</strong> ${escapeHtml(bookingId || 'N/A')}</div>
+        <div><strong>Service:</strong> ${escapeHtml(serviceName)}</div>
+        <div><strong>Scheduled for:</strong> ${escapeHtml(when)}</div>
+      </div>
+
+      <p style="margin:12px 0 0; color:#6a5c80; font-size:13px;">Tracking page: <a href="${escapeHtml(`${PUBLIC_BASE_URL}/#track-booking`)}" target="_blank" rel="noopener">${escapeHtml(`${PUBLIC_BASE_URL}/#track-booking`)}</a></p>
+    `
+  });
+
+  const info = await sendEmail({
+    to: toEmail,
+    subject,
+    text,
+    html
+  });
+
+  booking.trackingCodeEmailSentAt = new Date().toISOString();
+  booking.trackingCodeEmailTo = toEmail;
+  booking.trackingCodeEmailMessageId = info && info.messageId ? info.messageId : undefined;
+
+  return { sent: true };
 }
 
 async function sendSmsViaTermii({ to, message }) {
@@ -665,7 +915,8 @@ function initializeDatabase() {
         { id: 5, name: 'Pedicure', price: 5000, duration: 40 },
         { id: 6, name: 'Hair Spa', price: 12000, duration: 60 },
         { id: 7, name: 'Beard Trim', price: 3000, duration: 20 },
-        { id: 8, name: 'Full Body Massage', price: 18000, duration: 60 }
+        { id: 8, name: 'Full Body Massage', price: 18000, duration: 60 },
+        { id: 9, name: 'Wig Revamping', price: 15000, duration: 1440 }
       ]
     };
     fs.writeFileSync(dbPath, JSON.stringify(initialData, null, 2));
@@ -729,6 +980,15 @@ function buildBankTransferReference(bookingId) {
 function buildBookingStatusCode(bookingId) {
   const shortId = String(bookingId || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
   return `BOOK-${shortId || 'UNKNOWN'}`;
+}
+
+function getBookingTrackingCode(booking) {
+  const existing = String(booking && booking.trackingCode ? booking.trackingCode : '').trim().toUpperCase();
+  if (existing) {
+    return existing;
+  }
+
+  return buildBookingStatusCode(booking && booking.id ? booking.id : '');
 }
 
 function isPaystackConfigured() {
@@ -883,8 +1143,47 @@ function generateOneTimeCode() {
   return String(Math.floor(100000 + Math.random() * 900000));
 }
 
+function normalizeOneTimeCode(code) {
+  return String(code || '').replace(/\D/g, '').trim();
+}
+
 function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
+}
+
+function isValidEmail(email) {
+  const normalized = normalizeEmail(email);
+  if (!normalized) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(normalized);
+}
+
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function buildColorfulEmailShell({ title, subtitle, bodyHtml, accent = '#8f2aa8' }) {
+  const safeTitle = escapeHtml(title || 'CEO Unisex Salon');
+  const safeSubtitle = escapeHtml(subtitle || 'Professional beauty services');
+
+  return `
+    <div style="margin:0; padding:24px; background:linear-gradient(135deg,#f8efff 0%,#fff5fb 45%,#f7fbff 100%); font-family:'Segoe UI', Arial, sans-serif; line-height:1.55; color:#2f2340;">
+      <div style="max-width:680px; margin:0 auto; border-radius:18px; overflow:hidden; border:1px solid #ead6ff; background:#ffffff; box-shadow:0 14px 30px rgba(74,14,78,.12);">
+        <div style="padding:20px 24px; background:linear-gradient(135deg,#4a0e4e 0%,${accent} 55%,#ff5fa2 100%); color:#fff;">
+          <div style="font-size:12px; letter-spacing:.5px; text-transform:uppercase; opacity:.95;">CEO Unisex Salon</div>
+          <h2 style="margin:8px 0 4px; font-size:24px; line-height:1.25;">${safeTitle}</h2>
+          <div style="font-size:13px; opacity:.92;">${safeSubtitle}</div>
+        </div>
+        <div style="padding:22px 24px;">
+          ${bodyHtml || ''}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 function isGrokConfigured() {
@@ -1137,17 +1436,60 @@ app.post('/api/product-orders', async (req, res) => {
   });
 });
 
-// Track product order (Customer)
-app.get('/api/product-orders/:id/track', (req, res) => {
-  const orderId = String(req.params.id || '').trim();
+// Track product order by order code + email (Customer)
+app.get('/api/product-orders/track', (req, res) => {
+  const orderCode = String(req.query.orderCode || '').trim().toUpperCase();
   const email = normalizeEmail(req.query.email);
 
-  if (!orderId || !email) {
-    return res.status(400).json({ error: 'Order id and email are required' });
+  if (!orderCode || !email) {
+    return res.status(400).json({ error: 'orderCode and email are required' });
   }
 
   const db = readDatabase();
-  const order = db.productOrders.find(o => String(o.id) === orderId);
+  const order = (db.productOrders || []).find(o => String(o.orderCode || '').trim().toUpperCase() === orderCode);
+
+  if (!order) {
+    return res.status(404).json({ error: 'Product order not found' });
+  }
+
+  if (normalizeEmail(order.email) !== email) {
+    return res.status(401).json({ error: 'Email does not match this product order' });
+  }
+
+  return res.json({
+    order: {
+      id: order.id,
+      orderCode: order.orderCode,
+      status: order.status,
+      paymentStatus: order.paymentStatus,
+      paymentMethod: order.paymentMethod,
+      totalAmount: order.totalAmount,
+      amountDueNow: order.amountDueNow,
+      amountRemaining: order.amountRemaining,
+      paidAmount: order.paidAmount,
+      paymentProvider: order.paymentProvider,
+      paymentReference: order.paymentReference,
+      bankTransferReference: order.bankTransferReference,
+      items: Array.isArray(order.items) ? order.items : [],
+      createdAt: order.createdAt,
+      updatedAt: order.updatedAt || null
+    }
+  });
+});
+
+// Track product order by id OR order code (legacy/customer convenience)
+app.get('/api/product-orders/:id/track', (req, res) => {
+  const lookupToken = String(req.params.id || '').trim();
+  const lookupCode = lookupToken.toUpperCase();
+  const email = normalizeEmail(req.query.email);
+
+  if (!lookupToken || !email) {
+    return res.status(400).json({ error: 'Order id/code and email are required' });
+  }
+
+  const db = readDatabase();
+  const order = (db.productOrders || []).find(o => String(o.id) === lookupToken)
+    || (db.productOrders || []).find(o => String(o.orderCode || '').trim().toUpperCase() === lookupCode);
 
   if (!order) {
     return res.status(404).json({ error: 'Product order not found' });
@@ -1357,6 +1699,11 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
+  const normalizedEmail = normalizeEmail(email);
+  if (!isValidEmail(normalizedEmail)) {
+    return res.status(400).json({ error: 'Please enter a valid email address' });
+  }
+
   if (!['full', 'deposit_50'].includes(normalizedPaymentPlan)) {
     return res.status(400).json({ error: 'Invalid payment plan. Use full or deposit_50.' });
   }
@@ -1428,8 +1775,9 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
 
   const booking = {
     id: uuidv4(),
+    trackingCode: '',
     name,
-    email,
+    email: normalizedEmail,
     phone,
     serviceId: parseInt(serviceId),
     serviceName: service.name,
@@ -1463,6 +1811,8 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
     createdAt: new Date().toISOString()
   };
 
+  booking.trackingCode = getBookingTrackingCode(booking);
+
   db.bookings.push(booking);
 
   if (String(booking.paymentMethod || '').trim() === 'Bank Transfer') {
@@ -1476,6 +1826,7 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
   }
 
   let adminBookingEmail = null;
+  let trackingCodeEmail = null;
   try {
     adminBookingEmail = await maybeSendAdminNewBookingEmail({ booking, db });
   } catch (error) {
@@ -1487,10 +1838,29 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
     // Never block booking creation due to admin email errors.
   }
 
+  try {
+    trackingCodeEmail = await maybeSendBookingTrackingCodeEmail({ booking });
+  } catch (error) {
+    trackingCodeEmail = {
+      sent: false,
+      error: true,
+      reason: error && error.message ? String(error.message) : 'Failed to send tracking code email'
+    };
+    // Never block booking creation due to tracking code email errors.
+  }
+
+  addBookingNotification(
+    db,
+    booking,
+    'tracking_code_issued',
+    `🔎 Your tracking code is ${booking.trackingCode}. Use it with your booking email to check approval status on the website.`
+  );
+
   writeDatabase(db);
 
   res.status(201).json({
     message: `Your service order has been made. A customer care representative will reach out to you via the email and phone number provided. Booking ID: ${booking.id}. Payment: ${normalizedPaymentPlan === 'deposit_50' ? '50% deposit' : 'full'} (₦${amountDueNow.toLocaleString()} due now).`,
+    trackingCode: booking.trackingCode,
     paymentBankDetails: String(booking.paymentMethod || '').trim() === 'Bank Transfer'
       ? {
           bankName: SALON_BANK_NAME,
@@ -1501,7 +1871,8 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
         }
       : null,
     notifications: {
-      adminEmail: adminBookingEmail
+      adminEmail: adminBookingEmail,
+      trackingCodeEmail
     },
     booking
   });
@@ -2241,17 +2612,17 @@ app.get('/api/payments/paystack/verify/:reference', async (req, res) => {
   }
 });
 
-// Track booking status + notifications (Customer)
-app.get('/api/bookings/:id/track', (req, res) => {
-  const bookingId = String(req.params.id || '').trim();
+// Track booking status + notifications by tracking code (Customer)
+app.get('/api/bookings/track', (req, res) => {
+  const trackingCode = String(req.query.trackingCode || '').trim().toUpperCase();
   const email = normalizeEmail(req.query.email);
 
-  if (!bookingId || !email) {
-    return res.status(400).json({ error: 'Booking id and email are required' });
+  if (!trackingCode || !email) {
+    return res.status(400).json({ error: 'trackingCode and email are required' });
   }
 
   const db = readDatabase();
-  const booking = db.bookings.find(b => String(b.id) === bookingId);
+  const booking = db.bookings.find(b => getBookingTrackingCode(b) === trackingCode);
 
   if (!booking) {
     return res.status(404).json({ error: 'Booking not found' });
@@ -2261,13 +2632,77 @@ app.get('/api/bookings/:id/track', (req, res) => {
     return res.status(401).json({ error: 'Email does not match this booking' });
   }
 
+  if (!booking.trackingCode) {
+    booking.trackingCode = getBookingTrackingCode(booking);
+    writeDatabase(db);
+  }
+
   const notifications = (db.bookingNotifications || [])
-    .filter(n => String(n.bookingId) === bookingId)
+    .filter(n => String(n.bookingId) === String(booking.id))
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   res.json({
     booking: {
       id: booking.id,
+      trackingCode: booking.trackingCode,
+      status: booking.status,
+      serviceName: booking.serviceName,
+      date: booking.date,
+      time: booking.time,
+      price: booking.price,
+      paymentMethod: booking.paymentMethod,
+      paymentPlan: booking.paymentPlan,
+      amountDueNow: booking.amountDueNow,
+      amountRemaining: booking.amountRemaining,
+      paymentStatus: booking.paymentStatus,
+      paymentProvider: booking.paymentProvider,
+      paymentReference: booking.paymentReference,
+      paidAmount: booking.paidAmount,
+      bankTransferReference: booking.bankTransferReference,
+      paymentReceiptFile: booking.paymentReceiptFile || null,
+      paymentReceiptStatus: booking.paymentReceiptStatus || '',
+      serviceMode: booking.serviceMode,
+      homeServiceAddress: booking.homeServiceAddress
+    },
+    notifications
+  });
+});
+
+// Track booking status + notifications (Customer)
+app.get('/api/bookings/:id/track', (req, res) => {
+  const bookingLookupToken = String(req.params.id || '').trim();
+  const email = normalizeEmail(req.query.email);
+
+  if (!bookingLookupToken || !email) {
+    return res.status(400).json({ error: 'Booking id and email are required' });
+  }
+
+  const db = readDatabase();
+  const normalizedLookupCode = bookingLookupToken.toUpperCase();
+  const booking = db.bookings.find(b => String(b.id) === bookingLookupToken)
+    || db.bookings.find(b => getBookingTrackingCode(b) === normalizedLookupCode);
+
+  if (!booking) {
+    return res.status(404).json({ error: 'Booking not found' });
+  }
+
+  if (normalizeEmail(booking.email) !== email) {
+    return res.status(401).json({ error: 'Email does not match this booking' });
+  }
+
+  if (!booking.trackingCode) {
+    booking.trackingCode = getBookingTrackingCode(booking);
+    writeDatabase(db);
+  }
+
+  const notifications = (db.bookingNotifications || [])
+    .filter(n => String(n.bookingId) === String(booking.id))
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  res.json({
+    booking: {
+      id: booking.id,
+      trackingCode: booking.trackingCode,
       status: booking.status,
       serviceName: booking.serviceName,
       date: booking.date,
@@ -2550,9 +2985,10 @@ app.put('/api/admin/bookings/:id', requireAdminAuth, async (req, res) => {
     accepted: 'approved',
     declined: 'cancelled'
   };
-  const normalizedStatus = normalizedStatusMap[status] || status;
+  const requestedStatusRaw = String(status || '').trim().toLowerCase();
+  const normalizedStatus = normalizedStatusMap[requestedStatusRaw] || requestedStatusRaw;
 
-  if (!['pending', 'approved', 'cancelled', 'completed', 'accepted', 'declined'].includes(status)) {
+  if (!['pending', 'approved', 'cancelled', 'completed'].includes(normalizedStatus)) {
     return res.status(400).json({ error: 'Invalid status' });
   }
 
@@ -2563,11 +2999,14 @@ app.put('/api/admin/bookings/:id', requireAdminAuth, async (req, res) => {
     return res.status(404).json({ error: 'Booking not found' });
   }
 
-  const previousStatus = booking.status;
+  const previousStatusRaw = String(booking.status || '').trim().toLowerCase();
+  const previousStatus = normalizedStatusMap[previousStatusRaw] || previousStatusRaw || 'pending';
+  const statusChanged = previousStatus !== normalizedStatus;
+
   booking.status = normalizedStatus;
   booking.updatedAt = new Date().toISOString();
 
-  if (previousStatus !== normalizedStatus && normalizedStatus === 'approved') {
+  if (statusChanged && normalizedStatus === 'approved') {
     addBookingNotification(
       db,
       booking,
@@ -2576,7 +3015,7 @@ app.put('/api/admin/bookings/:id', requireAdminAuth, async (req, res) => {
     );
   }
 
-  if (previousStatus !== normalizedStatus && normalizedStatus === 'cancelled') {
+  if (statusChanged && normalizedStatus === 'cancelled') {
     addBookingNotification(
       db,
       booking,
@@ -2587,37 +3026,72 @@ app.put('/api/admin/bookings/:id', requireAdminAuth, async (req, res) => {
 
   let bookingStatusEmailResult = null;
   let bookingStatusSmsResult = null;
+  let bookingStatusAdminEmailResult = null;
 
-  try {
-    bookingStatusEmailResult = await maybeSendBookingStatusEmail({ booking, previousStatus, newStatus: normalizedStatus });
-  } catch (e) {
-    bookingStatusEmailResult = {
-      sent: false,
-      error: true,
-      reason: e && e.message ? String(e.message) : 'Email send failed'
-    };
-    // Never block admin updates due to email errors.
-  }
+  if (statusChanged) {
+    try {
+      bookingStatusEmailResult = await maybeSendBookingStatusEmail({ booking, previousStatus, newStatus: normalizedStatus });
+    } catch (e) {
+      bookingStatusEmailResult = {
+        sent: false,
+        error: true,
+        reason: e && e.message ? String(e.message) : 'Email send failed'
+      };
+      // Never block admin updates due to email errors.
+    }
 
-  try {
-    bookingStatusSmsResult = await maybeSendBookingStatusSms({ booking, previousStatus, newStatus: normalizedStatus });
-  } catch (e) {
-    bookingStatusSmsResult = {
-      sent: false,
-      error: true,
-      reason: e && e.message ? String(e.message) : 'SMS send failed'
-    };
-    // Never block admin updates due to SMS errors.
+    try {
+      bookingStatusSmsResult = await maybeSendBookingStatusSms({ booking, previousStatus, newStatus: normalizedStatus });
+    } catch (e) {
+      bookingStatusSmsResult = {
+        sent: false,
+        error: true,
+        reason: e && e.message ? String(e.message) : 'SMS send failed'
+      };
+      // Never block admin updates due to SMS errors.
+    }
+
+    try {
+      bookingStatusAdminEmailResult = await maybeSendAdminBookingStatusEmail({
+        booking,
+        previousStatus,
+        newStatus: normalizedStatus,
+        db
+      });
+    } catch (e) {
+      bookingStatusAdminEmailResult = {
+        sent: false,
+        error: true,
+        reason: e && e.message ? String(e.message) : 'Admin email send failed'
+      };
+      // Never block admin updates due to admin-notify errors.
+    }
+  } else {
+    bookingStatusEmailResult = { sent: false, skipped: true, reason: 'No status change' };
+    bookingStatusSmsResult = { sent: false, skipped: true, reason: 'No status change' };
+    bookingStatusAdminEmailResult = { sent: false, skipped: true, reason: 'No status change' };
   }
 
   writeDatabase(db);
 
+  const statusActionLabel = normalizedStatus === 'approved'
+    ? 'accepted'
+    : normalizedStatus === 'cancelled'
+      ? 'declined'
+      : normalizedStatus;
+
   res.json({
-    message: 'Booking updated successfully',
+    message: statusChanged
+      ? `Booking ${statusActionLabel} successfully`
+      : `Booking already ${statusActionLabel}. No status change.`,
+    statusChanged,
+    previousStatus,
+    currentStatus: normalizedStatus,
     booking,
     notifications: {
       email: bookingStatusEmailResult,
-      sms: bookingStatusSmsResult
+      sms: bookingStatusSmsResult,
+      adminEmail: bookingStatusAdminEmailResult
     }
   });
 });
@@ -2681,6 +3155,7 @@ app.post('/api/admin/bookings/:id/test-notify', requireAdminAuth, async (req, re
 
   let email = null;
   let sms = null;
+  let adminEmail = null;
 
   try {
     email = await maybeSendBookingStatusEmail({ booking, previousStatus, newStatus: status });
@@ -2694,8 +3169,19 @@ app.post('/api/admin/bookings/:id/test-notify', requireAdminAuth, async (req, re
     sms = { sent: false, error: true, reason: e && e.message ? String(e.message) : 'SMS send failed' };
   }
 
+  try {
+    adminEmail = await maybeSendAdminBookingStatusEmail({
+      booking,
+      previousStatus,
+      newStatus: status,
+      db
+    });
+  } catch (e) {
+    adminEmail = { sent: false, error: true, reason: e && e.message ? String(e.message) : 'Admin email send failed' };
+  }
+
   writeDatabase(db);
-  return res.json({ message: 'Notification test completed', bookingId, status, notifications: { email, sms } });
+  return res.json({ message: 'Notification test completed', bookingId, status, notifications: { email, sms, adminEmail } });
 });
 
 // Send message
@@ -2706,11 +3192,16 @@ app.post('/api/messages', upload.single('reportFile'), (req, res) => {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
+  const normalizedMessageEmail = normalizeEmail(email);
+  if (!isValidEmail(normalizedMessageEmail)) {
+    return res.status(400).json({ error: 'Please enter a valid email address' });
+  }
+
   const db = readDatabase();
   const msg = {
     id: uuidv4(),
     name,
-    email,
+    email: normalizedMessageEmail,
     subject,
     message,
     reportType: reportType || 'general_message',
@@ -2876,6 +3367,10 @@ app.post('/api/admin/request-login-access', async (req, res) => {
     return res.status(400).json({ error: 'Email and secret passcode are required' });
   }
 
+  if (!isValidEmail(normalizedEmail)) {
+    return res.status(400).json({ error: 'Please enter a valid email address' });
+  }
+
   const db = readDatabase();
 
   if (db.admins.length === 0) {
@@ -2916,63 +3411,86 @@ app.post('/api/admin/request-login-access', async (req, res) => {
     sms: { attempted: false, sent: false, skipped: false, reason: '' }
   };
 
-  if (SEND_ADMIN_LOGIN_OTP_EMAILS) {
+  async function withTimeout(promiseFactory, timeoutMs) {
+    let timeoutHandle;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutHandle = setTimeout(() => {
+        const err = new Error(`Timeout after ${timeoutMs}ms`);
+        err.code = 'DELIVERY_TIMEOUT';
+        reject(err);
+      }, timeoutMs);
+    });
+
+    try {
+      return await Promise.race([promiseFactory(), timeoutPromise]);
+    } finally {
+      clearTimeout(timeoutHandle);
+    }
+  }
+
+  const emailTask = async () => {
+    if (!SEND_ADMIN_LOGIN_OTP_EMAILS) return;
     delivery.email.attempted = true;
 
     if (!isSmtpConfigured()) {
       delivery.email.skipped = true;
       delivery.email.reason = 'SMTP not configured';
-    } else {
-      try {
-        const subject = 'CEO Unisex Salon Admin OTP Code';
-        const text = `${otpMessage}\n\nThis code expires in 10 minutes. If you did not request this, ignore this message.`;
-        const decoratedCode = String(accessCode || '')
-          .split('')
-          .map(char => `<span style="display:inline-block; min-width:42px; padding:10px 0; margin:0 4px; text-align:center; border-radius:10px; background:#ffffff; color:#4a0e4e; border:1px solid #f1d3f6; box-shadow:0 4px 10px rgba(74,14,78,.08); font-weight:800; font-size:26px; letter-spacing:0;">${char.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>`)
-          .join('');
-        const html = `
-          <div style="margin:0; padding:24px; background:#f7f2ff; font-family:'Segoe UI', Arial, sans-serif; line-height:1.5; color:#2f2340;">
-            <div style="max-width:620px; margin:0 auto; border-radius:18px; overflow:hidden; border:1px solid #ead6ff; background:#ffffff; box-shadow:0 12px 28px rgba(74,14,78,.12);">
-              <div style="padding:22px 24px; background:linear-gradient(135deg,#5c1b66 0%,#8f2aa8 45%,#ff5fa2 100%); color:#ffffff;">
-                <div style="font-size:13px; opacity:.95; letter-spacing:.4px; text-transform:uppercase;">CEO Unisex Salon</div>
-                <h2 style="margin:8px 0 0; font-size:24px; line-height:1.2;">Admin Login OTP</h2>
+      return;
+    }
+
+    try {
+      const subject = 'CEO Unisex Salon Admin OTP Code';
+      const text = `${otpMessage}\n\nThis code expires in 10 minutes. If you did not request this, ignore this message.`;
+      const decoratedCode = String(accessCode || '')
+        .split('')
+        .map(char => `<span style="display:inline-block; min-width:42px; padding:10px 0; margin:0 4px; text-align:center; border-radius:10px; background:#ffffff; color:#4a0e4e; border:1px solid #f1d3f6; box-shadow:0 4px 10px rgba(74,14,78,.08); font-weight:800; font-size:26px; letter-spacing:0;">${char.replace(/</g, '&lt;').replace(/>/g, '&gt;')}</span>`)
+        .join('');
+      const html = `
+        <div style="margin:0; padding:24px; background:#f7f2ff; font-family:'Segoe UI', Arial, sans-serif; line-height:1.5; color:#2f2340;">
+          <div style="max-width:620px; margin:0 auto; border-radius:18px; overflow:hidden; border:1px solid #ead6ff; background:#ffffff; box-shadow:0 12px 28px rgba(74,14,78,.12);">
+            <div style="padding:22px 24px; background:linear-gradient(135deg,#5c1b66 0%,#8f2aa8 45%,#ff5fa2 100%); color:#ffffff;">
+              <div style="font-size:13px; opacity:.95; letter-spacing:.4px; text-transform:uppercase;">CEO Unisex Salon</div>
+              <h2 style="margin:8px 0 0; font-size:24px; line-height:1.2;">Admin Login OTP</h2>
+            </div>
+
+            <div style="padding:24px;">
+              <p style="margin:0 0 12px; font-size:15px; color:#4b3b62;">Hi Admin,</p>
+              <p style="margin:0 0 14px; font-size:15px; color:#4b3b62;">This is your OTP code. Use it to complete your admin login:</p>
+
+              <div style="margin:0 0 16px; padding:18px 12px; border-radius:14px; background:linear-gradient(180deg,#fff7ff 0%,#fff 100%); border:1px solid #f1d3f6; text-align:center;">
+                <div style="margin:0 0 8px; font-size:12px; color:#8a6292; text-transform:uppercase; letter-spacing:.7px;">One-Time Password</div>
+                <div aria-label="OTP code" style="white-space:nowrap;">${decoratedCode}</div>
+                <div style="margin-top:10px; font-size:12px; color:#8a6292;">Code (plain): <strong style="color:#4a0e4e; letter-spacing:2px;">${safeCode}</strong></div>
               </div>
 
-              <div style="padding:24px;">
-                <p style="margin:0 0 12px; font-size:15px; color:#4b3b62;">Hi Admin,</p>
-                <p style="margin:0 0 14px; font-size:15px; color:#4b3b62;">This is your OTP code. Use it to complete your admin login:</p>
-
-                <div style="margin:0 0 16px; padding:18px 12px; border-radius:14px; background:linear-gradient(180deg,#fff7ff 0%,#fff 100%); border:1px solid #f1d3f6; text-align:center;">
-                  <div style="margin:0 0 8px; font-size:12px; color:#8a6292; text-transform:uppercase; letter-spacing:.7px;">One-Time Password</div>
-                  <div aria-label="OTP code" style="white-space:nowrap;">${decoratedCode}</div>
-                  <div style="margin-top:10px; font-size:12px; color:#8a6292;">Code (plain): <strong style="color:#4a0e4e; letter-spacing:2px;">${safeCode}</strong></div>
-                </div>
-
-                <div style="margin:0 0 14px; padding:10px 12px; border-radius:10px; background:#eefbf3; border:1px solid #caedd7; color:#1e6a3a; font-size:14px;">
-                  ⏱ This code expires in <strong>10 minutes</strong>.
-                </div>
-
-                <p style="margin:0; font-size:13px; color:#7a6c8f;">If you did not request this code, please ignore this email.</p>
+              <div style="margin:0 0 14px; padding:10px 12px; border-radius:10px; background:#eefbf3; border:1px solid #caedd7; color:#1e6a3a; font-size:14px;">
+                ⏱ This code expires in <strong>10 minutes</strong>.
               </div>
+
+              <p style="margin:0; font-size:13px; color:#7a6c8f;">If you did not request this code, please ignore this email.</p>
             </div>
           </div>
-        `;
+        </div>
+      `;
 
-        await sendEmail({
+      await withTimeout(
+        () => sendEmail({
           to: normalizeEmail(admin.email),
           subject,
           text,
           html
-        });
+        }),
+        ADMIN_OTP_DELIVERY_TIMEOUT_MS
+      );
 
-        delivery.email.sent = true;
-      } catch (error) {
-        delivery.email.reason = error && error.message ? String(error.message) : 'Failed to send OTP email';
-      }
+      delivery.email.sent = true;
+    } catch (error) {
+      delivery.email.reason = error && error.message ? String(error.message) : 'Failed to send OTP email';
     }
-  }
+  };
 
-  if (SEND_ADMIN_LOGIN_OTP_SMS) {
+  const smsTask = async () => {
+    if (!SEND_ADMIN_LOGIN_OTP_SMS) return;
     delivery.sms.attempted = true;
     const adminPhone = normalizePhone(admin.phone);
     const smsTo = normalizePhoneToE164(adminPhone);
@@ -2980,24 +3498,34 @@ app.post('/api/admin/request-login-access', async (req, res) => {
     if (!adminPhone) {
       delivery.sms.skipped = true;
       delivery.sms.reason = 'Admin phone is not configured';
-    } else if (!isTermiiConfigured()) {
+      return;
+    }
+    if (!isTermiiConfigured()) {
       delivery.sms.skipped = true;
       delivery.sms.reason = 'Termii is not configured';
-    } else if (!smsTo) {
+      return;
+    }
+    if (!smsTo) {
       delivery.sms.skipped = true;
       delivery.sms.reason = 'Invalid admin phone number';
-    } else {
-      try {
-        await sendSmsViaTermii({
+      return;
+    }
+
+    try {
+      await withTimeout(
+        () => sendSmsViaTermii({
           to: smsTo,
           message: `${otpMessage}. It expires in 10 minutes.`
-        });
-        delivery.sms.sent = true;
-      } catch (error) {
-        delivery.sms.reason = error && error.message ? String(error.message) : 'Failed to send OTP SMS';
-      }
+        }),
+        ADMIN_OTP_DELIVERY_TIMEOUT_MS
+      );
+      delivery.sms.sent = true;
+    } catch (error) {
+      delivery.sms.reason = error && error.message ? String(error.message) : 'Failed to send OTP SMS';
     }
-  }
+  };
+
+  await Promise.all([emailTask(), smsTask()]);
 
   const deliveredBy = [];
   if (delivery.email.sent) deliveredBy.push('email');
@@ -3057,6 +3585,73 @@ app.get('/api/admin/registration-status', (req, res) => {
   });
 });
 
+// Reset admin password using one-time code (forgot password flow)
+app.post('/api/admin/reset-password', (req, res) => {
+  const { email, oneTimeCode, newPassword, secretPasscode } = req.body;
+  const normalizedEmail = normalizeEmail(email);
+  const normalizedOneTimeCode = normalizeOneTimeCode(oneTimeCode);
+  const normalizedNewPassword = String(newPassword || '').trim();
+  const normalizedSecretPasscode = String(secretPasscode || '').trim();
+
+  if (!normalizedEmail || !normalizedOneTimeCode || !normalizedNewPassword || !normalizedSecretPasscode) {
+    return res.status(400).json({
+      error: 'Email, one-time code, new password, and secret passcode are required'
+    });
+  }
+
+  if (!isValidEmail(normalizedEmail)) {
+    return res.status(400).json({ error: 'Please enter a valid email address' });
+  }
+
+  if (normalizedNewPassword.length < 6) {
+    return res.status(400).json({ error: 'New password must be at least 6 characters long' });
+  }
+
+  if (normalizedSecretPasscode !== ADMIN_SECRET_PASSCODE) {
+    return res.status(401).json({ error: 'Invalid secret passcode' });
+  }
+
+  const db = readDatabase();
+  const admin = db.admins.find(a => normalizeEmail(a.email) === normalizedEmail);
+
+  if (!admin) {
+    return res.status(404).json({ error: 'Admin account not found for this email' });
+  }
+
+  const now = Date.now();
+  const validAccessCode = db.adminAccessCodes.find(code => {
+    return (
+      normalizeEmail(code.email) === normalizedEmail &&
+      normalizeOneTimeCode(code.code) === normalizedOneTimeCode &&
+      code.used !== true &&
+      new Date(code.expiresAt).getTime() > now
+    );
+  });
+
+  if (!validAccessCode) {
+    return res.status(401).json({ error: 'Invalid or expired one-time access code' });
+  }
+
+  admin.password = normalizedNewPassword;
+  admin.updatedAt = new Date().toISOString();
+
+  validAccessCode.used = true;
+  validAccessCode.usedAt = new Date().toISOString();
+  validAccessCode.usedFor = 'password_reset';
+
+  // Cleanup stale/used codes
+  db.adminAccessCodes = db.adminAccessCodes.filter(code => {
+    const isExpired = new Date(code.expiresAt).getTime() <= now;
+    return !isExpired && !code.used;
+  });
+
+  writeDatabase(db);
+
+  return res.json({
+    message: 'Password reset successful. You can now login with your new password.'
+  });
+});
+
 // Admin Registration
 app.post('/api/admin/register', (req, res) => {
   const { email, password, name, secretPasscode, phone } = req.body;
@@ -3068,6 +3663,10 @@ app.post('/api/admin/register', (req, res) => {
 
   if (!normalizedEmail || !normalizedPassword || !normalizedName || !normalizedSecretPasscode) {
     return res.status(400).json({ error: 'Name, email, password, and secret passcode are required' });
+  }
+
+  if (!isValidEmail(normalizedEmail)) {
+    return res.status(400).json({ error: 'Please enter a valid email address' });
   }
 
   const db = readDatabase();
@@ -3111,11 +3710,15 @@ app.post('/api/admin/login', (req, res) => {
   const { email, password, oneTimeCode, secretPasscode } = req.body;
   const normalizedEmail = normalizeEmail(email);
   const normalizedPassword = String(password || '').trim();
-  const normalizedOneTimeCode = String(oneTimeCode || '').trim();
+  const normalizedOneTimeCode = normalizeOneTimeCode(oneTimeCode);
   const normalizedSecretPasscode = String(secretPasscode || '').trim();
 
   if (!normalizedEmail || !normalizedPassword) {
     return res.status(400).json({ error: 'Email and password are required' });
+  }
+
+  if (!isValidEmail(normalizedEmail)) {
+    return res.status(400).json({ error: 'Please enter a valid email address' });
   }
 
   const db = readDatabase();
@@ -3161,7 +3764,7 @@ app.post('/api/admin/login', (req, res) => {
   const validAccessCode = db.adminAccessCodes.find(code => {
     return (
       normalizeEmail(code.email) === normalizeEmail(admin.email) &&
-      String(code.code || '').trim() === normalizedOneTimeCode &&
+      normalizeOneTimeCode(code.code) === normalizedOneTimeCode &&
       code.used !== true &&
       new Date(code.expiresAt).getTime() > now
     );
@@ -3225,19 +3828,55 @@ app.post('/api/admin/verify', (req, res) => {
   }
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`CEO UNISEX SALON Server running at http://localhost:${PORT}`);
-});
+const hasExplicitPublicBaseUrl = Boolean(String(process.env.PUBLIC_BASE_URL || '').trim());
+const preferredPorts = [
+  Number(PORT),
+  3002,
+  3001,
+  3000
+].filter((value, index, arr) => Number.isFinite(value) && value > 0 && arr.indexOf(value) === index);
 
-server.on('error', (err) => {
-  if (err && err.code === 'EADDRINUSE') {
-    console.error(`\n❌ Port ${PORT} is already in use.`);
-    console.error('   - Close the other app using this port, OR');
-    console.error('   - Set a different port, e.g. PORT=3001 (Windows: set PORT=3001)');
-    console.error('   - If you also use PUBLIC_BASE_URL, update it to match the new port.\n');
+function startServerWithPortFallback(index = 0) {
+  const candidatePort = preferredPorts[index];
+
+  if (!candidatePort) {
+    console.error('\n❌ Unable to start server. No available configured fallback ports.');
     process.exit(1);
   }
 
-  console.error('\n❌ Server failed to start:', err);
-  process.exit(1);
-});
+  const server = app.listen(candidatePort, () => {
+    ACTIVE_PORT = candidatePort;
+    if (!hasExplicitPublicBaseUrl) {
+      PUBLIC_BASE_URL = `http://localhost:${ACTIVE_PORT}`;
+    }
+
+    console.log(`CEO UNISEX SALON Server running at http://localhost:${ACTIVE_PORT}`);
+    if (index > 0) {
+      console.log(`ℹ️  Auto-picked fallback port ${ACTIVE_PORT}.`);
+    }
+    if (!hasExplicitPublicBaseUrl) {
+      console.log(`ℹ️  PUBLIC_BASE_URL set to ${PUBLIC_BASE_URL}`);
+    }
+  });
+
+  server.on('error', (err) => {
+    if (err && err.code === 'EADDRINUSE') {
+      const nextPort = preferredPorts[index + 1];
+      if (nextPort) {
+        console.warn(`⚠️  Port ${candidatePort} is busy; trying ${nextPort}...`);
+        return startServerWithPortFallback(index + 1);
+      }
+
+      console.error(`\n❌ Ports tried: ${preferredPorts.join(', ')} are all in use.`);
+      console.error('   - Close the other app(s) using these ports, OR');
+      console.error('   - Start with a free custom port, e.g. PORT=3100 (Windows: set PORT=3100)');
+      console.error('   - If you set PUBLIC_BASE_URL manually, ensure it matches your active port.\n');
+      process.exit(1);
+    }
+
+    console.error('\n❌ Server failed to start:', err);
+    process.exit(1);
+  });
+}
+
+startServerWithPortFallback();

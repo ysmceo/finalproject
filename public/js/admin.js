@@ -516,6 +516,8 @@ function displayBookings(bookings) {
     const isApproved = normalizedStatus === 'approved';
     const isCancelled = normalizedStatus === 'cancelled';
     const isCompleted = normalizedStatus === 'completed';
+    const canRetryNotify = isApproved || isCancelled;
+    const retryStatus = isApproved ? 'approved' : (isCancelled ? 'cancelled' : '');
 
     const approveDisabled = isApproved || isCancelled || isCompleted;
     const rejectDisabled = isApproved || isCancelled || isCompleted;
@@ -556,6 +558,7 @@ function displayBookings(bookings) {
       <div class="booking-actions">
         <button class="btn btn-accept" ${approveDisabled ? 'disabled' : ''} onclick="updateBookingStatus('${booking.id}', 'accepted')">✓ Accept</button>
         <button class="btn btn-decline" ${rejectDisabled ? 'disabled' : ''} onclick="updateBookingStatus('${booking.id}', 'declined')">✗ Decline</button>
+        <button class="btn btn-info" ${canRetryNotify ? '' : 'disabled'} onclick="retryBookingNotifications('${booking.id}', '${retryStatus}')">🔔 Retry Notify</button>
         <button class="btn btn-accept" onclick="openBookingModal('${booking.id}')">View Details</button>
         <button class="btn btn-decline" onclick="deleteBooking('${booking.id}')">Delete</button>
       </div>
@@ -727,6 +730,7 @@ async function openBookingModal(bookingId) {
 
       const acceptBtn = document.getElementById('acceptBtn');
       const declineBtn = document.getElementById('declineBtn');
+      const retryNotifyBtn = document.getElementById('retryNotifyBtn');
 
       if (acceptBtn) {
         acceptBtn.disabled = isApproved || isCancelled || isCompleted;
@@ -737,10 +741,33 @@ async function openBookingModal(bookingId) {
         declineBtn.disabled = isApproved || isCancelled || isCompleted;
         declineBtn.onclick = () => updateBookingStatus(bookingId, 'declined');
       }
+
+      if (retryNotifyBtn) {
+        const canRetryNotify = isApproved || isCancelled;
+        const retryStatus = isApproved ? 'approved' : (isCancelled ? 'cancelled' : '');
+        retryNotifyBtn.disabled = !canRetryNotify;
+        retryNotifyBtn.onclick = () => retryBookingNotifications(bookingId, retryStatus, { skipCloseModal: true });
+      }
     }
   } catch (error) {
     console.error('Error opening booking modal:', error);
   }
+}
+
+function formatNotificationResult(label, result) {
+  if (!result) return `${label}: unknown`;
+  if (result.sent === true) return `${label}: sent ✅`;
+  if (result.skipped === true) return `${label}: skipped (${result.reason || 'n/a'})`;
+  if (result.error === true) return `${label}: error (${result.reason || 'failed'})`;
+  return `${label}: not sent`;
+}
+
+function buildNotificationSummary(notifications) {
+  const emailRes = notifications && notifications.email ? notifications.email : null;
+  const smsRes = notifications && notifications.sms ? notifications.sms : null;
+  const adminEmailRes = notifications && notifications.adminEmail ? notifications.adminEmail : null;
+
+  return `${formatNotificationResult('Customer Email', emailRes)} • ${formatNotificationResult('SMS', smsRes)} • ${formatNotificationResult('Admin Email', adminEmailRes)}`;
 }
 
 // Update Booking Status
@@ -770,28 +797,35 @@ async function updateBookingStatus(bookingId, status, options = {}) {
       ? 'accepted'
       : (normalized === 'cancelled' ? 'declined' : 'updated');
 
-    const notif = result && result.notifications ? result.notifications : null;
-    const emailRes = notif && notif.email ? notif.email : null;
-    const smsRes = notif && notif.sms ? notif.sms : null;
+    const statusChanged = Boolean(result && result.statusChanged === true);
+    const currentStatus = normalizeBookingStatus((result && result.currentStatus) || normalized);
 
-    const formatNotif = (label, r) => {
-      if (!r) return `${label}: unknown`;
-      if (r.sent === true) return `${label}: sent ✅`;
-      if (r.skipped === true) return `${label}: skipped (${r.reason || 'n/a'})`;
-      if (r.error) return `${label}: error (${r.reason || 'failed'})`;
-      return `${label}: not sent`;
-    };
+    const notif = result && result.notifications ? result.notifications : null;
 
     const shouldShowNotify = ['approved', 'cancelled'].includes(normalized);
     const notifySummary = shouldShowNotify
-      ? `${formatNotif('Email', emailRes)} • ${formatNotif('SMS', smsRes)}`
+      ? buildNotificationSummary(notif)
       : '';
 
-    showToast({
-      type: 'success',
-      title: 'Booking updated',
-      message: `Booking ${actionLabel} successfully.${notifySummary ? `\n${notifySummary}` : ''}`
-    });
+    if (statusChanged) {
+      showToast({
+        type: 'success',
+        title: 'Booking updated',
+        message: `Booking ${actionLabel} successfully.${notifySummary ? `\n${notifySummary}` : ''}`
+      });
+    } else {
+      const currentLabel = currentStatus === 'approved'
+        ? 'already accepted'
+        : currentStatus === 'cancelled'
+          ? 'already declined'
+          : `already ${currentStatus}`;
+
+      showToast({
+        type: 'info',
+        title: 'No status change',
+        message: `This booking is ${currentLabel}.`
+      });
+    }
 
     if (!options.skipCloseModal) {
       closeBookingModal();
@@ -807,6 +841,61 @@ async function updateBookingStatus(bookingId, status, options = {}) {
       type: 'error',
       title: 'Network error',
       message: 'Could not update booking. Please try again.'
+    });
+  }
+}
+
+async function retryBookingNotifications(bookingId, status, options = {}) {
+  const normalizedStatus = normalizeBookingStatus(status);
+
+  if (!['approved', 'cancelled'].includes(normalizedStatus)) {
+    showToast({
+      type: 'info',
+      title: 'Retry unavailable',
+      message: 'Only approved or declined bookings can retry notifications.'
+    });
+    return;
+  }
+
+  try {
+    const response = await adminFetch(`/bookings/${bookingId}/test-notify`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({ status: normalizedStatus })
+    });
+
+    const result = await response.json().catch(() => null);
+    if (!response.ok) {
+      showToast({
+        type: 'error',
+        title: 'Retry failed',
+        message: (result && result.error) ? result.error : 'Unable to retry notifications.'
+      });
+      return;
+    }
+
+    const notifySummary = buildNotificationSummary(result && result.notifications ? result.notifications : null);
+    showToast({
+      type: 'success',
+      title: 'Notification retry completed',
+      message: `${normalizedStatus === 'approved' ? 'Approved' : 'Declined'} booking notification retried.\n${notifySummary}`
+    });
+
+    if (!options.skipCloseModal) {
+      closeBookingModal();
+    }
+
+    if (!options.skipReload) {
+      loadBookings();
+    }
+  } catch (error) {
+    console.error('Error retrying booking notification:', error);
+    showToast({
+      type: 'error',
+      title: 'Network error',
+      message: 'Could not retry notifications. Please try again.'
     });
   }
 }

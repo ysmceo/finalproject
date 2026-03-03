@@ -1,7 +1,7 @@
 /* Basic service worker for offline-friendly shell caching.
    Safe defaults: network-first for navigation, cache-first for static assets. */
 
-const CACHE_NAME = 'ceo-salon-v1';
+const CACHE_NAME = 'ceo-salon-v2';
 const PRECACHE_URLS = [
   '/',
   '/index.html',
@@ -41,6 +41,26 @@ self.addEventListener('fetch', (event) => {
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req).catch(() => caches.match('/index.html'))
+    );
+    return;
+  }
+
+  // Always use network-first for API calls.
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(fetch(req));
+    return;
+  }
+
+  // Network-first for frontend code/assets most likely to change often.
+  if (url.pathname.startsWith('/js/') || url.pathname.startsWith('/css/')) {
+    event.respondWith(
+      fetch(req)
+        .then((res) => {
+          const copy = res.clone();
+          caches.open(CACHE_NAME).then((cache) => cache.put(req, copy));
+          return res;
+        })
+        .catch(() => caches.match(req))
     );
     return;
   }

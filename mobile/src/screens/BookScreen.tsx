@@ -199,6 +199,7 @@ export default function BookScreen() {
       <Text style={styles.sub}>Create a booking using the same backend as your website.</Text>
 
       <View style={styles.card}>
+        <Text style={styles.cardTitle}>Booking Details</Text>
         <Text style={styles.label}>Name</Text>
         <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Full name" />
 
@@ -315,6 +316,7 @@ export default function BookScreen() {
 
       {created ? (
         <View style={styles.card}>
+          <Text style={styles.cardTitle}>Booking Created</Text>
           <Text style={styles.h2}>Booking created 🎉</Text>
           <Text style={styles.mono}>Booking ID: {created.booking.id}</Text>
           <Text style={styles.mono}>Amount due now: ₦{Number(created.booking.amountDueNow || 0).toLocaleString()}</Text>
@@ -375,52 +377,71 @@ export default function BookScreen() {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    paddingBottom: 36
+    paddingBottom: 36,
+    backgroundColor: '#f6f8fc'
   },
   center: {
     flex: 1,
     alignItems: 'center',
-    justifyContent: 'center'
+    justifyContent: 'center',
+    backgroundColor: '#f6f8fc'
   },
   h1: {
-    fontSize: 22,
-    fontWeight: '700'
+    fontSize: 24,
+    fontWeight: '800',
+    color: '#2a154f'
   },
   h2: {
     fontSize: 18,
-    fontWeight: '700'
+    fontWeight: '800',
+    color: '#2d2342'
   },
   h3: {
     fontSize: 16,
-    fontWeight: '700'
+    fontWeight: '800',
+    color: '#3b2a5e'
   },
   sub: {
     marginTop: 6,
-    color: '#555'
+    color: '#5f6280'
+  },
+  cardTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#8b5a11',
+    textTransform: 'uppercase',
+    letterSpacing: 0.6,
+    marginBottom: 4
   },
   card: {
     marginTop: 14,
     backgroundColor: '#fff',
-    borderRadius: 14,
+    borderRadius: 16,
     padding: 14,
     borderWidth: 1,
-    borderColor: '#eee'
+    borderColor: '#ece7f6',
+    shadowColor: '#160a2a',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 18,
+    elevation: 3
   },
   cardInner: {
-    backgroundColor: '#faf7ef',
+    backgroundColor: '#fff8e9',
     borderRadius: 12,
     padding: 12,
     borderWidth: 1,
-    borderColor: '#f1e5ca'
+    borderColor: '#f3dfb1'
   },
   label: {
     marginTop: 10,
     marginBottom: 6,
-    fontWeight: '600'
+    fontWeight: '700',
+    color: '#3b2f54'
   },
   input: {
     borderWidth: 1,
-    borderColor: '#e3e3e3',
+    borderColor: '#d9d2e8',
     borderRadius: 10,
     paddingHorizontal: 12,
     paddingVertical: 10,
@@ -442,29 +463,34 @@ const styles = StyleSheet.create({
     paddingVertical: 10,
     borderRadius: 999,
     borderWidth: 1,
-    borderColor: '#ddd',
+    borderColor: '#d8d0e8',
     backgroundColor: '#fff'
   },
   pillActive: {
-    borderColor: '#b78a2a',
-    backgroundColor: '#fff7e6'
+    borderColor: '#7c46e8',
+    backgroundColor: '#f4edff'
   },
   pillText: {
     color: '#333'
   },
   pillTextActive: {
-    color: '#7a5b14',
+    color: '#5a31b3',
     fontWeight: '700'
   },
   button: {
     marginTop: 14,
-    backgroundColor: '#b78a2a',
+    backgroundColor: '#7c46e8',
     borderRadius: 12,
     paddingVertical: 12,
-    alignItems: 'center'
+    alignItems: 'center',
+    shadowColor: '#4f22a8',
+    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 3
   },
   buttonSmall: {
-    backgroundColor: '#b78a2a',
+    backgroundColor: '#7c46e8',
     borderRadius: 12,
     paddingVertical: 10,
     paddingHorizontal: 12,
@@ -475,14 +501,14 @@ const styles = StyleSheet.create({
   },
   buttonText: {
     color: '#fff',
-    fontWeight: '700'
+    fontWeight: '800'
   },
   hint: {
     marginTop: 10,
-    color: '#666'
+    color: '#6f6a87'
   },
   mono: {
     marginTop: 6,
-    fontFamily: 'monospace'
+    color: '#303247'
   }
 });

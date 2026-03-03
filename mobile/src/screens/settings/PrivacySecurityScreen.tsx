@@ -63,13 +63,14 @@ export default function PrivacySecurityScreen() {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    paddingBottom: 30
+    paddingBottom: 30,
+    backgroundColor: '#f6f8fc'
   },
   pad: {
     padding: 14
   },
   text: {
-    color: '#111827',
+    color: '#2f2745',
     lineHeight: 20
   },
   pills: {

@@ -89,7 +89,8 @@ export default function AboutScreen() {
 const styles = StyleSheet.create({
   container: {
     padding: 16,
-    paddingBottom: 30
+    paddingBottom: 30,
+    backgroundColor: '#f6f8fc'
   },
   pills: {
     padding: 12,
@@ -107,14 +108,14 @@ const styles = StyleSheet.create({
   status: {
     paddingHorizontal: 12,
     paddingBottom: 8,
-    color: '#374151',
+    color: '#4b3f69',
     fontWeight: '700'
   },
   pad: {
     padding: 14
   },
   text: {
-    color: '#111827',
+    color: '#2f2745',
     lineHeight: 20
   }
 });

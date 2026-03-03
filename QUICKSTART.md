@@ -64,6 +64,7 @@ To test the booking system:
 - Hair Spa: ₦12,000
 - Beard Trim: ₦3,000
 - Full Body Massage: ₦18,000
+- Wig Revamping: ₦15,000
 
 ## Admin Booking Statuses
 
