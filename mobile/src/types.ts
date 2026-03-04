@@ -5,6 +5,31 @@ export type Service = {
   duration: number;
 };
 
+export type Product = {
+  id: number;
+  name: string;
+  category: string;
+  price: number;
+  stock: number;
+  image?: string | null;
+};
+
+export type BookingSelectedService = {
+  id: number;
+  name: string;
+  price: number;
+  duration: number;
+};
+
+export type BookingRequestedProduct = {
+  productId: number;
+  name: string;
+  category: string;
+  unitPrice: number;
+  quantity: number;
+  lineTotal: number;
+};
+
 export type Booking = {
   id: string;
   trackingCode?: string;
@@ -13,8 +38,11 @@ export type Booking = {
   email: string;
   phone: string;
   serviceId: number;
+  serviceIds?: number[];
+  selectedServices?: BookingSelectedService[];
   serviceName: string;
   price: number;
+  totalDuration?: number;
   date: string;
   time: string;
   language: string;
@@ -29,6 +57,9 @@ export type Booking = {
   bankTransferReference: string;
   serviceMode: 'home' | 'in_salon';
   homeServiceAddress: string;
+  requestedProducts?: BookingRequestedProduct[];
+  requestedProductsTotal?: number;
+  hasProductRequest?: boolean;
 };
 
 export type BookingNotification = {

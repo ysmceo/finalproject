@@ -19,7 +19,7 @@ import * as WebBrowser from 'expo-web-browser';
 import { useNavigation } from '@react-navigation/native';
 
 import { apiGet, apiPostJson, ApiError } from '../lib/api';
-import type { Service, Booking, PaystackStatusResponse, MonnifyStatusResponse } from '../types';
+import type { Service, Product, Booking, PaystackStatusResponse, MonnifyStatusResponse } from '../types';
 
 type CreateBookingResponse = {
   message: string;
@@ -44,6 +44,12 @@ type MonnifyInitResponse = {
   checkoutUrl: string;
   paymentReference: string;
   transactionReference: string;
+};
+
+type ProductSelection = {
+  productId: number;
+  quantity: number;
+  product: Product;
 };
 
 const LAST_BOOKING_ID_KEY = 'ceosalon:lastBookingId';
@@ -102,6 +108,7 @@ export default function BookScreen() {
   const navigation = useNavigation<any>();
 
   const [services, setServices] = useState<Service[]>([]);
+  const [products, setProducts] = useState<Product[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
   const [creating, setCreating] = useState(false);
   const [created, setCreated] = useState<CreateBookingResponse | null>(null);
@@ -110,7 +117,8 @@ export default function BookScreen() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [phone, setPhone] = useState('');
-  const [serviceId, setServiceId] = useState<number | null>(null);
+  const [selectedServiceIds, setSelectedServiceIds] = useState<number[]>([]);
+  const [productQuantities, setProductQuantities] = useState<Record<number, number>>({});
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
   const [language, setLanguage] = useState('English');
@@ -139,14 +147,16 @@ export default function BookScreen() {
     (async () => {
       try {
         setLoadingServices(true);
-        const [svc, ps, mn] = await Promise.all([
+        const [svc, productList, ps, mn] = await Promise.all([
           apiGet<Service[]>('/api/services'),
+          apiGet<Product[]>('/api/products'),
           apiGet<PaystackStatusResponse>('/api/payments/paystack/status').catch(() => null),
           apiGet<MonnifyStatusResponse>('/api/payments/monnify/status').catch(() => null)
         ]);
         if (!active) return;
-        setServices(svc);
-        setServiceId(svc.length ? svc[0].id : null);
+        setServices(svc || []);
+        setProducts(productList || []);
+        setSelectedServiceIds(svc.length ? [svc[0].id] : []);
         if (ps) setPaystackStatus(ps);
         if (mn) setMonnifyStatus(mn);
       } catch (error) {
@@ -186,16 +196,49 @@ export default function BookScreen() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const selectedService = useMemo(() => {
-    return services.find(s => s.id === serviceId) || null;
-  }, [services, serviceId]);
+  const selectedServices = useMemo(() => {
+    if (!selectedServiceIds.length) return [];
+    return services.filter(s => selectedServiceIds.includes(s.id));
+  }, [services, selectedServiceIds]);
+
+  const selectedService = selectedServices[0] || null;
+
+  const selectedProducts = useMemo<ProductSelection[]>(() => {
+    return Object.entries(productQuantities)
+      .map(([id, qty]) => ({
+        productId: Number(id),
+        quantity: Number(qty || 0),
+        product: products.find(p => Number(p.id) === Number(id)) as Product
+      }))
+      .filter(item => item.quantity > 0 && item.product);
+  }, [productQuantities, products]);
 
   const quickTimes = ['09:00', '12:00', '15:00', '18:00'];
+  const serviceSubtotal = useMemo(() => {
+    return selectedServices.reduce((sum, service) => sum + Number(service.price || 0), 0);
+  }, [selectedServices]);
+
+  const totalDuration = useMemo(() => {
+    return selectedServices.reduce((sum, service) => sum + Number(service.duration || 0), 0);
+  }, [selectedServices]);
+
+  const productsSubtotal = useMemo(() => {
+    return selectedProducts.reduce((sum, item) => {
+      return sum + (Number(item.product.price || 0) * Number(item.quantity || 0));
+    }, 0);
+  }, [selectedProducts]);
+
+  const serviceDueNowPreview = useMemo(() => {
+    return paymentPlan === 'deposit_50' ? Math.round(serviceSubtotal * 0.5) : serviceSubtotal;
+  }, [serviceSubtotal, paymentPlan]);
+
   const dueNowPreview = useMemo(() => {
-    if (!selectedService) return 0;
-    const amount = Number(selectedService.price || 0);
-    return paymentPlan === 'deposit_50' ? Math.round(amount * 0.5) : amount;
-  }, [selectedService, paymentPlan]);
+    return serviceDueNowPreview + productsSubtotal;
+  }, [serviceDueNowPreview, productsSubtotal]);
+
+  const totalPreview = useMemo(() => {
+    return serviceSubtotal + productsSubtotal;
+  }, [serviceSubtotal, productsSubtotal]);
 
   const cardIn = (offset: number) => ({
     opacity: screenEntry,
@@ -209,9 +252,32 @@ export default function BookScreen() {
     ]
   });
 
+  function toggleServiceSelection(id: number) {
+    setSelectedServiceIds((prev) => {
+      if (prev.includes(id)) {
+        const next = prev.filter((item) => item !== id);
+        return next;
+      }
+      return [...prev, id];
+    });
+  }
+
+  function updateProductQuantity(productId: number, nextQuantity: number) {
+    setProductQuantities((prev) => {
+      if (nextQuantity <= 0) {
+        const { [productId]: _, ...rest } = prev;
+        return rest;
+      }
+      return {
+        ...prev,
+        [productId]: nextQuantity
+      };
+    });
+  }
+
   async function createBooking() {
-    if (!serviceId) {
-      Alert.alert('Missing info', 'Please select a service.');
+    if (!selectedServiceIds.length) {
+      Alert.alert('Missing info', 'Please select at least one service.');
       return;
     }
     if (!name.trim() || !email.trim() || !phone.trim() || !date.trim() || !time.trim()) {
@@ -230,7 +296,8 @@ export default function BookScreen() {
         name: name.trim(),
         email: email.trim(),
         phone: phone.trim(),
-        serviceId,
+        serviceId: selectedServiceIds[0],
+        serviceIds: selectedServiceIds,
         date: date.trim(),
         time: time.trim(),
         language: language.trim(),
@@ -239,7 +306,11 @@ export default function BookScreen() {
         homeServiceRequested: homeServiceRequested ? 'true' : 'false',
         homeServiceAddress: homeServiceAddress.trim(),
         refreshment,
-        specialRequests: specialRequests.trim()
+        specialRequests: specialRequests.trim(),
+        productSelections: selectedProducts.map((item) => ({
+          productId: item.productId,
+          quantity: item.quantity
+        }))
       };
 
       const response = await apiPostJson<CreateBookingResponse>('/api/bookings', payload);
@@ -318,6 +389,8 @@ export default function BookScreen() {
     setName('');
     setEmail('');
     setPhone('');
+    setSelectedServiceIds(services.length ? [services[0].id] : []);
+    setProductQuantities({});
     setDate('');
     setTime('');
     setLanguage('English');
@@ -332,10 +405,13 @@ export default function BookScreen() {
   async function shareBookingDetails() {
     if (!created?.booking) return;
     const booking = created.booking;
+    const selectedServiceNames = selectedServices.length
+      ? selectedServices.map((service) => service.name).join(', ')
+      : '';
     const message = [
       'D CEO OFFICIAL UNISEX SALON APP',
       `Tracking Code: ${booking.trackingCode || booking.id}`,
-      `Service: ${booking.serviceName || selectedService?.name || 'N/A'}`,
+      `Service(s): ${booking.serviceName || selectedServiceNames || selectedService?.name || 'N/A'}`,
       `Date/Time: ${booking.date} ${booking.time}`,
       `Due now: ₦${Number(booking.amountDueNow || 0).toLocaleString()}`
     ].join('\n');
@@ -393,19 +469,49 @@ export default function BookScreen() {
         <Text style={styles.label}>Phone</Text>
         <TextInput style={styles.input} value={phone} onChangeText={setPhone} placeholder="080..." keyboardType="phone-pad" />
 
-        <Text style={styles.label}>Service</Text>
+        <Text style={styles.label}>Services (select one or more)</Text>
         <View style={styles.rowWrap}>
           {services.map((s) => (
             <TouchableOpacity
               key={s.id}
-              style={[styles.pill, serviceId === s.id && styles.pillActive]}
-              onPress={() => setServiceId(s.id)}
+              style={[styles.pill, selectedServiceIds.includes(s.id) && styles.pillActive]}
+              onPress={() => toggleServiceSelection(s.id)}
             >
-              <Text style={[styles.pillText, serviceId === s.id && styles.pillTextActive]}>
-                {s.name} (₦{Number(s.price).toLocaleString()})
+              <Text style={[styles.pillText, selectedServiceIds.includes(s.id) && styles.pillTextActive]}>
+                {selectedServiceIds.includes(s.id) ? '✓ ' : ''}{s.name} (₦{Number(s.price).toLocaleString()})
               </Text>
             </TouchableOpacity>
           ))}
+        </View>
+
+        <Text style={styles.label}>Products (optional add-ons)</Text>
+        <View style={styles.rowWrap}>
+          {products.map((product) => {
+            const quantity = Number(productQuantities[product.id] || 0);
+            return (
+              <View key={product.id} style={styles.productCard}>
+                <Text style={styles.productName}>{product.name}</Text>
+                <Text style={styles.productMeta}>₦{Number(product.price || 0).toLocaleString()} • Stock: {Number(product.stock || 0)}</Text>
+                <View style={styles.quantityRow}>
+                  <TouchableOpacity
+                    style={styles.qtyButton}
+                    onPress={() => updateProductQuantity(product.id, quantity - 1)}
+                    disabled={quantity <= 0}
+                  >
+                    <Text style={styles.qtyButtonText}>−</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.qtyText}>{quantity}</Text>
+                  <TouchableOpacity
+                    style={styles.qtyButton}
+                    onPress={() => updateProductQuantity(product.id, quantity + 1)}
+                    disabled={quantity >= Number(product.stock || 0)}
+                  >
+                    <Text style={styles.qtyButtonText}>+</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            );
+          })}
         </View>
 
         <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
@@ -502,12 +608,14 @@ export default function BookScreen() {
           <Text style={styles.buttonText}>{creating ? 'Creating…' : 'Create booking'}</Text>
         </MicroPress>
 
-        {selectedService ? (
+        {selectedServices.length ? (
           <View style={styles.previewBox}>
             <Text style={styles.previewTitle}>Booking preview</Text>
-            <Text style={styles.hint}>Service: {selectedService.name}</Text>
-            <Text style={styles.hint}>Duration: {selectedService.duration} mins</Text>
-            <Text style={styles.hint}>Total: ₦{Number(selectedService.price).toLocaleString()}</Text>
+            <Text style={styles.hint}>Services: {selectedServices.map((service) => service.name).join(', ')}</Text>
+            <Text style={styles.hint}>Duration: {totalDuration} mins</Text>
+            <Text style={styles.hint}>Services total: ₦{Number(serviceSubtotal).toLocaleString()}</Text>
+            <Text style={styles.hint}>Products total: ₦{Number(productsSubtotal).toLocaleString()}</Text>
+            <Text style={styles.hint}>Order total: ₦{Number(totalPreview).toLocaleString()}</Text>
             <Text style={styles.previewDue}>Due now: ₦{Number(dueNowPreview).toLocaleString()}</Text>
           </View>
         ) : null}
@@ -759,6 +867,52 @@ const styles = StyleSheet.create({
   },
   quickChipTextActive: {
     color: '#ffffff'
+  },
+  productCard: {
+    width: '100%',
+    borderWidth: 1,
+    borderColor: '#e0d6f7',
+    backgroundColor: '#fbf9ff',
+    borderRadius: 12,
+    padding: 10
+  },
+  productName: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#32204f'
+  },
+  productMeta: {
+    marginTop: 4,
+    color: '#6f6289',
+    fontSize: 12
+  },
+  quantityRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12
+  },
+  qtyButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    borderWidth: 1,
+    borderColor: '#ccb7f5',
+    backgroundColor: '#f2eaff',
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  qtyButtonText: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#5a31b3'
+  },
+  qtyText: {
+    minWidth: 20,
+    textAlign: 'center',
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#2d2342'
   },
   previewBox: {
     marginTop: 12,

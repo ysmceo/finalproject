@@ -1678,6 +1678,7 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
     email,
     phone,
     serviceId,
+    serviceIds,
     date,
     time,
     language,
@@ -1694,8 +1695,11 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
   const normalizedHomeServiceRequested = String(homeServiceRequested || '').trim().toLowerCase();
   const isHomeServiceRequested = normalizedHomeServiceRequested === 'true' || normalizedHomeServiceRequested === '1' || normalizedHomeServiceRequested === 'yes';
   const normalizedHomeServiceAddress = String(homeServiceAddress || '').trim();
+  const hasServiceSelection =
+    (serviceId !== undefined && serviceId !== null && String(serviceId).trim() !== '') ||
+    (serviceIds !== undefined && serviceIds !== null && String(serviceIds).trim() !== '');
 
-  if (!name || !email || !phone || !serviceId || !date || !time || !paymentMethod || !normalizedPaymentPlan) {
+  if (!name || !email || !phone || !date || !time || !paymentMethod || !normalizedPaymentPlan || !hasServiceSelection) {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
@@ -1713,15 +1717,48 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
   }
 
   const db = readDatabase();
-  const service = db.services.find(s => s.id === parseInt(serviceId));
 
-  if (!service) {
-    return res.status(400).json({ error: 'Service not found' });
+  let parsedServiceIds = [];
+  try {
+    const rawServiceIds = serviceIds !== undefined && serviceIds !== null && String(serviceIds).trim() !== ''
+      ? (typeof serviceIds === 'string' ? JSON.parse(serviceIds) : serviceIds)
+      : [];
+
+    if (Array.isArray(rawServiceIds)) {
+      parsedServiceIds = rawServiceIds
+        .map(item => Number(item))
+        .filter(Number.isFinite)
+        .map(item => Math.trunc(item))
+        .filter(item => item > 0);
+    }
+  } catch (error) {
+    return res.status(400).json({ error: 'Invalid serviceIds format' });
   }
 
-  const totalAmount = Number(service.price) || 0;
-  const amountDueNow = normalizedPaymentPlan === 'deposit_50' ? Math.ceil(totalAmount * 0.5) : totalAmount;
-  const amountRemaining = Math.max(0, totalAmount - amountDueNow);
+  if (!parsedServiceIds.length && serviceId !== undefined && serviceId !== null && String(serviceId).trim() !== '') {
+    const normalizedPrimaryServiceId = Math.trunc(Number(serviceId));
+    if (Number.isFinite(normalizedPrimaryServiceId) && normalizedPrimaryServiceId > 0) {
+      parsedServiceIds = [normalizedPrimaryServiceId];
+    }
+  }
+
+  parsedServiceIds = Array.from(new Set(parsedServiceIds));
+
+  if (!parsedServiceIds.length) {
+    return res.status(400).json({ error: 'Please select at least one service' });
+  }
+
+  const selectedServices = parsedServiceIds
+    .map(id => db.services.find(s => Number(s.id) === Number(id)))
+    .filter(Boolean);
+
+  if (selectedServices.length !== parsedServiceIds.length) {
+    return res.status(400).json({ error: 'One or more selected services were not found' });
+  }
+
+  const primaryService = selectedServices[0];
+  const serviceSubtotal = selectedServices.reduce((sum, item) => sum + (Number(item.price) || 0), 0);
+  const totalDuration = selectedServices.reduce((sum, item) => sum + (Number(item.duration) || 0), 0);
 
   let parsedProductSelections = [];
   if (productSelections !== undefined && productSelections !== null && String(productSelections).trim() !== '') {
@@ -1773,15 +1810,29 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
     });
   }
 
+  const serviceAmountDueNow = normalizedPaymentPlan === 'deposit_50'
+    ? Math.ceil(serviceSubtotal * 0.5)
+    : serviceSubtotal;
+  const amountDueNow = serviceAmountDueNow + requestedProductsTotal;
+  const amountRemaining = Math.max(0, serviceSubtotal - serviceAmountDueNow);
+
   const booking = {
     id: uuidv4(),
     trackingCode: '',
     name,
     email: normalizedEmail,
     phone,
-    serviceId: parseInt(serviceId),
-    serviceName: service.name,
-    price: service.price,
+    serviceId: Number(primaryService.id),
+    serviceIds: selectedServices.map(item => Number(item.id)),
+    selectedServices: selectedServices.map(item => ({
+      id: Number(item.id),
+      name: String(item.name || ''),
+      price: Number(item.price) || 0,
+      duration: Number(item.duration) || 0
+    })),
+    serviceName: selectedServices.map(item => String(item.name || '')).join(', '),
+    price: serviceSubtotal,
+    totalDuration,
     date,
     time,
     language: language || '',
