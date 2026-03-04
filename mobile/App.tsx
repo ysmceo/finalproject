@@ -1,12 +1,12 @@
 import 'react-native-gesture-handler';
 
-import React, { useEffect } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { Ionicons } from '@expo/vector-icons';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { Platform, StyleSheet, View } from 'react-native';
+import { Animated, Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import HomeWebScreen from './src/screens/HomeWebScreen';
 import BookScreen from './src/screens/BookScreen';
@@ -74,10 +74,53 @@ export default function App() {
 
 function AppShell() {
   const { navigationTheme, resolvedColorScheme } = useThemePrefs();
+  const [showIntro, setShowIntro] = useState(true);
+  const introOpacity = useRef(new Animated.Value(0)).current;
+  const introScale = useRef(new Animated.Value(0.96)).current;
 
   useEffect(() => {
     applyHapticPreset('balanced');
+
+    Animated.parallel([
+      Animated.timing(introOpacity, {
+        toValue: 1,
+        duration: 420,
+        useNativeDriver: true
+      }),
+      Animated.timing(introScale, {
+        toValue: 1,
+        duration: 420,
+        useNativeDriver: true
+      })
+    ]).start();
   }, []);
+
+  const handleEnter = () => {
+    Animated.timing(introOpacity, {
+      toValue: 0,
+      duration: 280,
+      useNativeDriver: true
+    }).start(() => {
+      setShowIntro(false);
+    });
+  };
+
+  if (showIntro) {
+    return (
+      <SafeAreaProvider>
+        <View style={styles.introWrap}>
+          <Animated.View style={[styles.introCard, { opacity: introOpacity, transform: [{ scale: introScale }] }]}>
+            <Image source={require('./assets/splash-icon.png')} style={styles.introLogo} resizeMode="contain" />
+            <Text style={styles.introBrand}>D CEO OFFICIAL UNISEX SALON APP</Text>
+            <Text style={styles.introSub}>Welcome ✨</Text>
+            <Pressable style={styles.enterButton} onPress={handleEnter}>
+              <Text style={styles.enterButtonText}>Get Started</Text>
+            </Pressable>
+          </Animated.View>
+        </View>
+      </SafeAreaProvider>
+    );
+  }
 
   return (
     <SafeAreaProvider>
@@ -86,26 +129,54 @@ function AppShell() {
         <Tab.Navigator
           screenOptions={({ route }) => ({
             headerTitleAlign: 'center',
-            tabBarActiveTintColor: '#b78a2a',
-            tabBarInactiveTintColor: '#666',
-            tabBarIcon: ({ color, size }) => {
+            animation: 'shift',
+            tabBarHideOnKeyboard: true,
+            tabBarActiveTintColor: '#7c46e8',
+            tabBarInactiveTintColor: resolvedColorScheme === 'dark' ? '#9aa0b6' : '#726b84',
+            headerStyle: {
+              backgroundColor: resolvedColorScheme === 'dark' ? '#111426' : '#ffffff'
+            },
+            headerShadowVisible: false,
+            headerTitleStyle: {
+              fontWeight: '900',
+              color: resolvedColorScheme === 'dark' ? '#f7f8ff' : '#2d2342'
+            },
+            tabBarStyle: {
+              height: 72,
+              paddingTop: 8,
+              paddingBottom: 10,
+              borderTopWidth: 0,
+              backgroundColor: resolvedColorScheme === 'dark' ? '#171b2e' : '#ffffff',
+              shadowColor: '#15062f',
+              shadowOpacity: resolvedColorScheme === 'dark' ? 0.45 : 0.12,
+              shadowOffset: { width: 0, height: -4 },
+              shadowRadius: 16,
+              elevation: 12
+            },
+            tabBarLabelStyle: {
+              fontWeight: '800',
+              fontSize: 11,
+              marginBottom: 2
+            },
+            tabBarIcon: ({ color, size, focused }) => {
               const name = (() => {
                 switch (route.name) {
                   case 'Home':
-                    return 'globe-outline';
+                    return focused ? 'globe' : 'globe-outline';
                   case 'Book':
-                    return 'calendar-outline';
+                    return focused ? 'calendar' : 'calendar-outline';
                   case 'Track':
-                    return 'search-outline';
+                    return focused ? 'search' : 'search-outline';
                   case 'Admin':
-                    return 'shield-checkmark-outline';
+                    return focused ? 'shield-checkmark' : 'shield-checkmark-outline';
                   case 'Settings':
-                    return 'settings-outline';
+                    return focused ? 'settings' : 'settings-outline';
                   default:
                     return 'ellipse-outline';
                 }
               })();
-              return <Ionicons name={name} size={size} color={color} />;
+
+              return <Ionicons name={name} size={focused ? size + 2 : size} color={color} />;
             }
           })}
         >
@@ -186,5 +257,59 @@ const styles = StyleSheet.create({
     width: 360,
     height: 800,
     borderRadius: 22
+  },
+  introWrap: {
+    flex: 1,
+    backgroundColor: '#1c1038',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24
+  },
+  introCard: {
+    width: '100%',
+    maxWidth: 420,
+    alignItems: 'center',
+    backgroundColor: '#2a154f',
+    borderRadius: 24,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 20,
+    paddingVertical: 28,
+    shadowColor: '#000',
+    shadowOpacity: 0.28,
+    shadowOffset: { width: 0, height: 10 },
+    shadowRadius: 18,
+    elevation: 8
+  },
+  introLogo: {
+    width: 94,
+    height: 94,
+    marginBottom: 14
+  },
+  introBrand: {
+    color: '#ffffff',
+    fontWeight: '900',
+    fontSize: 23,
+    textAlign: 'center',
+    letterSpacing: 0.5
+  },
+  introSub: {
+    marginTop: 12,
+    color: '#f4d98a',
+    fontSize: 14,
+    fontWeight: '700'
+  },
+  enterButton: {
+    marginTop: 18,
+    backgroundColor: '#f4d98a',
+    paddingHorizontal: 22,
+    paddingVertical: 10,
+    borderRadius: 999
+  },
+  enterButtonText: {
+    color: '#2a154f',
+    fontWeight: '900',
+    fontSize: 14,
+    letterSpacing: 0.4
   }
 });

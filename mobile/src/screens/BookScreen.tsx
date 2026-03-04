@@ -1,8 +1,12 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
+  Animated,
   Alert,
+  Easing,
+  Pressable,
   ScrollView,
+  Share,
   StyleSheet,
   Switch,
   Text,
@@ -44,6 +48,55 @@ type MonnifyInitResponse = {
 
 const LAST_BOOKING_ID_KEY = 'ceosalon:lastBookingId';
 const LAST_BOOKING_EMAIL_KEY = 'ceosalon:lastBookingEmail';
+const LAST_BOOKING_NAME_KEY = 'ceosalon:lastBookingName';
+const LAST_BOOKING_PHONE_KEY = 'ceosalon:lastBookingPhone';
+
+function formatDateYYYYMMDD(input: Date): string {
+  const y = input.getFullYear();
+  const m = String(input.getMonth() + 1).padStart(2, '0');
+  const d = String(input.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
+}
+
+function plusDays(days: number): string {
+  const next = new Date();
+  next.setDate(next.getDate() + days);
+  return formatDateYYYYMMDD(next);
+}
+
+function MicroPress({
+  onPress,
+  style,
+  children,
+  disabled
+}: {
+  onPress: () => void;
+  style: any;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const to = (value: number) => {
+    Animated.timing(scale, {
+      toValue: value,
+      duration: 90,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true
+    }).start();
+  };
+
+  return (
+    <Pressable
+      onPressIn={() => to(0.97)}
+      onPressOut={() => to(1)}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <Animated.View style={[style, { transform: [{ scale }] }]}>{children}</Animated.View>
+    </Pressable>
+  );
+}
 
 export default function BookScreen() {
   const navigation = useNavigation<any>();
@@ -70,6 +123,16 @@ export default function BookScreen() {
 
   const [paystackStatus, setPaystackStatus] = useState<PaystackStatusResponse | null>(null);
   const [monnifyStatus, setMonnifyStatus] = useState<MonnifyStatusResponse | null>(null);
+  const screenEntry = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(screenEntry, {
+      toValue: 1,
+      duration: 420,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true
+    }).start();
+  }, [screenEntry]);
 
   useEffect(() => {
     let active = true;
@@ -98,9 +161,53 @@ export default function BookScreen() {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    (async () => {
+      try {
+        const [savedName, savedEmail, savedPhone] = await Promise.all([
+          AsyncStorage.getItem(LAST_BOOKING_NAME_KEY),
+          AsyncStorage.getItem(LAST_BOOKING_EMAIL_KEY),
+          AsyncStorage.getItem(LAST_BOOKING_PHONE_KEY)
+        ]);
+
+        if (!active) return;
+        if (savedName && !name) setName(savedName);
+        if (savedEmail && !email) setEmail(savedEmail);
+        if (savedPhone && !phone) setPhone(savedPhone);
+      } catch {
+        // ignore
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const selectedService = useMemo(() => {
     return services.find(s => s.id === serviceId) || null;
   }, [services, serviceId]);
+
+  const quickTimes = ['09:00', '12:00', '15:00', '18:00'];
+  const dueNowPreview = useMemo(() => {
+    if (!selectedService) return 0;
+    const amount = Number(selectedService.price || 0);
+    return paymentPlan === 'deposit_50' ? Math.round(amount * 0.5) : amount;
+  }, [selectedService, paymentPlan]);
+
+  const cardIn = (offset: number) => ({
+    opacity: screenEntry,
+    transform: [
+      {
+        translateY: screenEntry.interpolate({
+          inputRange: [0, 1],
+          outputRange: [offset, 0]
+        })
+      }
+    ]
+  });
 
   async function createBooking() {
     if (!serviceId) {
@@ -137,8 +244,12 @@ export default function BookScreen() {
 
       const response = await apiPostJson<CreateBookingResponse>('/api/bookings', payload);
       setCreated(response);
-      await AsyncStorage.setItem(LAST_BOOKING_ID_KEY, response.booking.id);
-      await AsyncStorage.setItem(LAST_BOOKING_EMAIL_KEY, response.booking.email);
+      await AsyncStorage.multiSet([
+        [LAST_BOOKING_ID_KEY, response.booking.id],
+        [LAST_BOOKING_EMAIL_KEY, response.booking.email],
+        [LAST_BOOKING_NAME_KEY, name.trim()],
+        [LAST_BOOKING_PHONE_KEY, phone.trim()]
+      ]);
 
       Alert.alert('Booking created', 'Your booking has been created successfully.');
     } catch (error) {
@@ -184,6 +295,61 @@ export default function BookScreen() {
     navigation.navigate('Track', { bookingId: booking.id, email: booking.email });
   }
 
+  async function useLastSavedDetails() {
+    const [savedName, savedEmail, savedPhone] = await Promise.all([
+      AsyncStorage.getItem(LAST_BOOKING_NAME_KEY),
+      AsyncStorage.getItem(LAST_BOOKING_EMAIL_KEY),
+      AsyncStorage.getItem(LAST_BOOKING_PHONE_KEY)
+    ]);
+
+    if (!savedName && !savedEmail && !savedPhone) {
+      Alert.alert('No saved details', 'Create a booking once to save your details.');
+      return;
+    }
+
+    if (savedName) setName(savedName);
+    if (savedEmail) setEmail(savedEmail);
+    if (savedPhone) setPhone(savedPhone);
+    Alert.alert('Loaded', 'Saved details restored.');
+  }
+
+  function clearForm() {
+    setCreated(null);
+    setName('');
+    setEmail('');
+    setPhone('');
+    setDate('');
+    setTime('');
+    setLanguage('English');
+    setPaymentMethod('Bank Transfer');
+    setPaymentPlan('deposit_50');
+    setHomeServiceRequested(false);
+    setHomeServiceAddress('');
+    setRefreshment('No');
+    setSpecialRequests('');
+  }
+
+  async function shareBookingDetails() {
+    if (!created?.booking) return;
+    const booking = created.booking;
+    const message = [
+      'D CEO OFFICIAL UNISEX SALON APP',
+      `Tracking Code: ${booking.trackingCode || booking.id}`,
+      `Service: ${booking.serviceName || selectedService?.name || 'N/A'}`,
+      `Date/Time: ${booking.date} ${booking.time}`,
+      `Due now: ₦${Number(booking.amountDueNow || 0).toLocaleString()}`
+    ].join('\n');
+
+    try {
+      await Share.share({
+        title: 'Booking Details',
+        message
+      });
+    } catch {
+      Alert.alert('Share failed', 'Could not share booking details.');
+    }
+  }
+
   if (loadingServices) {
     return (
       <View style={styles.center}>
@@ -195,11 +361,22 @@ export default function BookScreen() {
 
   return (
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
-      <Text style={styles.h1}>Book an Appointment</Text>
-      <Text style={styles.sub}>Create a booking using the same backend as your website.</Text>
+      <Animated.View style={[styles.heroCard, cardIn(20)]}>
+        <Text style={styles.heroKicker}>CEO UNISEX SALON</Text>
+        <Text style={styles.h1}>Book an Appointment</Text>
+        <Text style={styles.sub}>Fast, beautiful booking with instant tracking and payment options.</Text>
+      </Animated.View>
 
-      <View style={styles.card}>
+      <Animated.View style={[styles.card, cardIn(28)]}>
         <Text style={styles.cardTitle}>Booking Details</Text>
+        <View style={styles.rowWrap}>
+          <MicroPress style={styles.quickChip} onPress={useLastSavedDetails}>
+            <Text style={styles.quickChipText}>Use saved details</Text>
+          </MicroPress>
+          <MicroPress style={styles.quickChip} onPress={clearForm}>
+            <Text style={styles.quickChipText}>Clear form</Text>
+          </MicroPress>
+        </View>
         <Text style={styles.label}>Name</Text>
         <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Full name" />
 
@@ -233,9 +410,27 @@ export default function BookScreen() {
 
         <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
         <TextInput style={styles.input} value={date} onChangeText={setDate} placeholder="2026-02-20" />
+        <View style={styles.rowWrap}>
+          <TouchableOpacity style={styles.quickChip} onPress={() => setDate(formatDateYYYYMMDD(new Date()))}>
+            <Text style={styles.quickChipText}>Today</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.quickChip} onPress={() => setDate(plusDays(1))}>
+            <Text style={styles.quickChipText}>Tomorrow</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.quickChip} onPress={() => setDate(plusDays(2))}>
+            <Text style={styles.quickChipText}>+2 days</Text>
+          </TouchableOpacity>
+        </View>
 
         <Text style={styles.label}>Time (HH:MM)</Text>
         <TextInput style={styles.input} value={time} onChangeText={setTime} placeholder="10:00" />
+        <View style={styles.rowWrap}>
+          {quickTimes.map((t) => (
+            <TouchableOpacity key={t} style={[styles.quickChip, time === t && styles.quickChipActive]} onPress={() => setTime(t)}>
+              <Text style={[styles.quickChipText, time === t && styles.quickChipTextActive]}>{t}</Text>
+            </TouchableOpacity>
+          ))}
+        </View>
 
         <Text style={styles.label}>Language</Text>
         <TextInput style={styles.input} value={language} onChangeText={setLanguage} placeholder="English" />
@@ -303,19 +498,23 @@ export default function BookScreen() {
           multiline
         />
 
-        <TouchableOpacity style={[styles.button, creating && styles.buttonDisabled]} onPress={createBooking} disabled={creating}>
+        <MicroPress style={[styles.button, creating && styles.buttonDisabled]} onPress={createBooking} disabled={creating}>
           <Text style={styles.buttonText}>{creating ? 'Creating…' : 'Create booking'}</Text>
-        </TouchableOpacity>
+        </MicroPress>
 
         {selectedService ? (
-          <Text style={styles.hint}>
-            Selected: {selectedService.name} • ₦{Number(selectedService.price).toLocaleString()} • {selectedService.duration} mins
-          </Text>
+          <View style={styles.previewBox}>
+            <Text style={styles.previewTitle}>Booking preview</Text>
+            <Text style={styles.hint}>Service: {selectedService.name}</Text>
+            <Text style={styles.hint}>Duration: {selectedService.duration} mins</Text>
+            <Text style={styles.hint}>Total: ₦{Number(selectedService.price).toLocaleString()}</Text>
+            <Text style={styles.previewDue}>Due now: ₦{Number(dueNowPreview).toLocaleString()}</Text>
+          </View>
         ) : null}
-      </View>
+      </Animated.View>
 
       {created ? (
-        <View style={styles.card}>
+        <Animated.View style={[styles.card, cardIn(36)]}>
           <Text style={styles.cardTitle}>Booking Created</Text>
           <Text style={styles.h2}>Booking created 🎉</Text>
           <Text style={styles.mono}>Booking ID: {created.booking.id}</Text>
@@ -333,9 +532,12 @@ export default function BookScreen() {
           ) : null}
 
           <View style={[styles.row, { marginTop: 12 }]}>
-            <TouchableOpacity style={[styles.buttonSmall]} onPress={goToTrack}>
+            <MicroPress style={[styles.buttonSmall]} onPress={goToTrack}>
               <Text style={styles.buttonText}>Track booking</Text>
-            </TouchableOpacity>
+            </MicroPress>
+            <MicroPress style={[styles.buttonSmallAlt]} onPress={shareBookingDetails}>
+              <Text style={styles.buttonSmallAltText}>Share</Text>
+            </MicroPress>
           </View>
 
           {paymentMethod === 'Credit Card' ? (
@@ -344,21 +546,21 @@ export default function BookScreen() {
                 Pay online (opens in browser):
               </Text>
               <View style={styles.rowWrap}>
-                <TouchableOpacity
+                <MicroPress
                   style={[styles.buttonSmall, !(paystackStatus?.configured) && styles.buttonDisabled]}
                   onPress={payWithPaystack}
                   disabled={!paystackStatus?.configured}
                 >
                   <Text style={styles.buttonText}>Paystack</Text>
-                </TouchableOpacity>
+                </MicroPress>
 
-                <TouchableOpacity
+                <MicroPress
                   style={[styles.buttonSmall, !(monnifyStatus?.configured) && styles.buttonDisabled]}
                   onPress={payWithMonnify}
                   disabled={!monnifyStatus?.configured}
                 >
                   <Text style={styles.buttonText}>Monnify</Text>
-                </TouchableOpacity>
+                </MicroPress>
               </View>
               {paystackStatus && !paystackStatus.configured ? (
                 <Text style={styles.hint}>{paystackStatus.message}</Text>
@@ -368,7 +570,7 @@ export default function BookScreen() {
               ) : null}
             </>
           ) : null}
-        </View>
+        </Animated.View>
       ) : null}
     </ScrollView>
   );
@@ -389,7 +591,14 @@ const styles = StyleSheet.create({
   h1: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#2a154f'
+    color: '#ffffff'
+  },
+  heroKicker: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#f4d98a',
+    letterSpacing: 1,
+    marginBottom: 6
   },
   h2: {
     fontSize: 18,
@@ -403,7 +612,19 @@ const styles = StyleSheet.create({
   },
   sub: {
     marginTop: 6,
-    color: '#5f6280'
+    color: '#e9dfff'
+  },
+  heroCard: {
+    backgroundColor: '#37166d',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#5f35af',
+    shadowColor: '#2a0b57',
+    shadowOpacity: 0.24,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 16,
+    elevation: 4
   },
   cardTitle: {
     fontSize: 13,
@@ -496,6 +717,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     alignItems: 'center'
   },
+  buttonSmallAlt: {
+    backgroundColor: '#f1ebff',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#dccffb'
+  },
+  buttonSmallAltText: {
+    color: '#5a31b3',
+    fontWeight: '800'
+  },
   buttonDisabled: {
     opacity: 0.5
   },
@@ -506,6 +740,45 @@ const styles = StyleSheet.create({
   hint: {
     marginTop: 10,
     color: '#6f6a87'
+  },
+  quickChip: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: '#f1ebff',
+    borderWidth: 1,
+    borderColor: '#dfd3fa'
+  },
+  quickChipActive: {
+    backgroundColor: '#7c46e8',
+    borderColor: '#6c37da'
+  },
+  quickChipText: {
+    color: '#5f3ea1',
+    fontWeight: '700'
+  },
+  quickChipTextActive: {
+    color: '#ffffff'
+  },
+  previewBox: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: '#e6dcfb',
+    backgroundColor: '#f9f5ff',
+    borderRadius: 12,
+    padding: 12
+  },
+  previewTitle: {
+    color: '#4f2a96',
+    fontSize: 13,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5
+  },
+  previewDue: {
+    marginTop: 10,
+    color: '#2d2342',
+    fontWeight: '900'
   },
   mono: {
     marginTop: 6,

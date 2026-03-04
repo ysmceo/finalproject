@@ -1,7 +1,10 @@
-import React, { useEffect, useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Animated,
   Alert,
+  Easing,
   FlatList,
+  Pressable,
   StyleSheet,
   Text,
   TextInput,
@@ -10,6 +13,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
+import * as Clipboard from 'expo-clipboard';
 
 import { apiGet, ApiError } from '../lib/api';
 import { buildApiUrl } from '../config';
@@ -29,6 +33,73 @@ type BankDetails = {
   bookingId: string;
 };
 
+function MicroPress({
+  onPress,
+  style,
+  children,
+  disabled
+}: {
+  onPress: () => void;
+  style: any;
+  children: React.ReactNode;
+  disabled?: boolean;
+}) {
+  const scale = useRef(new Animated.Value(1)).current;
+
+  const to = (value: number) => {
+    Animated.timing(scale, {
+      toValue: value,
+      duration: 90,
+      easing: Easing.out(Easing.quad),
+      useNativeDriver: true
+    }).start();
+  };
+
+  return (
+    <Pressable
+      onPressIn={() => to(0.97)}
+      onPressOut={() => to(1)}
+      onPress={onPress}
+      disabled={disabled}
+    >
+      <Animated.View style={[style, { transform: [{ scale }] }]}>{children}</Animated.View>
+    </Pressable>
+  );
+}
+
+function StaggerReveal({
+  index,
+  children
+}: {
+  index: number;
+  children: React.ReactNode;
+}) {
+  const opacity = useRef(new Animated.Value(0)).current;
+  const translateY = useRef(new Animated.Value(10)).current;
+
+  useEffect(() => {
+    const delay = Math.min(index * 60, 420);
+    Animated.parallel([
+      Animated.timing(opacity, {
+        toValue: 1,
+        duration: 260,
+        delay,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true
+      }),
+      Animated.timing(translateY, {
+        toValue: 0,
+        duration: 260,
+        delay,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true
+      })
+    ]).start();
+  }, [index, opacity, translateY]);
+
+  return <Animated.View style={{ opacity, transform: [{ translateY }] }}>{children}</Animated.View>;
+}
+
 export default function TrackScreen(props: any) {
   const initialTrackingCode = String(props?.route?.params?.trackingCode || props?.route?.params?.bookingId || '');
   const initialEmail = String(props?.route?.params?.email || '');
@@ -45,6 +116,16 @@ export default function TrackScreen(props: any) {
   const [orderData, setOrderData] = useState<ProductOrderTrackResponse | null>(null);
   const [bankDetails, setBankDetails] = useState<BankDetails | null>(null);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const screenEntry = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    Animated.timing(screenEntry, {
+      toValue: 1,
+      duration: 420,
+      easing: Easing.out(Easing.cubic),
+      useNativeDriver: true
+    }).start();
+  }, [screenEntry]);
 
   useEffect(() => {
     // If params are empty, try to load last booking from storage.
@@ -70,6 +151,18 @@ export default function TrackScreen(props: any) {
   const canFetchOrder = useMemo(() => {
     return Boolean(orderCode.trim() && orderEmail.trim());
   }, [orderCode, orderEmail]);
+
+  const cardIn = (offset: number) => ({
+    opacity: screenEntry,
+    transform: [
+      {
+        translateY: screenEntry.interpolate({
+          inputRange: [0, 1],
+          outputRange: [offset, 0]
+        })
+      }
+    ]
+  });
 
   function getBookingStatusMeta(status: string) {
     const normalized = String(status || '').trim().toLowerCase();
@@ -209,38 +302,102 @@ export default function TrackScreen(props: any) {
     }
   }
 
+  async function pasteTrackingCodeFromClipboard() {
+    const value = await Clipboard.getStringAsync();
+    if (value) {
+      setTrackingCode(value.trim().toUpperCase());
+    }
+  }
+
+  async function copyTrackingCodeToClipboard() {
+    const code = String(data?.booking?.trackingCode || '').trim();
+    if (!code) return;
+    await Clipboard.setStringAsync(code);
+    Alert.alert('Copied', 'Tracking code copied to clipboard.');
+  }
+
+  async function useSavedBookingDetails() {
+    const [savedCode, savedEmail] = await Promise.all([
+      AsyncStorage.getItem(LAST_TRACKING_CODE_KEY),
+      AsyncStorage.getItem(LAST_BOOKING_EMAIL_KEY)
+    ]);
+
+    if (!savedCode || !savedEmail) {
+      Alert.alert('No saved booking', 'Create or track a booking first to save details.');
+      return;
+    }
+
+    setTrackingCode(savedCode);
+    setEmail(savedEmail);
+    Alert.alert('Loaded', 'Saved booking tracking details loaded.');
+  }
+
+  async function useSavedOrderDetails() {
+    const [savedCode, savedEmail] = await Promise.all([
+      AsyncStorage.getItem(LAST_PRODUCT_ORDER_CODE_KEY),
+      AsyncStorage.getItem(LAST_PRODUCT_ORDER_EMAIL_KEY)
+    ]);
+
+    if (!savedCode || !savedEmail) {
+      Alert.alert('No saved order', 'Track a product order first to save details.');
+      return;
+    }
+
+    setOrderCode(savedCode);
+    setOrderEmail(savedEmail);
+    Alert.alert('Loaded', 'Saved product order details loaded.');
+  }
+
   return (
     <View style={styles.container}>
-      <Text style={styles.h1}>Track your booking</Text>
-      <Text style={styles.sub}>Enter your Tracking Code and Email to see status + notifications.</Text>
+      <Animated.View style={[styles.heroCard, cardIn(20)]}>
+        <Text style={styles.heroKicker}>LIVE UPDATES</Text>
+        <Text style={styles.h1}>Track your booking</Text>
+        <Text style={styles.sub}>Follow booking and product order status in real time.</Text>
+      </Animated.View>
 
-      <View style={styles.card}>
+      <Animated.View style={[styles.card, cardIn(28)]}>
         <Text style={styles.cardTitle}>Booking Tracker</Text>
         <Text style={styles.label}>Tracking Code</Text>
         <TextInput style={styles.input} value={trackingCode} onChangeText={setTrackingCode} placeholder="e.g. BOOK-ABC12345" autoCapitalize="characters" />
+        <View style={styles.rowWrap}>
+          <MicroPress style={styles.buttonSmallAlt} onPress={pasteTrackingCodeFromClipboard}>
+            <Text style={styles.buttonSmallAltText}>Paste code</Text>
+          </MicroPress>
+        </View>
         <Text style={styles.label}>Email</Text>
         <TextInput style={styles.input} value={email} onChangeText={setEmail} placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" />
+        <View style={styles.rowWrap}>
+          <MicroPress style={styles.buttonSmallAlt} onPress={useSavedBookingDetails}>
+            <Text style={styles.buttonSmallAltText}>Use saved booking</Text>
+          </MicroPress>
+        </View>
 
-        <TouchableOpacity style={[styles.button, (!canFetch || loading) && styles.buttonDisabled]} onPress={fetchTracking} disabled={!canFetch || loading}>
+        <MicroPress style={[styles.button, (!canFetch || loading) && styles.buttonDisabled]} onPress={fetchTracking} disabled={!canFetch || loading}>
           <Text style={styles.buttonText}>{loading ? 'Loading…' : 'Track booking'}</Text>
-        </TouchableOpacity>
-      </View>
+        </MicroPress>
+      </Animated.View>
 
-      <View style={styles.card}>
+      <Animated.View style={[styles.card, cardIn(34)]}>
         <Text style={styles.cardTitle}>Product Order Tracker</Text>
         <Text style={styles.h2}>Track your product order</Text>
         <Text style={styles.label}>Product Order Code</Text>
         <TextInput style={styles.input} value={orderCode} onChangeText={setOrderCode} placeholder="e.g. ORD-MA4N7X2" autoCapitalize="characters" />
         <Text style={styles.label}>Order Email</Text>
         <TextInput style={styles.input} value={orderEmail} onChangeText={setOrderEmail} placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" />
+        <View style={styles.rowWrap}>
+          <MicroPress style={styles.buttonSmallAlt} onPress={useSavedOrderDetails}>
+            <Text style={styles.buttonSmallAltText}>Use saved order</Text>
+          </MicroPress>
+        </View>
 
-        <TouchableOpacity style={[styles.button, (!canFetchOrder || orderLoading) && styles.buttonDisabled]} onPress={fetchProductTracking} disabled={!canFetchOrder || orderLoading}>
+        <MicroPress style={[styles.button, (!canFetchOrder || orderLoading) && styles.buttonDisabled]} onPress={fetchProductTracking} disabled={!canFetchOrder || orderLoading}>
           <Text style={styles.buttonText}>{orderLoading ? 'Loading…' : 'Track product order'}</Text>
-        </TouchableOpacity>
-      </View>
+        </MicroPress>
+      </Animated.View>
 
       {data ? (
-        <View style={styles.card}>
+        <Animated.View style={[styles.card, cardIn(40)]}>
           <Text style={styles.h2}>Booking</Text>
           <View style={styles.statusRow}>
             <Text style={styles.kvLabel}>Status</Text>
@@ -259,6 +416,11 @@ export default function TrackScreen(props: any) {
             </View>
           </View>
           <Text style={styles.kvValue}>Tracking Code: {String(data.booking.trackingCode || '').trim() || 'N/A'}</Text>
+          <View style={styles.rowWrap}>
+            <MicroPress style={styles.buttonSmallAlt} onPress={copyTrackingCodeToClipboard}>
+              <Text style={styles.buttonSmallAltText}>Copy tracking code</Text>
+            </MicroPress>
+          </View>
           <Text style={styles.kvValue}>Service: {data.booking.serviceName}</Text>
           <Text style={styles.kvValue}>Date/Time: {data.booking.date} • {data.booking.time}</Text>
           <Text style={styles.kvValue}>Payment: {data.booking.paymentStatus} ({data.booking.paymentPlan})</Text>
@@ -271,16 +433,16 @@ export default function TrackScreen(props: any) {
           {String(data.booking.paymentMethod || '').trim() === 'Bank Transfer' ? (
             <>
               <View style={styles.rowWrap}>
-                <TouchableOpacity style={styles.buttonSmall} onPress={fetchBankDetails}>
+                <MicroPress style={styles.buttonSmall} onPress={fetchBankDetails}>
                   <Text style={styles.buttonText}>Bank details</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
+                </MicroPress>
+                <MicroPress
                   style={[styles.buttonSmall, uploadingReceipt && styles.buttonDisabled]}
                   onPress={uploadReceipt}
                   disabled={uploadingReceipt}
                 >
                   <Text style={styles.buttonText}>{uploadingReceipt ? 'Uploading…' : 'Upload receipt'}</Text>
-                </TouchableOpacity>
+                </MicroPress>
               </View>
 
               {bankDetails ? (
@@ -295,11 +457,11 @@ export default function TrackScreen(props: any) {
               ) : null}
             </>
           ) : null}
-        </View>
+        </Animated.View>
       ) : null}
 
       {orderData ? (
-        <View style={styles.card}>
+        <Animated.View style={[styles.card, cardIn(48)]}>
           <Text style={styles.h2}>Product Order</Text>
           <View style={styles.statusRow}>
             <Text style={styles.kvLabel}>Status</Text>
@@ -314,11 +476,13 @@ export default function TrackScreen(props: any) {
           <Text style={styles.kvValue}>Remaining: ₦{Number(orderData.order.amountRemaining || 0).toLocaleString()}</Text>
           <Text style={[styles.h3, { marginTop: 10 }]}>Items</Text>
           {(orderData.order.items || []).map((item, index) => (
-            <Text key={`${item.productId}-${index}`} style={styles.kvValue}>
-              • {item.name} × {item.quantity} — ₦{Number(item.lineTotal || 0).toLocaleString()}
-            </Text>
+            <StaggerReveal key={`${item.productId}-${index}`} index={index}>
+              <Text style={styles.kvValue}>
+                • {item.name} × {item.quantity} — ₦{Number(item.lineTotal || 0).toLocaleString()}
+              </Text>
+            </StaggerReveal>
           ))}
-        </View>
+        </Animated.View>
       ) : null}
 
       {data ? (
@@ -328,11 +492,13 @@ export default function TrackScreen(props: any) {
             data={data.notifications}
             keyExtractor={(item) => item.id}
             contentContainerStyle={{ paddingVertical: 10, gap: 10 }}
-            renderItem={({ item }) => (
-              <View style={styles.note}>
-                <Text style={styles.noteMsg}>{item.message}</Text>
-                <Text style={styles.noteMeta}>{new Date(item.createdAt).toLocaleString()}</Text>
-              </View>
+            renderItem={({ item, index }) => (
+              <StaggerReveal index={index}>
+                <View style={styles.note}>
+                  <Text style={styles.noteMsg}>{item.message}</Text>
+                  <Text style={styles.noteMeta}>{new Date(item.createdAt).toLocaleString()}</Text>
+                </View>
+              </StaggerReveal>
             )}
             ListEmptyComponent={<Text style={styles.sub}>No notifications yet.</Text>}
           />
@@ -351,7 +517,14 @@ const styles = StyleSheet.create({
   h1: {
     fontSize: 24,
     fontWeight: '800',
-    color: '#2a154f'
+    color: '#ffffff'
+  },
+  heroKicker: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#f4d98a',
+    letterSpacing: 1,
+    marginBottom: 6
   },
   h2: {
     fontSize: 18,
@@ -365,7 +538,19 @@ const styles = StyleSheet.create({
   },
   sub: {
     marginTop: 6,
-    color: '#5f6280'
+    color: '#e9dfff'
+  },
+  heroCard: {
+    backgroundColor: '#2f1d63',
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#5f35af',
+    shadowColor: '#220a4c',
+    shadowOpacity: 0.24,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 16,
+    elevation: 4
   },
   cardTitle: {
     fontSize: 13,
@@ -438,6 +623,19 @@ const styles = StyleSheet.create({
   },
   buttonDisabled: {
     opacity: 0.5
+  },
+  buttonSmallAlt: {
+    backgroundColor: '#f5f0ff',
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#ded1fb'
+  },
+  buttonSmallAltText: {
+    color: '#5a31b3',
+    fontWeight: '800'
   },
   buttonText: {
     color: '#fff',
