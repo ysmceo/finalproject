@@ -991,6 +991,39 @@ function getBookingTrackingCode(booking) {
   return buildBookingStatusCode(booking && booking.id ? booking.id : '');
 }
 
+const DEFAULT_BOOKING_SLOTS = ['09:00', '10:00', '11:00', '12:00', '13:00', '14:00', '15:00', '16:00', '17:00', '18:00'];
+
+function normalizeSlotDate(value) {
+  const normalized = String(value || '').trim();
+  return /^\d{4}-\d{2}-\d{2}$/.test(normalized) ? normalized : '';
+}
+
+function normalizeSlotTime(value) {
+  const normalized = String(value || '').trim();
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(normalized) ? normalized : '';
+}
+
+function shouldBlockSlotForBooking(booking) {
+  const status = String(booking && booking.status ? booking.status : '').trim().toLowerCase();
+  return ['pending', 'approved'].includes(status);
+}
+
+function computeBlockedSlotsForDate(db, date) {
+  const normalizedDate = normalizeSlotDate(date);
+  if (!normalizedDate) return [];
+
+  return (db.bookings || [])
+    .filter(booking => normalizeSlotDate(booking && booking.date) === normalizedDate)
+    .filter(shouldBlockSlotForBooking)
+    .map(booking => normalizeSlotTime(booking && booking.time))
+    .filter(Boolean);
+}
+
+function computeAvailableSlotsForDate(db, date) {
+  const blockedSlots = new Set(computeBlockedSlotsForDate(db, date));
+  return DEFAULT_BOOKING_SLOTS.filter(slot => !blockedSlots.has(slot));
+}
+
 function isPaystackConfigured() {
   return Boolean(String(PAYSTACK_SECRET_KEY || '').trim());
 }
@@ -1280,6 +1313,27 @@ app.get('/api/services', (req, res) => {
 app.get('/api/products', (req, res) => {
   const db = readDatabase();
   res.json(db.products);
+});
+
+// Get available booking time slots for a date (Customer)
+app.get('/api/bookings/available-slots', (req, res) => {
+  const date = normalizeSlotDate(req.query.date);
+
+  if (!date) {
+    return res.status(400).json({ error: 'Valid date (YYYY-MM-DD) is required' });
+  }
+
+  const db = readDatabase();
+  const blockedSlots = computeBlockedSlotsForDate(db, date);
+  const slots = computeAvailableSlotsForDate(db, date);
+
+  return res.json({
+    date,
+    slots,
+    blockedSlots,
+    totalSlots: DEFAULT_BOOKING_SLOTS.length,
+    availableCount: slots.length
+  });
 });
 
 // Create product order (Customer)
@@ -1703,6 +1757,12 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
     return res.status(400).json({ error: 'Missing required fields' });
   }
 
+  const normalizedDate = normalizeSlotDate(date);
+  const normalizedTime = normalizeSlotTime(time);
+  if (!normalizedDate || !normalizedTime) {
+    return res.status(400).json({ error: 'Please provide valid date/time values (YYYY-MM-DD and HH:MM)' });
+  }
+
   const normalizedEmail = normalizeEmail(email);
   if (!isValidEmail(normalizedEmail)) {
     return res.status(400).json({ error: 'Please enter a valid email address' });
@@ -1717,6 +1777,14 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
   }
 
   const db = readDatabase();
+
+  const availableSlots = computeAvailableSlotsForDate(db, normalizedDate);
+  if (!availableSlots.includes(normalizedTime)) {
+    return res.status(409).json({
+      error: 'Selected time slot is no longer available. Please choose another time.',
+      availableSlots
+    });
+  }
 
   let parsedServiceIds = [];
   try {
@@ -1833,8 +1901,8 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
     serviceName: selectedServices.map(item => String(item.name || '')).join(', '),
     price: serviceSubtotal,
     totalDuration,
-    date,
-    time,
+    date: normalizedDate,
+    time: normalizedTime,
     language: language || '',
     paymentMethod: paymentMethod || '',
     paymentPlan: normalizedPaymentPlan,

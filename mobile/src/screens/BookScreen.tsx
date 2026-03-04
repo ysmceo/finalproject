@@ -52,6 +52,14 @@ type ProductSelection = {
   product: Product;
 };
 
+type BookingSlotsResponse = {
+  date: string;
+  slots: string[];
+  blockedSlots: string[];
+  totalSlots: number;
+  availableCount: number;
+};
+
 const LAST_BOOKING_ID_KEY = 'ceosalon:lastBookingId';
 const LAST_BOOKING_EMAIL_KEY = 'ceosalon:lastBookingEmail';
 const LAST_BOOKING_NAME_KEY = 'ceosalon:lastBookingName';
@@ -121,6 +129,9 @@ export default function BookScreen() {
   const [productQuantities, setProductQuantities] = useState<Record<number, number>>({});
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
+  const [availableSlots, setAvailableSlots] = useState<string[]>([]);
+  const [loadingSlots, setLoadingSlots] = useState(false);
+  const [slotsError, setSlotsError] = useState('');
   const [language, setLanguage] = useState('English');
   const [paymentMethod, setPaymentMethod] = useState<'Bank Transfer' | 'Credit Card'>('Bank Transfer');
   const [paymentPlan, setPaymentPlan] = useState<'deposit_50' | 'full'>('deposit_50');
@@ -213,7 +224,8 @@ export default function BookScreen() {
       .filter(item => item.quantity > 0 && item.product);
   }, [productQuantities, products]);
 
-  const quickTimes = ['09:00', '12:00', '15:00', '18:00'];
+  const defaultQuickTimes = ['09:00', '12:00', '15:00', '18:00'];
+  const quickTimes = availableSlots.length ? availableSlots : defaultQuickTimes;
   const serviceSubtotal = useMemo(() => {
     return selectedServices.reduce((sum, service) => sum + Number(service.price || 0), 0);
   }, [selectedServices]);
@@ -279,6 +291,42 @@ export default function BookScreen() {
     });
   }
 
+  useEffect(() => {
+    let active = true;
+
+    (async () => {
+      const normalizedDate = date.trim();
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(normalizedDate)) {
+        setAvailableSlots([]);
+        setSlotsError('');
+        return;
+      }
+
+      try {
+        setLoadingSlots(true);
+        setSlotsError('');
+        const response = await apiGet<BookingSlotsResponse>(`/api/bookings/available-slots?date=${encodeURIComponent(normalizedDate)}`);
+        if (!active) return;
+        const slots = Array.isArray(response.slots) ? response.slots : [];
+        setAvailableSlots(slots);
+
+        if (time && !slots.includes(time)) {
+          setTime('');
+        }
+      } catch (error) {
+        if (!active) return;
+        setAvailableSlots([]);
+        setSlotsError(error instanceof Error ? error.message : 'Failed to load available slots');
+      } finally {
+        if (active) setLoadingSlots(false);
+      }
+    })();
+
+    return () => {
+      active = false;
+    };
+  }, [date]);
+
   async function createBooking() {
     if (!selectedServiceIds.length) {
       Alert.alert('Missing info', 'Please select at least one service.');
@@ -286,6 +334,10 @@ export default function BookScreen() {
     }
     if (!name.trim() || !email.trim() || !phone.trim() || !date.trim() || !time.trim()) {
       Alert.alert('Missing info', 'Please fill in name, email, phone, date, and time.');
+      return;
+    }
+    if (availableSlots.length > 0 && !availableSlots.includes(time.trim())) {
+      Alert.alert('Time unavailable', 'Please choose one of the available time slots.');
       return;
     }
     if (homeServiceRequested && !homeServiceAddress.trim()) {
@@ -542,6 +594,11 @@ export default function BookScreen() {
 
         <Text style={styles.label}>Time (HH:MM)</Text>
         <TextInput style={styles.input} value={time} onChangeText={setTime} placeholder="10:00" />
+        {loadingSlots ? <Text style={styles.hint}>Checking available slots…</Text> : null}
+        {!!slotsError ? <Text style={styles.errorText}>{slotsError}</Text> : null}
+        {!loadingSlots && date.trim() && availableSlots.length === 0 ? (
+          <Text style={styles.hint}>No slots available for this date. Try another date.</Text>
+        ) : null}
         <View style={styles.rowWrap}>
           {quickTimes.map((t) => (
             <TouchableOpacity key={t} style={[styles.quickChip, time === t && styles.quickChipActive]} onPress={() => setTime(t)}>
@@ -860,6 +917,11 @@ const styles = StyleSheet.create({
   hint: {
     marginTop: 10,
     color: '#6f6a87'
+  },
+  errorText: {
+    marginTop: 8,
+    color: '#b00020',
+    fontWeight: '700'
   },
   quickChip: {
     paddingHorizontal: 12,
