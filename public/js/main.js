@@ -675,6 +675,8 @@ function buildTrackStatusSteps(status) {
 function normalizeProductOrderStatus(status) {
   const s = String(status || '').trim().toLowerCase();
   if (s === 'approved') return 'approved';
+  if (s === 'processed') return 'processed';
+  if (s === 'shipped') return 'shipped';
   if (s === 'cancelled') return 'cancelled';
   if (s === 'completed') return 'completed';
   return 'pending';
@@ -687,6 +689,22 @@ function getProductOrderStatusMeta(status) {
       normalized,
       label: '✅ Approved',
       summary: 'Your product order has been approved and is being processed.'
+    };
+  }
+
+  if (normalized === 'processed') {
+    return {
+      normalized,
+      label: '🧾 Processed',
+      summary: 'Your order has been processed and is being prepared for shipment.'
+    };
+  }
+
+  if (normalized === 'shipped') {
+    return {
+      normalized,
+      label: '🚚 Shipped',
+      summary: 'Your order has been shipped and is on the way.'
     };
   }
 
@@ -716,7 +734,9 @@ function getProductOrderStatusMeta(status) {
 function buildProductTrackStatusSteps(status) {
   const current = normalizeProductOrderStatus(status);
   const pendingClass = current === 'pending' ? 'is-current' : 'is-done';
-  const approvedClass = current === 'approved' || current === 'completed' ? 'is-done' : '';
+  const approvedClass = ['approved', 'processed', 'shipped', 'completed'].includes(current) ? 'is-done' : '';
+  const processedClass = ['processed', 'shipped', 'completed'].includes(current) ? 'is-done' : '';
+  const shippedClass = ['shipped', 'completed'].includes(current) ? 'is-done' : '';
   const cancelledClass = current === 'cancelled' ? 'is-done' : '';
   const completedClass = current === 'completed' ? 'is-done' : '';
 
@@ -724,6 +744,8 @@ function buildProductTrackStatusSteps(status) {
     <div class="track-status-steps">
       <div class="track-step ${pendingClass}">Pending</div>
       <div class="track-step ${approvedClass}">Approved</div>
+      <div class="track-step ${processedClass}">Processed</div>
+      <div class="track-step ${shippedClass}">Shipped</div>
       <div class="track-step ${cancelledClass}">Cancelled</div>
       <div class="track-step ${completedClass}">Completed</div>
     </div>
@@ -808,6 +830,7 @@ function renderProductTrackResult(payload) {
   if (!box) return;
 
   const order = payload && payload.order ? payload.order : null;
+  const notifications = payload && Array.isArray(payload.notifications) ? payload.notifications : [];
   if (!order) {
     box.innerHTML = '<div class="message error">No product order data found.</div>';
     return;
@@ -818,6 +841,8 @@ function renderProductTrackResult(payload) {
   const itemsHtml = items.length
     ? `<ul style="margin:8px 0 0 16px; color:#555;">${items.map(item => `<li>${escapeHtmlText(String(item.name || 'Product'))} × ${Number(item.quantity || 0)} — ₦${Number(item.lineTotal || 0).toLocaleString()}</li>`).join('')}</ul>`
     : '<div class="bank-pay-muted">No item details available.</div>';
+  const latestNote = notifications.length ? notifications[notifications.length - 1] : null;
+  const latestNoteText = latestNote ? String(latestNote.message || '') : 'No delivery updates yet. Please check again later.';
 
   box.innerHTML = `
     <div class="bank-pay-card" style="margin-top:12px;">
@@ -832,6 +857,7 @@ function renderProductTrackResult(payload) {
       </div>
       <div class="track-status-summary">${statusMeta.summary}</div>
       ${buildProductTrackStatusSteps(order.status)}
+      <div class="bank-pay-muted" style="margin-top:10px;"><strong>Latest update:</strong> ${escapeHtmlText(latestNoteText)}</div>
       <div class="bank-pay-label" style="margin-top:6px;">Items</div>
       ${itemsHtml}
     </div>

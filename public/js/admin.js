@@ -1545,6 +1545,8 @@ function getStatusLabel(status) {
   const labels = {
     pending: '⏳ Pending',
     approved: '✓ Approved',
+    processed: '🧾 Processed',
+    shipped: '🚚 Shipped',
     cancelled: '✗ Declined',
     completed: '✓ Completed'
   };
@@ -1588,8 +1590,11 @@ function displayProductOrders(orders) {
   orders.forEach(order => {
     const normalizedStatus = normalizeBookingStatus(order.status || 'pending');
     const statusLabel = getStatusLabel(normalizedStatus);
-    const approveDisabled = ['approved', 'cancelled', 'completed'].includes(normalizedStatus);
-    const rejectDisabled = ['approved', 'cancelled', 'completed'].includes(normalizedStatus);
+    const approveDisabled = normalizedStatus !== 'pending';
+    const processDisabled = normalizedStatus !== 'approved';
+    const shipDisabled = normalizedStatus !== 'processed';
+    const completeDisabled = normalizedStatus !== 'shipped';
+    const rejectDisabled = ['cancelled', 'completed'].includes(normalizedStatus);
 
     const itemsHtml = Array.isArray(order.items)
       ? order.items.map(i => `<li>${i.name} × ${i.quantity} — ₦${Number(i.lineTotal || 0).toLocaleString()}</li>`).join('')
@@ -1630,6 +1635,9 @@ function displayProductOrders(orders) {
       </div>
       <div class="booking-actions">
         <button class="btn btn-accept" ${approveDisabled ? 'disabled' : ''} onclick="updateProductOrderStatus('${order.id}', 'approved')">✓ Approve</button>
+        <button class="btn btn-info" ${processDisabled ? 'disabled' : ''} onclick="updateProductOrderStatus('${order.id}', 'processed')">🧾 Processed</button>
+        <button class="btn btn-info" ${shipDisabled ? 'disabled' : ''} onclick="updateProductOrderStatus('${order.id}', 'shipped')">🚚 Shipped</button>
+        <button class="btn btn-accept" ${completeDisabled ? 'disabled' : ''} onclick="updateProductOrderStatus('${order.id}', 'completed')">🎉 Complete</button>
         <button class="btn btn-decline" ${rejectDisabled ? 'disabled' : ''} onclick="updateProductOrderStatus('${order.id}', 'cancelled')">✗ Reject</button>
         <button class="btn btn-decline" onclick="deleteProductOrder('${order.id}')">Delete</button>
       </div>

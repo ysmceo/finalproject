@@ -107,6 +107,15 @@ export type ProductOrder = {
 
 export type ProductOrderTrackResponse = {
   order: ProductOrder;
+  notifications?: ProductOrderNotification[];
+};
+
+export type ProductOrderNotification = {
+  id: string;
+  orderId: string;
+  type: string;
+  message: string;
+  createdAt: string;
 };
 
 export type PaystackStatusResponse = {

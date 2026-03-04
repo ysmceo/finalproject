@@ -78,6 +78,7 @@ const SEND_PAYMENT_EMAIL_RECEIPTS = String(process.env.SEND_PAYMENT_EMAIL_RECEIP
 const SEND_BOOKING_STATUS_EMAILS = String(process.env.SEND_BOOKING_STATUS_EMAILS || 'false').trim().toLowerCase() === 'true';
 const SEND_ADMIN_NEW_BOOKING_EMAILS = String(process.env.SEND_ADMIN_NEW_BOOKING_EMAILS || 'false').trim().toLowerCase() === 'true';
 const SEND_BOOKING_TRACKING_CODE_EMAILS = String(process.env.SEND_BOOKING_TRACKING_CODE_EMAILS || 'true').trim().toLowerCase() === 'true';
+const SEND_PRODUCT_ORDER_STATUS_EMAILS = String(process.env.SEND_PRODUCT_ORDER_STATUS_EMAILS || 'true').trim().toLowerCase() === 'true';
 const PAYMENT_RECEIPTS_BCC = process.env.PAYMENT_RECEIPTS_BCC || '';
 const SEND_ADMIN_LOGIN_OTP_EMAILS = String(process.env.SEND_ADMIN_LOGIN_OTP_EMAILS || 'true').trim().toLowerCase() === 'true';
 const SEND_ADMIN_LOGIN_OTP_SMS = String(process.env.SEND_ADMIN_LOGIN_OTP_SMS || 'true').trim().toLowerCase() === 'true';
@@ -671,6 +672,111 @@ async function maybeSendBookingTrackingCodeEmail({ booking }) {
   return { sent: true };
 }
 
+async function maybeSendProductOrderStatusEmail({ order, previousStatus, newStatus }) {
+  if (!SEND_PRODUCT_ORDER_STATUS_EMAILS) {
+    return { sent: false, skipped: true, reason: 'SEND_PRODUCT_ORDER_STATUS_EMAILS=false' };
+  }
+
+  if (!isSmtpConfigured()) {
+    return { sent: false, skipped: true, reason: 'SMTP not configured' };
+  }
+
+  if (!order || !order.email) {
+    return { sent: false, skipped: true, reason: 'Missing order/email' };
+  }
+
+  const prev = normalizeProductOrderStatus(previousStatus);
+  const next = normalizeProductOrderStatus(newStatus);
+
+  if (!next) {
+    return { sent: false, skipped: true, reason: 'Unsupported status' };
+  }
+
+  if (prev === next) {
+    return { sent: false, skipped: true, reason: 'No status change' };
+  }
+
+  const notifyStatuses = ['processed', 'shipped', 'completed', 'cancelled'];
+  if (!notifyStatuses.includes(next)) {
+    return { sent: false, skipped: true, reason: 'No email for this status' };
+  }
+
+  const toEmail = normalizeEmail(order.email);
+  const orderCode = String(order.orderCode || order.id || '').trim();
+  const customerName = String(order.name || 'Customer').trim();
+
+  const statusMeta = {
+    processed: {
+      label: 'Processed',
+      emoji: '🧾',
+      accent: '#2b6ef2',
+      subtitle: 'Your order is now being prepared by our team.',
+      body: 'Great news — your order has been processed and is now moving to shipment preparation.'
+    },
+    shipped: {
+      label: 'Shipped',
+      emoji: '🚚',
+      accent: '#8f2aa8',
+      subtitle: 'Your package is on the way.',
+      body: 'Your order has been shipped and is currently in transit to your delivery address.'
+    },
+    completed: {
+      label: 'Completed',
+      emoji: '🎉',
+      accent: '#1e9d53',
+      subtitle: 'Your order delivery is complete.',
+      body: 'Your product order has been completed successfully. Thank you for shopping with us.'
+    },
+    cancelled: {
+      label: 'Cancelled',
+      emoji: '❌',
+      accent: '#d81b60',
+      subtitle: 'Order update from CEO Unisex Salon.',
+      body: 'Your product order was cancelled. Please contact us if you need assistance or want to reorder.'
+    }
+  };
+
+  const meta = statusMeta[next];
+  const items = Array.isArray(order.items) ? order.items : [];
+  const itemsText = items.length
+    ? items.map(item => `${item.name} × ${item.quantity}`).join(', ')
+    : 'N/A';
+
+  const subject = `${meta.emoji} Product Order ${meta.label} - ${orderCode}`;
+  const text = `Hi ${customerName},\n\n${meta.body}\n\nOrder Code: ${orderCode}\nStatus: ${meta.label}\nItems: ${itemsText}\nTotal: ₦${Number(order.totalAmount || 0).toLocaleString()}\n\nThank you for choosing CEO Unisex Salon.`;
+
+  const html = buildColorfulEmailShell({
+    title: `${meta.emoji} Product Order ${meta.label}`,
+    subtitle: meta.subtitle,
+    accent: meta.accent,
+    bodyHtml: `
+      <p style="margin:0 0 10px;">Hi <strong>${escapeHtml(customerName)}</strong>,</p>
+      <p style="margin:0 0 14px; color:#4c3f63;">${escapeHtml(meta.body)}</p>
+      <div style="padding:14px; border:1px solid #eadff7; border-radius:12px; background:linear-gradient(180deg,#fbf7ff 0%,#ffffff 100%);">
+        <div><strong>Order Code:</strong> ${escapeHtml(orderCode)}</div>
+        <div><strong>Status:</strong> ${escapeHtml(meta.label)}</div>
+        <div><strong>Items:</strong> ${escapeHtml(itemsText)}</div>
+        <div><strong>Total:</strong> ₦${Number(order.totalAmount || 0).toLocaleString()}</div>
+      </div>
+      <p style="margin:12px 0 0; color:#6a5c80; font-size:13px;">Track your order using order code + email in the app/website product tracker.</p>
+    `
+  });
+
+  const info = await sendEmail({
+    to: toEmail,
+    subject,
+    text,
+    html
+  });
+
+  order.lastStatusEmailSentAt = new Date().toISOString();
+  order.lastStatusEmailTo = toEmail;
+  order.lastStatusEmailMessageId = info && info.messageId ? info.messageId : undefined;
+  order.lastStatusEmailFor = next;
+
+  return { sent: true };
+}
+
 async function sendSmsViaTermii({ to, message }) {
   if (!isTermiiConfigured()) {
     const err = new Error('Termii is not configured');
@@ -935,6 +1041,7 @@ function readDatabase() {
   if (!Array.isArray(db.admins)) db.admins = [];
   if (!Array.isArray(db.adminAccessCodes)) db.adminAccessCodes = [];
   if (!Array.isArray(db.bookingNotifications)) db.bookingNotifications = [];
+  if (!Array.isArray(db.productOrderNotifications)) db.productOrderNotifications = [];
 
   if (db.products.length === 0) {
     db.products = getDefaultProducts();
@@ -962,6 +1069,33 @@ function addBookingNotification(db, booking, type, message) {
     bookingId: booking.id,
     email: booking.email,
     phone: booking.phone,
+    type,
+    message,
+    createdAt: new Date().toISOString()
+  });
+}
+
+function normalizeProductOrderStatus(status) {
+  const normalized = String(status || '').trim().toLowerCase();
+  if (normalized === 'accepted') return 'approved';
+  if (normalized === 'declined' || normalized === 'rejected') return 'cancelled';
+  if (['pending', 'approved', 'processed', 'shipped', 'completed', 'cancelled'].includes(normalized)) {
+    return normalized;
+  }
+  return '';
+}
+
+function addProductOrderNotification(db, order, type, message) {
+  if (!db.productOrderNotifications) {
+    db.productOrderNotifications = [];
+  }
+
+  db.productOrderNotifications.push({
+    id: uuidv4(),
+    orderId: order.id,
+    orderCode: order.orderCode,
+    email: order.email,
+    phone: order.phone,
     type,
     message,
     createdAt: new Date().toISOString()
@@ -1358,6 +1492,10 @@ app.post('/api/product-orders', async (req, res) => {
     return res.status(400).json({ error: 'name, email, phone, address and paymentMethod are required' });
   }
 
+  if (!isValidEmail(normalizedEmail)) {
+    return res.status(400).json({ error: 'Please enter a valid email address' });
+  }
+
   if (!normalizedItems.length) {
     return res.status(400).json({ error: 'At least one product item is required' });
   }
@@ -1424,7 +1562,7 @@ app.post('/api/product-orders', async (req, res) => {
     paymentReference: '',
     paidAmount: 0,
     bankTransferReference: '',
-    status: 'pending',
+    status: normalizeProductOrderStatus('pending'),
     createdAt: new Date().toISOString()
   };
 
@@ -1433,6 +1571,13 @@ app.post('/api/product-orders', async (req, res) => {
   }
 
   db.productOrders.push(order);
+
+  addProductOrderNotification(
+    db,
+    order,
+    'order_created',
+    `🧾 Your order (${order.orderCode}) has been received and is pending review.`
+  );
 
   let adminEmailResult = null;
   try {
@@ -1510,6 +1655,10 @@ app.get('/api/product-orders/track', (req, res) => {
     return res.status(401).json({ error: 'Email does not match this product order' });
   }
 
+  const notifications = (db.productOrderNotifications || [])
+    .filter(n => String(n.orderId) === String(order.id))
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
   return res.json({
     order: {
       id: order.id,
@@ -1527,7 +1676,8 @@ app.get('/api/product-orders/track', (req, res) => {
       items: Array.isArray(order.items) ? order.items : [],
       createdAt: order.createdAt,
       updatedAt: order.updatedAt || null
-    }
+    },
+    notifications
   });
 });
 
@@ -1553,7 +1703,11 @@ app.get('/api/product-orders/:id/track', (req, res) => {
     return res.status(401).json({ error: 'Email does not match this product order' });
   }
 
-  return res.json({ order });
+  const notifications = (db.productOrderNotifications || [])
+    .filter(n => String(n.orderId) === String(order.id))
+    .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+
+  return res.json({ order, notifications });
 });
 
 // Get all products (Admin)
@@ -2910,11 +3064,12 @@ app.get('/api/admin/product-orders', requireAdminAuth, (req, res) => {
 });
 
 // Update product order status (Admin)
-app.put('/api/admin/product-orders/:id', requireAdminAuth, (req, res) => {
+app.put('/api/admin/product-orders/:id', requireAdminAuth, async (req, res) => {
   const orderId = String(req.params.id || '').trim();
-  const status = String((req.body && req.body.status) || '').trim().toLowerCase();
+  const requestedStatus = String((req.body && req.body.status) || '').trim().toLowerCase();
+  const status = normalizeProductOrderStatus(requestedStatus);
 
-  if (!['pending', 'approved', 'cancelled', 'completed'].includes(status)) {
+  if (!['pending', 'approved', 'processed', 'shipped', 'cancelled', 'completed'].includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
   }
 
@@ -2925,11 +3080,65 @@ app.put('/api/admin/product-orders/:id', requireAdminAuth, (req, res) => {
     return res.status(404).json({ error: 'Product order not found' });
   }
 
+  const previousStatus = normalizeProductOrderStatus(order.status || 'pending') || 'pending';
+  const statusChanged = previousStatus !== status;
+
   order.status = status;
   order.updatedAt = new Date().toISOString();
+
+  if (statusChanged && status === 'approved') {
+    addProductOrderNotification(db, order, 'order_approved', `✅ Your order (${order.orderCode}) has been approved and queued for processing.`);
+  }
+
+  if (statusChanged && status === 'processed') {
+    addProductOrderNotification(db, order, 'order_processed', `🧾 Your order (${order.orderCode}) has been processed and is being prepared for shipment.`);
+  }
+
+  if (statusChanged && status === 'shipped') {
+    addProductOrderNotification(db, order, 'order_shipped', `🚚 Your order (${order.orderCode}) has been shipped and is on the way.`);
+  }
+
+  if (statusChanged && status === 'completed') {
+    addProductOrderNotification(db, order, 'order_completed', `🎉 Your order (${order.orderCode}) has been completed. Thank you for shopping with us.`);
+  }
+
+  if (statusChanged && status === 'cancelled') {
+    addProductOrderNotification(db, order, 'order_cancelled', `❌ Your order (${order.orderCode}) was cancelled. Please contact support if needed.`);
+  }
+
+  let customerEmail;
+  if (statusChanged) {
+    try {
+      customerEmail = await maybeSendProductOrderStatusEmail({
+        order,
+        previousStatus,
+        newStatus: status
+      });
+    } catch (error) {
+      customerEmail = {
+        sent: false,
+        error: true,
+        reason: error && error.message ? String(error.message) : 'Email send failed'
+      };
+    }
+  } else {
+    customerEmail = { sent: false, skipped: true, reason: 'No status change' };
+  }
+
   writeDatabase(db);
 
-  return res.json({ message: 'Product order updated successfully', order });
+  return res.json({
+    message: statusChanged
+      ? `Product order status updated to ${status}`
+      : `Product order already ${status}. No status change.`,
+    statusChanged,
+    previousStatus,
+    currentStatus: status,
+    notifications: {
+      customerEmail
+    },
+    order
+  });
 });
 
 // Delete product order (Admin)

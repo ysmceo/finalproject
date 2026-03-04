@@ -17,7 +17,7 @@ import * as Clipboard from 'expo-clipboard';
 
 import { apiGet, ApiError } from '../lib/api';
 import { buildApiUrl } from '../config';
-import type { ProductOrderTrackResponse, TrackResponse } from '../types';
+import type { ProductOrderNotification, ProductOrderTrackResponse, TrackResponse } from '../types';
 
 const LAST_TRACKING_CODE_KEY = 'ceosalon:lastTrackingCode';
 const LAST_BOOKING_EMAIL_KEY = 'ceosalon:lastBookingEmail';
@@ -187,6 +187,8 @@ export default function TrackScreen(props: any) {
   function formatProductOrderStatus(status: string) {
     const normalized = String(status || '').trim().toLowerCase();
     if (normalized === 'approved') return '✅ Approved';
+    if (normalized === 'processed') return '🧾 Processed';
+    if (normalized === 'shipped') return '🚚 Shipped';
     if (normalized === 'cancelled') return '❌ Cancelled';
     if (normalized === 'completed') return '🎉 Completed';
     return '⏳ Pending';
@@ -238,7 +240,17 @@ export default function TrackScreen(props: any) {
       {
         key: 'approved',
         label: 'Order approved',
-        done: ['approved', 'completed'].includes(normalized)
+        done: ['approved', 'processed', 'shipped', 'completed'].includes(normalized)
+      },
+      {
+        key: 'processed',
+        label: 'Order processed',
+        done: ['processed', 'shipped', 'completed'].includes(normalized)
+      },
+      {
+        key: 'shipped',
+        label: 'Order shipped',
+        done: ['shipped', 'completed'].includes(normalized)
       },
       {
         key: 'payment',
@@ -569,6 +581,22 @@ export default function TrackScreen(props: any) {
               </Text>
             </StaggerReveal>
           ))}
+
+          <Text style={[styles.h3, { marginTop: 12 }]}>Delivery updates</Text>
+          <FlatList
+            data={(Array.isArray(orderData.notifications) ? orderData.notifications : []) as ProductOrderNotification[]}
+            keyExtractor={(item) => item.id}
+            contentContainerStyle={{ paddingTop: 8, gap: 8 }}
+            renderItem={({ item, index }) => (
+              <StaggerReveal index={index}>
+                <View style={styles.note}>
+                  <Text style={styles.noteMsg}>{item.message}</Text>
+                  <Text style={styles.noteMeta}>{new Date(item.createdAt).toLocaleString()}</Text>
+                </View>
+              </StaggerReveal>
+            )}
+            ListEmptyComponent={<Text style={styles.kvValue}>No delivery updates yet.</Text>}
+          />
         </Animated.View>
       ) : null}
 

@@ -567,6 +567,16 @@ body.dark-mode .product-image-wrap {
   color: white;
 }
 
+.status-processed {
+  background: #2b6ef2;
+  color: white;
+}
+
+.status-shipped {
+  background: #8f2aa8;
+  color: white;
+}
+
 .status-declined,
 .status-cancelled {
   background: var(--danger-color);
