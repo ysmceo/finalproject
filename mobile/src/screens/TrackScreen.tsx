@@ -33,6 +33,12 @@ type BankDetails = {
   bookingId: string;
 };
 
+type TimelineStep = {
+  key: string;
+  label: string;
+  done: boolean;
+};
+
 function MicroPress({
   onPress,
   style,
@@ -184,6 +190,67 @@ export default function TrackScreen(props: any) {
     if (normalized === 'cancelled') return '❌ Cancelled';
     if (normalized === 'completed') return '🎉 Completed';
     return '⏳ Pending';
+  }
+
+  function isPaidLike(paymentStatus: string) {
+    const normalized = String(paymentStatus || '').trim().toLowerCase();
+    return normalized === 'paid' || normalized === 'partial';
+  }
+
+  function bookingTimeline(status: string, paymentStatus: string): TimelineStep[] {
+    const normalized = String(status || '').trim().toLowerCase();
+    const paidLike = isPaidLike(paymentStatus);
+    return [
+      { key: 'created', label: 'Booking created', done: true },
+      {
+        key: 'review',
+        label: 'Under review',
+        done: ['pending', 'approved', 'accepted', 'completed'].includes(normalized)
+      },
+      {
+        key: 'approved',
+        label: 'Approved by salon',
+        done: ['approved', 'accepted', 'completed'].includes(normalized)
+      },
+      {
+        key: 'payment',
+        label: 'Payment received',
+        done: paidLike || ['completed'].includes(normalized)
+      },
+      {
+        key: 'completed',
+        label: 'Service completed',
+        done: normalized === 'completed'
+      }
+    ];
+  }
+
+  function productOrderTimeline(status: string, paymentStatus: string): TimelineStep[] {
+    const normalized = String(status || '').trim().toLowerCase();
+    const paidLike = isPaidLike(paymentStatus);
+    return [
+      { key: 'placed', label: 'Order placed', done: true },
+      {
+        key: 'review',
+        label: 'Order processing',
+        done: ['pending', 'approved', 'completed'].includes(normalized)
+      },
+      {
+        key: 'approved',
+        label: 'Order approved',
+        done: ['approved', 'completed'].includes(normalized)
+      },
+      {
+        key: 'payment',
+        label: 'Payment confirmed',
+        done: paidLike || normalized === 'completed'
+      },
+      {
+        key: 'completed',
+        label: 'Order completed',
+        done: normalized === 'completed'
+      }
+    ];
   }
 
   async function fetchTracking() {
@@ -415,6 +482,16 @@ export default function TrackScreen(props: any) {
               </Text>
             </View>
           </View>
+          <View style={styles.timelineWrap}>
+            {bookingTimeline(data.booking.status, data.booking.paymentStatus).map((step) => (
+              <View key={step.key} style={styles.timelineItem}>
+                <View style={[styles.timelineDot, step.done ? styles.timelineDotDone : styles.timelineDotPending]} />
+                <Text style={[styles.timelineText, step.done ? styles.timelineTextDone : styles.timelineTextPending]}>
+                  {step.label}
+                </Text>
+              </View>
+            ))}
+          </View>
           <Text style={styles.kvValue}>Tracking Code: {String(data.booking.trackingCode || '').trim() || 'N/A'}</Text>
           <View style={styles.rowWrap}>
             <MicroPress style={styles.buttonSmallAlt} onPress={copyTrackingCodeToClipboard}>
@@ -468,6 +545,16 @@ export default function TrackScreen(props: any) {
             <View style={[styles.statusBadge, styles.statusBadgeInfo]}>
               <Text style={[styles.statusText, styles.statusTextInfo]}>{formatProductOrderStatus(orderData.order.status)}</Text>
             </View>
+          </View>
+          <View style={styles.timelineWrap}>
+            {productOrderTimeline(orderData.order.status, orderData.order.paymentStatus).map((step) => (
+              <View key={step.key} style={styles.timelineItem}>
+                <View style={[styles.timelineDot, step.done ? styles.timelineDotDone : styles.timelineDotPending]} />
+                <Text style={[styles.timelineText, step.done ? styles.timelineTextDone : styles.timelineTextPending]}>
+                  {step.label}
+                </Text>
+              </View>
+            ))}
           </View>
           <Text style={styles.kvValue}>Order Code: {String(orderData.order.orderCode || '').trim() || 'N/A'}</Text>
           <Text style={styles.kvValue}>Payment: {orderData.order.paymentStatus} ({orderData.order.paymentMethod})</Text>
@@ -690,5 +777,42 @@ const styles = StyleSheet.create({
     marginTop: 6,
     color: '#7a7490',
     fontSize: 12
+  },
+  timelineWrap: {
+    marginTop: 10,
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: '#ece7f6',
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    backgroundColor: '#fcfbff',
+    gap: 8
+  },
+  timelineItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8
+  },
+  timelineDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5
+  },
+  timelineDotDone: {
+    backgroundColor: '#2eb872'
+  },
+  timelineDotPending: {
+    backgroundColor: '#cfc7df'
+  },
+  timelineText: {
+    fontSize: 13
+  },
+  timelineTextDone: {
+    color: '#2a3e31',
+    fontWeight: '700'
+  },
+  timelineTextPending: {
+    color: '#726b84'
   }
 });
