@@ -240,6 +240,10 @@ export default function BookScreen() {
     return serviceSubtotal + productsSubtotal;
   }, [serviceSubtotal, productsSubtotal]);
 
+  const selectedProductUnits = useMemo(() => {
+    return selectedProducts.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+  }, [selectedProducts]);
+
   const cardIn = (offset: number) => ({
     opacity: screenEntry,
     transform: [
@@ -445,6 +449,14 @@ export default function BookScreen() {
 
       <Animated.View style={[styles.card, cardIn(28)]}>
         <Text style={styles.cardTitle}>Booking Details</Text>
+        <View style={styles.selectionSummaryRow}>
+          <View style={styles.selectionBadge}>
+            <Text style={styles.selectionBadgeText}>Services: {selectedServiceIds.length}</Text>
+          </View>
+          <View style={styles.selectionBadge}>
+            <Text style={styles.selectionBadgeText}>Products: {selectedProductUnits}</Text>
+          </View>
+        </View>
         <View style={styles.rowWrap}>
           <MicroPress style={styles.quickChip} onPress={useLastSavedDetails}>
             <Text style={styles.quickChipText}>Use saved details</Text>
@@ -867,6 +879,25 @@ const styles = StyleSheet.create({
   },
   quickChipTextActive: {
     color: '#ffffff'
+  },
+  selectionSummaryRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+    marginBottom: 8
+  },
+  selectionBadge: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 999,
+    backgroundColor: '#efe8ff',
+    borderWidth: 1,
+    borderColor: '#d8c8fb'
+  },
+  selectionBadgeText: {
+    color: '#4f2a96',
+    fontWeight: '800',
+    fontSize: 12
   },
   productCard: {
     width: '100%',
