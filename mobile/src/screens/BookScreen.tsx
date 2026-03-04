@@ -4,6 +4,7 @@ import {
   Animated,
   Alert,
   Easing,
+  Platform,
   Pressable,
   ScrollView,
   Share,
@@ -17,6 +18,7 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as WebBrowser from 'expo-web-browser';
 import { useNavigation } from '@react-navigation/native';
+import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 import { apiGet, apiPostJson, ApiError } from '../lib/api';
 import type { Service, Product, Booking, PaystackStatusResponse, MonnifyStatusResponse } from '../types';
@@ -129,6 +131,8 @@ export default function BookScreen() {
   const [productQuantities, setProductQuantities] = useState<Record<number, number>>({});
   const [date, setDate] = useState('');
   const [time, setTime] = useState('');
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [showTimePicker, setShowTimePicker] = useState(false);
   const [availableSlots, setAvailableSlots] = useState<string[]>([]);
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [slotsError, setSlotsError] = useState('');
@@ -256,6 +260,29 @@ export default function BookScreen() {
     return selectedProducts.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
   }, [selectedProducts]);
 
+  const selectedDateValue = useMemo(() => {
+    const normalized = String(date || '').trim();
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
+      return new Date();
+    }
+
+    const parsed = new Date(`${normalized}T00:00:00`);
+    return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+  }, [date]);
+
+  const selectedTimeValue = useMemo(() => {
+    const normalized = String(time || '').trim();
+    const now = new Date();
+    if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(normalized)) {
+      return now;
+    }
+
+    const [hours, minutes] = normalized.split(':').map(Number);
+    const value = new Date(now);
+    value.setHours(hours, minutes, 0, 0);
+    return value;
+  }, [time]);
+
   const cardIn = (offset: number) => ({
     opacity: screenEntry,
     transform: [
@@ -289,6 +316,26 @@ export default function BookScreen() {
         [productId]: nextQuantity
       };
     });
+  }
+
+  function handleDatePickerChange(event: DateTimePickerEvent, selected?: Date) {
+    if (Platform.OS !== 'ios') {
+      setShowDatePicker(false);
+    }
+
+    if (event.type !== 'set' || !selected) return;
+    setDate(formatDateYYYYMMDD(selected));
+  }
+
+  function handleTimePickerChange(event: DateTimePickerEvent, selected?: Date) {
+    if (Platform.OS !== 'ios') {
+      setShowTimePicker(false);
+    }
+
+    if (event.type !== 'set' || !selected) return;
+    const hh = String(selected.getHours()).padStart(2, '0');
+    const mm = String(selected.getMinutes()).padStart(2, '0');
+    setTime(`${hh}:${mm}`);
   }
 
   useEffect(() => {
@@ -579,7 +626,11 @@ export default function BookScreen() {
         </View>
 
         <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
-        <TextInput style={styles.input} value={date} onChangeText={setDate} placeholder="2026-02-20" />
+        <View style={styles.rowWrap}>
+          <TouchableOpacity style={styles.pickerButton} onPress={() => setShowDatePicker(true)}>
+            <Text style={styles.pickerButtonText}>{date || 'Pick a date'}</Text>
+          </TouchableOpacity>
+        </View>
         <View style={styles.rowWrap}>
           <TouchableOpacity style={styles.quickChip} onPress={() => setDate(formatDateYYYYMMDD(new Date()))}>
             <Text style={styles.quickChipText}>Today</Text>
@@ -593,7 +644,11 @@ export default function BookScreen() {
         </View>
 
         <Text style={styles.label}>Time (HH:MM)</Text>
-        <TextInput style={styles.input} value={time} onChangeText={setTime} placeholder="10:00" />
+        <View style={styles.rowWrap}>
+          <TouchableOpacity style={styles.pickerButton} onPress={() => setShowTimePicker(true)}>
+            <Text style={styles.pickerButtonText}>{time || 'Pick a time'}</Text>
+          </TouchableOpacity>
+        </View>
         {loadingSlots ? <Text style={styles.hint}>Checking available slots…</Text> : null}
         {!!slotsError ? <Text style={styles.errorText}>{slotsError}</Text> : null}
         {!loadingSlots && date.trim() && availableSlots.length === 0 ? (
@@ -606,6 +661,26 @@ export default function BookScreen() {
             </TouchableOpacity>
           ))}
         </View>
+
+        {showDatePicker ? (
+          <DateTimePicker
+            value={selectedDateValue}
+            mode="date"
+            onChange={handleDatePickerChange}
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+            minimumDate={new Date()}
+          />
+        ) : null}
+
+        {showTimePicker ? (
+          <DateTimePicker
+            value={selectedTimeValue}
+            mode="time"
+            is24Hour
+            onChange={handleTimePickerChange}
+            display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+          />
+        ) : null}
 
         <Text style={styles.label}>Language</Text>
         <TextInput style={styles.input} value={language} onChangeText={setLanguage} placeholder="English" />
@@ -941,6 +1016,20 @@ const styles = StyleSheet.create({
   },
   quickChipTextActive: {
     color: '#ffffff'
+  },
+  pickerButton: {
+    minHeight: 42,
+    minWidth: 180,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#d9d2e8',
+    backgroundColor: '#fff'
+  },
+  pickerButtonText: {
+    color: '#3b2f54',
+    fontWeight: '700'
   },
   selectionSummaryRow: {
     flexDirection: 'row',
