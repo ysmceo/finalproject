@@ -4,6 +4,7 @@ import {
   Animated,
   Alert,
   Easing,
+  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -21,7 +22,9 @@ import { useNavigation } from '@react-navigation/native';
 import DateTimePicker, { type DateTimePickerEvent } from '@react-native-community/datetimepicker';
 
 import { apiGet, apiPostJson, ApiError } from '../lib/api';
+import { useThemePrefs } from '../theme';
 import type { Service, Product, Booking, PaystackStatusResponse, MonnifyStatusResponse } from '../types';
+import { getMobilePalette, MOBILE_MOTION, MOBILE_SHAPE, MOBILE_SPACE, MOBILE_TYPE } from '../ui/polish';
 
 type CreateBookingResponse = {
   message: string;
@@ -62,10 +65,31 @@ type BookingSlotsResponse = {
   availableCount: number;
 };
 
+type AddressSuggestion = {
+  displayName: string;
+  lat: string;
+  lon: string;
+};
+
 const LAST_BOOKING_ID_KEY = 'ceosalon:lastBookingId';
 const LAST_BOOKING_EMAIL_KEY = 'ceosalon:lastBookingEmail';
 const LAST_BOOKING_NAME_KEY = 'ceosalon:lastBookingName';
 const LAST_BOOKING_PHONE_KEY = 'ceosalon:lastBookingPhone';
+const MIN_ADDRESS_QUERY_LENGTH = 4;
+
+function normalizeEmailInput(value: string): string {
+  return String(value || '').trim().toLowerCase();
+}
+
+function normalizePhoneInput(value: string): string {
+  return String(value || '').replace(/[^\d+]/g, '').trim();
+}
+
+function isValidEmailAddress(email: string): boolean {
+  const normalized = normalizeEmailInput(email);
+  if (!normalized) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(normalized);
+}
 
 function formatDateYYYYMMDD(input: Date): string {
   const y = input.getFullYear();
@@ -96,7 +120,7 @@ function MicroPress({
   const to = (value: number) => {
     Animated.timing(scale, {
       toValue: value,
-      duration: 90,
+      duration: MOBILE_MOTION.fast,
       easing: Easing.out(Easing.quad),
       useNativeDriver: true
     }).start();
@@ -116,6 +140,9 @@ function MicroPress({
 
 export default function BookScreen() {
   const navigation = useNavigation<any>();
+  const { resolvedColorScheme } = useThemePrefs();
+  const isDark = resolvedColorScheme === 'dark';
+  const palette = getMobilePalette(isDark);
 
   const [services, setServices] = useState<Service[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -141,17 +168,21 @@ export default function BookScreen() {
   const [paymentPlan, setPaymentPlan] = useState<'deposit_50' | 'full'>('deposit_50');
   const [homeServiceRequested, setHomeServiceRequested] = useState(false);
   const [homeServiceAddress, setHomeServiceAddress] = useState('');
+  const [addressSuggestions, setAddressSuggestions] = useState<AddressSuggestion[]>([]);
+  const [loadingAddressSuggestions, setLoadingAddressSuggestions] = useState(false);
+  const [addressLookupError, setAddressLookupError] = useState('');
   const [refreshment, setRefreshment] = useState<'No' | 'Yes'>('No');
   const [specialRequests, setSpecialRequests] = useState('');
 
   const [paystackStatus, setPaystackStatus] = useState<PaystackStatusResponse | null>(null);
   const [monnifyStatus, setMonnifyStatus] = useState<MonnifyStatusResponse | null>(null);
   const screenEntry = useRef(new Animated.Value(0)).current;
+  const suppressNextAddressLookup = useRef(false);
 
   useEffect(() => {
     Animated.timing(screenEntry, {
       toValue: 1,
-      duration: 420,
+      duration: MOBILE_MOTION.slow,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true
     }).start();
@@ -260,6 +291,16 @@ export default function BookScreen() {
     return selectedProducts.reduce((sum, item) => sum + Number(item.quantity || 0), 0);
   }, [selectedProducts]);
 
+  const canSubmit = useMemo(() => {
+    if (!selectedServiceIds.length) return false;
+    if (!name.trim()) return false;
+    if (!isValidEmailAddress(email)) return false;
+    if (!normalizePhoneInput(phone)) return false;
+    if (!date.trim() || !time.trim()) return false;
+    if (homeServiceRequested && !homeServiceAddress.trim()) return false;
+    return true;
+  }, [selectedServiceIds, name, email, phone, date, time, homeServiceRequested, homeServiceAddress]);
+
   const selectedDateValue = useMemo(() => {
     const normalized = String(date || '').trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(normalized)) {
@@ -269,6 +310,94 @@ export default function BookScreen() {
     const parsed = new Date(`${normalized}T00:00:00`);
     return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
   }, [date]);
+
+  useEffect(() => {
+    if (!homeServiceRequested) {
+      setAddressSuggestions([]);
+      setLoadingAddressSuggestions(false);
+      setAddressLookupError('');
+      return;
+    }
+
+    const q = String(homeServiceAddress || '').trim();
+    if (q.length < MIN_ADDRESS_QUERY_LENGTH) {
+      setAddressSuggestions([]);
+      setLoadingAddressSuggestions(false);
+      setAddressLookupError('');
+      return;
+    }
+
+    if (suppressNextAddressLookup.current) {
+      suppressNextAddressLookup.current = false;
+      return;
+    }
+
+    let active = true;
+    const timeout = setTimeout(async () => {
+      try {
+        setLoadingAddressSuggestions(true);
+        setAddressLookupError('');
+        const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&addressdetails=1&q=${encodeURIComponent(q)}`;
+        const res = await fetch(url, {
+          headers: {
+            Accept: 'application/json'
+          }
+        });
+
+        if (!res.ok) {
+          throw new Error(`Address lookup failed (${res.status})`);
+        }
+
+        const payload = await res.json();
+        if (!active) return;
+
+        const next: AddressSuggestion[] = Array.isArray(payload)
+          ? payload
+              .map((item: any) => ({
+                displayName: String(item?.display_name || '').trim(),
+                lat: String(item?.lat || '').trim(),
+                lon: String(item?.lon || '').trim()
+              }))
+              .filter((item: AddressSuggestion) => item.displayName)
+          : [];
+
+        setAddressSuggestions(next);
+      } catch (error) {
+        if (!active) return;
+        setAddressSuggestions([]);
+        setAddressLookupError(error instanceof Error ? error.message : 'Could not fetch address suggestions');
+      } finally {
+        if (active) setLoadingAddressSuggestions(false);
+      }
+    }, 380);
+
+    return () => {
+      active = false;
+      clearTimeout(timeout);
+    };
+  }, [homeServiceRequested, homeServiceAddress]);
+
+  function useSuggestedAddress(item: AddressSuggestion) {
+    suppressNextAddressLookup.current = true;
+    setHomeServiceAddress(item.displayName);
+    setAddressSuggestions([]);
+    setAddressLookupError('');
+  }
+
+  async function openAddressInMap(value?: string) {
+    const query = String(value || homeServiceAddress || '').trim();
+    if (!query) {
+      Alert.alert('Address needed', 'Type or choose an address first.');
+      return;
+    }
+
+    const mapsUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(query)}`;
+    try {
+      await Linking.openURL(mapsUrl);
+    } catch {
+      Alert.alert('Map unavailable', 'Could not open map app right now.');
+    }
+  }
 
   const selectedTimeValue = useMemo(() => {
     const normalized = String(time || '').trim();
@@ -383,6 +512,10 @@ export default function BookScreen() {
       Alert.alert('Missing info', 'Please fill in name, email, phone, date, and time.');
       return;
     }
+    if (!isValidEmailAddress(email)) {
+      Alert.alert('Invalid email', 'Please enter a valid email address.');
+      return;
+    }
     if (availableSlots.length > 0 && !availableSlots.includes(time.trim())) {
       Alert.alert('Time unavailable', 'Please choose one of the available time slots.');
       return;
@@ -397,8 +530,8 @@ export default function BookScreen() {
     try {
       const payload = {
         name: name.trim(),
-        email: email.trim(),
-        phone: phone.trim(),
+        email: normalizeEmailInput(email),
+        phone: normalizePhoneInput(phone),
         serviceId: selectedServiceIds[0],
         serviceIds: selectedServiceIds,
         date: date.trim(),
@@ -501,6 +634,8 @@ export default function BookScreen() {
     setPaymentPlan('deposit_50');
     setHomeServiceRequested(false);
     setHomeServiceAddress('');
+    setAddressSuggestions([]);
+    setAddressLookupError('');
     setRefreshment('No');
     setSpecialRequests('');
   }
@@ -529,25 +664,71 @@ export default function BookScreen() {
     }
   }
 
+  const themed = {
+    containerBg: { backgroundColor: palette.bg },
+    centerBg: { backgroundColor: palette.bg },
+    cardBorder: { borderColor: palette.border },
+    label: { color: palette.text },
+    bodyText: { color: palette.text },
+    mutedText: { color: palette.textMuted },
+    input: { backgroundColor: palette.inputBg, borderColor: palette.border, color: palette.text },
+    chip: { backgroundColor: palette.primarySoft, borderColor: palette.border },
+    chipText: { color: palette.primary },
+    picker: { backgroundColor: palette.inputBg, borderColor: palette.border },
+    suggestionCard: { backgroundColor: palette.cardMuted, borderColor: palette.border },
+    suggestionText: { color: palette.text },
+    suggestionMeta: { color: palette.textMuted },
+    mapLinkText: { color: palette.primary },
+    skeletonCard: {
+      marginTop: 14,
+      borderRadius: MOBILE_SHAPE.cardRadius,
+      padding: 14,
+      borderWidth: 1,
+      borderColor: palette.border,
+      backgroundColor: palette.card
+    },
+    skeletonLine: {
+      height: 12,
+      borderRadius: 999,
+      backgroundColor: isDark ? '#242a45' : '#e9e4f5'
+    }
+  };
+
   if (loadingServices) {
     return (
-      <View style={styles.center}>
-        <ActivityIndicator size="large" />
-        <Text style={{ marginTop: 12 }}>Loading services…</Text>
+      <View style={[styles.center, themed.centerBg]}>
+        <ActivityIndicator size="large" color={palette.primary} />
+        <Text style={[{ marginTop: 12 }, themed.mutedText]}>Loading services…</Text>
+        <View style={themed.skeletonCard}>
+          <View style={[themed.skeletonLine, { width: '48%', marginBottom: 12 }]} />
+          <View style={[themed.skeletonLine, { width: '92%', marginBottom: 8 }]} />
+          <View style={[themed.skeletonLine, { width: '88%', marginBottom: 8 }]} />
+          <View style={[themed.skeletonLine, { width: '76%' }]} />
+        </View>
+        <View style={themed.skeletonCard}>
+          <View style={[themed.skeletonLine, { width: '42%', marginBottom: 12 }]} />
+          <View style={[themed.skeletonLine, { width: '100%', height: 42, borderRadius: 10, marginBottom: 10 }]} />
+          <View style={[themed.skeletonLine, { width: '100%', height: 42, borderRadius: 10 }]} />
+        </View>
       </View>
     );
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView contentContainerStyle={[styles.container, themed.containerBg]} keyboardShouldPersistTaps="handled">
       <Animated.View style={[styles.heroCard, cardIn(20)]}>
         <Text style={styles.heroKicker}>CEO UNISEX SALON</Text>
         <Text style={styles.h1}>Book an Appointment</Text>
         <Text style={styles.sub}>Fast, beautiful booking with instant tracking and payment options.</Text>
       </Animated.View>
 
-      <Animated.View style={[styles.card, cardIn(28)]}>
+      <Animated.View style={[styles.card, themed.cardBorder, cardIn(28)]}>
         <Text style={styles.cardTitle}>Booking Details</Text>
+        <View style={styles.progressChipRow}>
+          <View style={styles.progressChip}><Text style={styles.progressChipText}>1. Your details</Text></View>
+          <View style={styles.progressChip}><Text style={styles.progressChipText}>2. Schedule</Text></View>
+          <View style={styles.progressChip}><Text style={styles.progressChipText}>3. Confirm</Text></View>
+        </View>
         <View style={styles.selectionSummaryRow}>
           <View style={styles.selectionBadge}>
             <Text style={styles.selectionBadgeText}>Services: {selectedServiceIds.length}</Text>
@@ -557,52 +738,62 @@ export default function BookScreen() {
           </View>
         </View>
         <View style={styles.rowWrap}>
-          <MicroPress style={styles.quickChip} onPress={useLastSavedDetails}>
-            <Text style={styles.quickChipText}>Use saved details</Text>
+          <MicroPress style={[styles.quickChip, themed.chip]} onPress={useLastSavedDetails}>
+            <Text style={[styles.quickChipText, themed.chipText]}>Use saved details</Text>
           </MicroPress>
-          <MicroPress style={styles.quickChip} onPress={clearForm}>
-            <Text style={styles.quickChipText}>Clear form</Text>
+          <MicroPress style={[styles.quickChip, themed.chip]} onPress={clearForm}>
+            <Text style={[styles.quickChipText, themed.chipText]}>Clear form</Text>
           </MicroPress>
         </View>
-        <Text style={styles.label}>Name</Text>
-        <TextInput style={styles.input} value={name} onChangeText={setName} placeholder="Full name" />
+        <Text style={[styles.label, themed.label]}>Name</Text>
+        <TextInput style={[styles.input, themed.input]} value={name} onChangeText={setName} placeholder="Full name" placeholderTextColor={palette.textMuted} />
 
-        <Text style={styles.label}>Email</Text>
+        <Text style={[styles.label, themed.label]}>Email</Text>
         <TextInput
-          style={styles.input}
+          style={[styles.input, themed.input]}
           value={email}
           onChangeText={setEmail}
+          onBlur={() => setEmail(normalizeEmailInput(email))}
           placeholder="you@example.com"
+          placeholderTextColor={palette.textMuted}
           autoCapitalize="none"
           keyboardType="email-address"
         />
 
-        <Text style={styles.label}>Phone</Text>
-        <TextInput style={styles.input} value={phone} onChangeText={setPhone} placeholder="080..." keyboardType="phone-pad" />
+        <Text style={[styles.label, themed.label]}>Phone</Text>
+        <TextInput
+          style={[styles.input, themed.input]}
+          value={phone}
+          onChangeText={setPhone}
+          onBlur={() => setPhone(normalizePhoneInput(phone))}
+          placeholder="080..."
+          placeholderTextColor={palette.textMuted}
+          keyboardType="phone-pad"
+        />
 
-        <Text style={styles.label}>Services (select one or more)</Text>
+        <Text style={[styles.label, themed.label]}>Services (select one or more)</Text>
         <View style={styles.rowWrap}>
           {services.map((s) => (
             <TouchableOpacity
               key={s.id}
-              style={[styles.pill, selectedServiceIds.includes(s.id) && styles.pillActive]}
+              style={[styles.pill, themed.chip, selectedServiceIds.includes(s.id) && styles.pillActive]}
               onPress={() => toggleServiceSelection(s.id)}
             >
-              <Text style={[styles.pillText, selectedServiceIds.includes(s.id) && styles.pillTextActive]}>
+              <Text style={[styles.pillText, themed.chipText, selectedServiceIds.includes(s.id) && styles.pillTextActive]}>
                 {selectedServiceIds.includes(s.id) ? '✓ ' : ''}{s.name} (₦{Number(s.price).toLocaleString()})
               </Text>
             </TouchableOpacity>
           ))}
         </View>
 
-        <Text style={styles.label}>Products (optional add-ons)</Text>
+        <Text style={[styles.label, themed.label]}>Products (optional add-ons)</Text>
         <View style={styles.rowWrap}>
           {products.map((product) => {
             const quantity = Number(productQuantities[product.id] || 0);
             return (
-              <View key={product.id} style={styles.productCard}>
-                <Text style={styles.productName}>{product.name}</Text>
-                <Text style={styles.productMeta}>₦{Number(product.price || 0).toLocaleString()} • Stock: {Number(product.stock || 0)}</Text>
+              <View key={product.id} style={[styles.productCard, themed.cardBorder]}>
+                <Text style={[styles.productName, themed.bodyText]}>{product.name}</Text>
+                <Text style={[styles.productMeta, themed.mutedText]}>₦{Number(product.price || 0).toLocaleString()} • Stock: {Number(product.stock || 0)}</Text>
                 <View style={styles.quantityRow}>
                   <TouchableOpacity
                     style={styles.qtyButton}
@@ -611,7 +802,7 @@ export default function BookScreen() {
                   >
                     <Text style={styles.qtyButtonText}>−</Text>
                   </TouchableOpacity>
-                  <Text style={styles.qtyText}>{quantity}</Text>
+                  <Text style={[styles.qtyText, themed.bodyText]}>{quantity}</Text>
                   <TouchableOpacity
                     style={styles.qtyButton}
                     onPress={() => updateProductQuantity(product.id, quantity + 1)}
@@ -625,39 +816,39 @@ export default function BookScreen() {
           })}
         </View>
 
-        <Text style={styles.label}>Date (YYYY-MM-DD)</Text>
+        <Text style={[styles.label, themed.label]}>Date (YYYY-MM-DD)</Text>
         <View style={styles.rowWrap}>
-          <TouchableOpacity style={styles.pickerButton} onPress={() => setShowDatePicker(true)}>
-            <Text style={styles.pickerButtonText}>{date || 'Pick a date'}</Text>
+          <TouchableOpacity style={[styles.pickerButton, themed.picker]} onPress={() => setShowDatePicker(true)}>
+            <Text style={[styles.pickerButtonText, themed.bodyText]}>{date || 'Pick a date'}</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.rowWrap}>
-          <TouchableOpacity style={styles.quickChip} onPress={() => setDate(formatDateYYYYMMDD(new Date()))}>
-            <Text style={styles.quickChipText}>Today</Text>
+          <TouchableOpacity style={[styles.quickChip, themed.chip]} onPress={() => setDate(formatDateYYYYMMDD(new Date()))}>
+            <Text style={[styles.quickChipText, themed.chipText]}>Today</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.quickChip} onPress={() => setDate(plusDays(1))}>
-            <Text style={styles.quickChipText}>Tomorrow</Text>
+          <TouchableOpacity style={[styles.quickChip, themed.chip]} onPress={() => setDate(plusDays(1))}>
+            <Text style={[styles.quickChipText, themed.chipText]}>Tomorrow</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.quickChip} onPress={() => setDate(plusDays(2))}>
-            <Text style={styles.quickChipText}>+2 days</Text>
+          <TouchableOpacity style={[styles.quickChip, themed.chip]} onPress={() => setDate(plusDays(2))}>
+            <Text style={[styles.quickChipText, themed.chipText]}>+2 days</Text>
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.label}>Time (HH:MM)</Text>
+        <Text style={[styles.label, themed.label]}>Time (HH:MM)</Text>
         <View style={styles.rowWrap}>
-          <TouchableOpacity style={styles.pickerButton} onPress={() => setShowTimePicker(true)}>
-            <Text style={styles.pickerButtonText}>{time || 'Pick a time'}</Text>
+          <TouchableOpacity style={[styles.pickerButton, themed.picker]} onPress={() => setShowTimePicker(true)}>
+            <Text style={[styles.pickerButtonText, themed.bodyText]}>{time || 'Pick a time'}</Text>
           </TouchableOpacity>
         </View>
-        {loadingSlots ? <Text style={styles.hint}>Checking available slots…</Text> : null}
+        {loadingSlots ? <Text style={[styles.hint, themed.mutedText]}>Checking available slots…</Text> : null}
         {!!slotsError ? <Text style={styles.errorText}>{slotsError}</Text> : null}
         {!loadingSlots && date.trim() && availableSlots.length === 0 ? (
-          <Text style={styles.hint}>No slots available for this date. Try another date.</Text>
+          <Text style={[styles.hint, themed.mutedText]}>No slots available for this date. Try another date.</Text>
         ) : null}
         <View style={styles.rowWrap}>
           {quickTimes.map((t) => (
-            <TouchableOpacity key={t} style={[styles.quickChip, time === t && styles.quickChipActive]} onPress={() => setTime(t)}>
-              <Text style={[styles.quickChipText, time === t && styles.quickChipTextActive]}>{t}</Text>
+            <TouchableOpacity key={t} style={[styles.quickChip, themed.chip, time === t && styles.quickChipActive]} onPress={() => setTime(t)}>
+              <Text style={[styles.quickChipText, themed.chipText, time === t && styles.quickChipTextActive]}>{t}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -682,104 +873,143 @@ export default function BookScreen() {
           />
         ) : null}
 
-        <Text style={styles.label}>Language</Text>
-        <TextInput style={styles.input} value={language} onChangeText={setLanguage} placeholder="English" />
+        <Text style={[styles.label, themed.label]}>Language</Text>
+        <TextInput style={[styles.input, themed.input]} value={language} onChangeText={setLanguage} placeholder="English" placeholderTextColor={palette.textMuted} />
 
-        <Text style={styles.label}>Payment method</Text>
+        <Text style={[styles.label, themed.label]}>Payment method</Text>
         <View style={styles.row}>
           <TouchableOpacity
-            style={[styles.pill, paymentMethod === 'Bank Transfer' && styles.pillActive]}
+            style={[styles.pill, themed.chip, paymentMethod === 'Bank Transfer' && styles.pillActive]}
             onPress={() => setPaymentMethod('Bank Transfer')}
           >
-            <Text style={[styles.pillText, paymentMethod === 'Bank Transfer' && styles.pillTextActive]}>Bank Transfer</Text>
+            <Text style={[styles.pillText, themed.chipText, paymentMethod === 'Bank Transfer' && styles.pillTextActive]}>Bank Transfer</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.pill, paymentMethod === 'Credit Card' && styles.pillActive]}
+            style={[styles.pill, themed.chip, paymentMethod === 'Credit Card' && styles.pillActive]}
             onPress={() => setPaymentMethod('Credit Card')}
           >
-            <Text style={[styles.pillText, paymentMethod === 'Credit Card' && styles.pillTextActive]}>Credit Card</Text>
+            <Text style={[styles.pillText, themed.chipText, paymentMethod === 'Credit Card' && styles.pillTextActive]}>Credit Card</Text>
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.label}>Payment plan</Text>
+        <Text style={[styles.label, themed.label]}>Payment plan</Text>
         <View style={styles.row}>
           <TouchableOpacity
-            style={[styles.pill, paymentPlan === 'deposit_50' && styles.pillActive]}
+            style={[styles.pill, themed.chip, paymentPlan === 'deposit_50' && styles.pillActive]}
             onPress={() => setPaymentPlan('deposit_50')}
           >
-            <Text style={[styles.pillText, paymentPlan === 'deposit_50' && styles.pillTextActive]}>50% Deposit</Text>
+            <Text style={[styles.pillText, themed.chipText, paymentPlan === 'deposit_50' && styles.pillTextActive]}>50% Deposit</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.pill, paymentPlan === 'full' && styles.pillActive]}
+            style={[styles.pill, themed.chip, paymentPlan === 'full' && styles.pillActive]}
             onPress={() => setPaymentPlan('full')}
           >
-            <Text style={[styles.pillText, paymentPlan === 'full' && styles.pillTextActive]}>Full Payment</Text>
+            <Text style={[styles.pillText, themed.chipText, paymentPlan === 'full' && styles.pillTextActive]}>Full Payment</Text>
           </TouchableOpacity>
         </View>
 
         <View style={[styles.row, { justifyContent: 'space-between', marginTop: 10 }]}>
-          <Text style={styles.label}>Home service?</Text>
+          <Text style={[styles.label, themed.label]}>Home service?</Text>
           <Switch value={homeServiceRequested} onValueChange={setHomeServiceRequested} />
         </View>
 
         {homeServiceRequested ? (
           <>
-            <Text style={styles.label}>Home service address</Text>
-            <TextInput style={styles.input} value={homeServiceAddress} onChangeText={setHomeServiceAddress} placeholder="Address" />
+            <Text style={[styles.label, themed.label]}>Home service address</Text>
+            <TextInput
+              style={[styles.input, themed.input]}
+              value={homeServiceAddress}
+              onChangeText={(value) => {
+                setHomeServiceAddress(value);
+                if (!value.trim()) {
+                  setAddressSuggestions([]);
+                  setAddressLookupError('');
+                }
+              }}
+              placeholder="Address"
+              placeholderTextColor={palette.textMuted}
+            />
+            <View style={styles.rowWrap}>
+              <MicroPress style={[styles.quickChip, themed.chip]} onPress={() => openAddressInMap()}>
+                <Text style={[styles.quickChipText, themed.mapLinkText]}>Open map</Text>
+              </MicroPress>
+            </View>
+            {loadingAddressSuggestions ? <Text style={[styles.hint, themed.mutedText]}>Searching nearby address matches…</Text> : null}
+            {!!addressLookupError ? <Text style={styles.errorText}>{addressLookupError}</Text> : null}
+            {addressSuggestions.length ? (
+              <View style={[styles.addressSuggestionList, themed.suggestionCard]}>
+                {addressSuggestions.map((item, index) => (
+                  <TouchableOpacity
+                    key={`${item.displayName}-${item.lat}-${item.lon}-${index}`}
+                    style={[
+                      styles.addressSuggestionItem,
+                      index !== addressSuggestions.length - 1 && styles.addressSuggestionItemBorder,
+                      index !== addressSuggestions.length - 1 && { borderBottomColor: palette.border }
+                    ]}
+                    onPress={() => useSuggestedAddress(item)}
+                  >
+                    <Text style={[styles.addressSuggestionText, themed.suggestionText]} numberOfLines={2}>{item.displayName}</Text>
+                    <Text style={[styles.addressSuggestionMeta, themed.suggestionMeta]}>Lat {item.lat} • Lng {item.lon}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
           </>
         ) : null}
 
-        <Text style={styles.label}>Refreshment</Text>
+        <Text style={[styles.label, themed.label]}>Refreshment</Text>
         <View style={styles.row}>
-          <TouchableOpacity style={[styles.pill, refreshment === 'No' && styles.pillActive]} onPress={() => setRefreshment('No')}>
-            <Text style={[styles.pillText, refreshment === 'No' && styles.pillTextActive]}>No</Text>
+          <TouchableOpacity style={[styles.pill, themed.chip, refreshment === 'No' && styles.pillActive]} onPress={() => setRefreshment('No')}>
+            <Text style={[styles.pillText, themed.chipText, refreshment === 'No' && styles.pillTextActive]}>No</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.pill, refreshment === 'Yes' && styles.pillActive]} onPress={() => setRefreshment('Yes')}>
-            <Text style={[styles.pillText, refreshment === 'Yes' && styles.pillTextActive]}>Yes</Text>
+          <TouchableOpacity style={[styles.pill, themed.chip, refreshment === 'Yes' && styles.pillActive]} onPress={() => setRefreshment('Yes')}>
+            <Text style={[styles.pillText, themed.chipText, refreshment === 'Yes' && styles.pillTextActive]}>Yes</Text>
           </TouchableOpacity>
         </View>
 
-        <Text style={styles.label}>Special requests (optional)</Text>
+        <Text style={[styles.label, themed.label]}>Special requests (optional)</Text>
         <TextInput
-          style={[styles.input, { height: 90, textAlignVertical: 'top' }]}
+          style={[styles.input, themed.input, { height: 90, textAlignVertical: 'top' }]}
           value={specialRequests}
           onChangeText={setSpecialRequests}
           placeholder="Anything we should know?"
+          placeholderTextColor={palette.textMuted}
           multiline
         />
 
-        <MicroPress style={[styles.button, creating && styles.buttonDisabled]} onPress={createBooking} disabled={creating}>
+        <MicroPress style={[styles.button, (!canSubmit || creating) && styles.buttonDisabled]} onPress={createBooking} disabled={!canSubmit || creating}>
           <Text style={styles.buttonText}>{creating ? 'Creating…' : 'Create booking'}</Text>
         </MicroPress>
+        {!canSubmit ? <Text style={[styles.hint, themed.mutedText]}>Complete required fields to continue.</Text> : null}
 
         {selectedServices.length ? (
           <View style={styles.previewBox}>
             <Text style={styles.previewTitle}>Booking preview</Text>
-            <Text style={styles.hint}>Services: {selectedServices.map((service) => service.name).join(', ')}</Text>
-            <Text style={styles.hint}>Duration: {totalDuration} mins</Text>
-            <Text style={styles.hint}>Services total: ₦{Number(serviceSubtotal).toLocaleString()}</Text>
-            <Text style={styles.hint}>Products total: ₦{Number(productsSubtotal).toLocaleString()}</Text>
-            <Text style={styles.hint}>Order total: ₦{Number(totalPreview).toLocaleString()}</Text>
+            <Text style={[styles.hint, themed.mutedText]}>Services: {selectedServices.map((service) => service.name).join(', ')}</Text>
+            <Text style={[styles.hint, themed.mutedText]}>Duration: {totalDuration} mins</Text>
+            <Text style={[styles.hint, themed.mutedText]}>Services total: ₦{Number(serviceSubtotal).toLocaleString()}</Text>
+            <Text style={[styles.hint, themed.mutedText]}>Products total: ₦{Number(productsSubtotal).toLocaleString()}</Text>
+            <Text style={[styles.hint, themed.mutedText]}>Order total: ₦{Number(totalPreview).toLocaleString()}</Text>
             <Text style={styles.previewDue}>Due now: ₦{Number(dueNowPreview).toLocaleString()}</Text>
           </View>
         ) : null}
       </Animated.View>
 
       {created ? (
-        <Animated.View style={[styles.card, cardIn(36)]}>
+        <Animated.View style={[styles.card, themed.cardBorder, cardIn(36)]}>
           <Text style={styles.cardTitle}>Booking Created</Text>
-          <Text style={styles.h2}>Booking created 🎉</Text>
-          <Text style={styles.mono}>Booking ID: {created.booking.id}</Text>
-          <Text style={styles.mono}>Amount due now: ₦{Number(created.booking.amountDueNow || 0).toLocaleString()}</Text>
-          <Text style={{ marginTop: 8 }}>{created.message}</Text>
+          <Text style={[styles.h2, themed.bodyText]}>Booking created 🎉</Text>
+          <Text style={[styles.mono, themed.bodyText]}>Booking ID: {created.booking.id}</Text>
+          <Text style={[styles.mono, themed.bodyText]}>Amount due now: ₦{Number(created.booking.amountDueNow || 0).toLocaleString()}</Text>
+          <Text style={[{ marginTop: 8 }, themed.bodyText]}>{created.message}</Text>
 
           {created.paymentBankDetails ? (
-            <View style={[styles.cardInner, { marginTop: 12 }]}>
-              <Text style={styles.h3}>Bank Transfer Details</Text>
-              <Text style={styles.mono}>{created.paymentBankDetails.bankName}</Text>
-              <Text style={styles.mono}>{created.paymentBankDetails.accountNumber}</Text>
-              <Text style={styles.mono}>{created.paymentBankDetails.accountName}</Text>
-              <Text style={styles.mono}>Reference: {created.paymentBankDetails.reference}</Text>
+            <View style={[styles.cardInner, themed.cardBorder, { marginTop: 12 }]}>
+              <Text style={[styles.h3, themed.bodyText]}>Bank Transfer Details</Text>
+              <Text style={[styles.mono, themed.bodyText]}>{created.paymentBankDetails.bankName}</Text>
+              <Text style={[styles.mono, themed.bodyText]}>{created.paymentBankDetails.accountNumber}</Text>
+              <Text style={[styles.mono, themed.bodyText]}>{created.paymentBankDetails.accountName}</Text>
+              <Text style={[styles.mono, themed.bodyText]}>Reference: {created.paymentBankDetails.reference}</Text>
             </View>
           ) : null}
 
@@ -794,7 +1024,7 @@ export default function BookScreen() {
 
           {paymentMethod === 'Credit Card' ? (
             <>
-              <Text style={[styles.hint, { marginTop: 12 }]}>
+              <Text style={[styles.hint, themed.mutedText, { marginTop: 12 }]}>
                 Pay online (opens in browser):
               </Text>
               <View style={styles.rowWrap}>
@@ -815,10 +1045,10 @@ export default function BookScreen() {
                 </MicroPress>
               </View>
               {paystackStatus && !paystackStatus.configured ? (
-                <Text style={styles.hint}>{paystackStatus.message}</Text>
+                <Text style={[styles.hint, themed.mutedText]}>{paystackStatus.message}</Text>
               ) : null}
               {monnifyStatus && !monnifyStatus.configured ? (
-                <Text style={styles.hint}>{monnifyStatus.message}</Text>
+                <Text style={[styles.hint, themed.mutedText]}>{monnifyStatus.message}</Text>
               ) : null}
             </>
           ) : null}
@@ -830,7 +1060,7 @@ export default function BookScreen() {
 
 const styles = StyleSheet.create({
   container: {
-    padding: 16,
+    padding: MOBILE_SPACE.xxl,
     paddingBottom: 36,
     backgroundColor: '#f6f8fc'
   },
@@ -841,35 +1071,35 @@ const styles = StyleSheet.create({
     backgroundColor: '#f6f8fc'
   },
   h1: {
-    fontSize: 24,
+    fontSize: MOBILE_TYPE.title,
     fontWeight: '800',
     color: '#ffffff'
   },
   heroKicker: {
-    fontSize: 12,
+    fontSize: MOBILE_TYPE.caption,
     fontWeight: '800',
     color: '#f4d98a',
     letterSpacing: 1,
     marginBottom: 6
   },
   h2: {
-    fontSize: 18,
+    fontSize: MOBILE_TYPE.heading,
     fontWeight: '800',
     color: '#2d2342'
   },
   h3: {
-    fontSize: 16,
+    fontSize: MOBILE_TYPE.subheading,
     fontWeight: '800',
     color: '#3b2a5e'
   },
   sub: {
-    marginTop: 6,
+    marginTop: MOBILE_SPACE.xs,
     color: '#e9dfff'
   },
   heroCard: {
     backgroundColor: '#37166d',
     borderRadius: 18,
-    padding: 16,
+    padding: MOBILE_SPACE.xxl,
     borderWidth: 1,
     borderColor: '#5f35af',
     shadowColor: '#2a0b57',
@@ -879,18 +1109,18 @@ const styles = StyleSheet.create({
     elevation: 4
   },
   cardTitle: {
-    fontSize: 13,
+    fontSize: MOBILE_TYPE.label,
     fontWeight: '700',
     color: '#8b5a11',
     textTransform: 'uppercase',
     letterSpacing: 0.6,
-    marginBottom: 4
+    marginBottom: MOBILE_SPACE.xxs
   },
   card: {
-    marginTop: 14,
+    marginTop: MOBILE_SPACE.xl,
     backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: MOBILE_SHAPE.cardRadius,
+    padding: MOBILE_SPACE.xl,
     borderWidth: 1,
     borderColor: '#ece7f6',
     shadowColor: '#160a2a',
@@ -901,40 +1131,40 @@ const styles = StyleSheet.create({
   },
   cardInner: {
     backgroundColor: '#fff8e9',
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    padding: MOBILE_SPACE.lg,
     borderWidth: 1,
     borderColor: '#f3dfb1'
   },
   label: {
-    marginTop: 10,
-    marginBottom: 6,
+    marginTop: MOBILE_SPACE.md,
+    marginBottom: MOBILE_SPACE.xs,
     fontWeight: '700',
     color: '#3b2f54'
   },
   input: {
     borderWidth: 1,
     borderColor: '#d9d2e8',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: MOBILE_SHAPE.inputRadius,
+    paddingHorizontal: MOBILE_SPACE.lg,
+    paddingVertical: MOBILE_SPACE.md,
     backgroundColor: '#fff'
   },
   row: {
     flexDirection: 'row',
-    gap: 10,
+    gap: MOBILE_SPACE.md,
     alignItems: 'center'
   },
   rowWrap: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: MOBILE_SPACE.md,
     alignItems: 'center'
   },
   pill: {
     paddingHorizontal: 12,
     paddingVertical: 10,
-    borderRadius: 999,
+    borderRadius: MOBILE_SHAPE.chipRadius,
     borderWidth: 1,
     borderColor: '#d8d0e8',
     backgroundColor: '#fff'
@@ -951,10 +1181,10 @@ const styles = StyleSheet.create({
     fontWeight: '700'
   },
   button: {
-    marginTop: 14,
+    marginTop: MOBILE_SPACE.xl,
     backgroundColor: '#7c46e8',
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    paddingVertical: MOBILE_SPACE.lg,
     alignItems: 'center',
     shadowColor: '#4f22a8',
     shadowOpacity: 0.25,
@@ -964,16 +1194,16 @@ const styles = StyleSheet.create({
   },
   buttonSmall: {
     backgroundColor: '#7c46e8',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    paddingVertical: MOBILE_SPACE.md,
+    paddingHorizontal: MOBILE_SPACE.lg,
     alignItems: 'center'
   },
   buttonSmallAlt: {
     backgroundColor: '#f1ebff',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    paddingVertical: MOBILE_SPACE.md,
+    paddingHorizontal: MOBILE_SPACE.lg,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#dccffb'
@@ -990,18 +1220,18 @@ const styles = StyleSheet.create({
     fontWeight: '800'
   },
   hint: {
-    marginTop: 10,
+    marginTop: MOBILE_SPACE.md,
     color: '#6f6a87'
   },
   errorText: {
-    marginTop: 8,
+    marginTop: MOBILE_SPACE.sm,
     color: '#b00020',
     fontWeight: '700'
   },
   quickChip: {
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 999,
+    paddingHorizontal: MOBILE_SPACE.lg,
+    paddingVertical: MOBILE_SPACE.sm,
+    borderRadius: MOBILE_SHAPE.chipRadius,
     backgroundColor: '#f1ebff',
     borderWidth: 1,
     borderColor: '#dfd3fa'
@@ -1020,9 +1250,9 @@ const styles = StyleSheet.create({
   pickerButton: {
     minHeight: 42,
     minWidth: 180,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 10,
+    paddingHorizontal: MOBILE_SPACE.lg,
+    paddingVertical: MOBILE_SPACE.md,
+    borderRadius: MOBILE_SHAPE.inputRadius,
     borderWidth: 1,
     borderColor: '#d9d2e8',
     backgroundColor: '#fff'
@@ -1034,13 +1264,32 @@ const styles = StyleSheet.create({
   selectionSummaryRow: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 8,
-    marginBottom: 8
+    gap: MOBILE_SPACE.sm,
+    marginBottom: MOBILE_SPACE.sm
+  },
+  progressChipRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: MOBILE_SPACE.sm,
+    marginBottom: MOBILE_SPACE.md
+  },
+  progressChip: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: MOBILE_SHAPE.chipRadius,
+    borderWidth: 1,
+    borderColor: '#e6dcfb',
+    backgroundColor: '#faf7ff'
+  },
+  progressChipText: {
+    color: '#5a31b3',
+    fontSize: MOBILE_TYPE.micro,
+    fontWeight: '800'
   },
   selectionBadge: {
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 999,
+    paddingHorizontal: MOBILE_SPACE.md,
+    paddingVertical: MOBILE_SPACE.xs,
+    borderRadius: MOBILE_SHAPE.chipRadius,
     backgroundColor: '#efe8ff',
     borderWidth: 1,
     borderColor: '#d8c8fb'
@@ -1048,31 +1297,31 @@ const styles = StyleSheet.create({
   selectionBadgeText: {
     color: '#4f2a96',
     fontWeight: '800',
-    fontSize: 12
+    fontSize: MOBILE_TYPE.caption
   },
   productCard: {
     width: '100%',
     borderWidth: 1,
     borderColor: '#e0d6f7',
     backgroundColor: '#fbf9ff',
-    borderRadius: 12,
+    borderRadius: MOBILE_SHAPE.controlRadius,
     padding: 10
   },
   productName: {
-    fontSize: 14,
+    fontSize: MOBILE_TYPE.body,
     fontWeight: '800',
     color: '#32204f'
   },
   productMeta: {
-    marginTop: 4,
+    marginTop: MOBILE_SPACE.xxs,
     color: '#6f6289',
-    fontSize: 12
+    fontSize: MOBILE_TYPE.caption
   },
   quantityRow: {
-    marginTop: 10,
+    marginTop: MOBILE_SPACE.md,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 12
+    gap: MOBILE_SPACE.lg
   },
   qtyButton: {
     width: 34,
@@ -1097,27 +1346,50 @@ const styles = StyleSheet.create({
     color: '#2d2342'
   },
   previewBox: {
-    marginTop: 12,
+    marginTop: MOBILE_SPACE.lg,
     borderWidth: 1,
     borderColor: '#e6dcfb',
     backgroundColor: '#f9f5ff',
-    borderRadius: 12,
-    padding: 12
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    padding: MOBILE_SPACE.lg
   },
   previewTitle: {
     color: '#4f2a96',
-    fontSize: 13,
+    fontSize: MOBILE_TYPE.label,
     fontWeight: '900',
     textTransform: 'uppercase',
     letterSpacing: 0.5
   },
   previewDue: {
-    marginTop: 10,
+    marginTop: MOBILE_SPACE.md,
     color: '#2d2342',
     fontWeight: '900'
   },
+  addressSuggestionList: {
+    marginTop: MOBILE_SPACE.sm,
+    borderWidth: 1,
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    overflow: 'hidden'
+  },
+  addressSuggestionItem: {
+    paddingHorizontal: MOBILE_SPACE.lg,
+    paddingVertical: MOBILE_SPACE.md,
+    backgroundColor: 'transparent'
+  },
+  addressSuggestionItemBorder: {
+    borderBottomWidth: 1,
+    borderBottomColor: '#d9d2e8'
+  },
+  addressSuggestionText: {
+    fontSize: MOBILE_TYPE.body,
+    fontWeight: '700'
+  },
+  addressSuggestionMeta: {
+    marginTop: MOBILE_SPACE.xxs,
+    fontSize: MOBILE_TYPE.caption
+  },
   mono: {
-    marginTop: 6,
+    marginTop: MOBILE_SPACE.xs,
     color: '#303247'
   }
 });

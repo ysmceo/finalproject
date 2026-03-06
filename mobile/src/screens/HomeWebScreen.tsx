@@ -2,8 +2,13 @@ import React, { useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 import { WEB_BASE_URL } from '../config';
+import { useThemePrefs } from '../theme';
+import { getMobilePalette, MOBILE_SHAPE, MOBILE_SPACE, MOBILE_TYPE } from '../ui/polish';
 
 export default function HomeWebScreen() {
+  const { resolvedColorScheme } = useThemePrefs();
+  const isDark = resolvedColorScheme === 'dark';
+  const palette = getMobilePalette(isDark);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const startUrl = useMemo(() => {
@@ -23,7 +28,7 @@ export default function HomeWebScreen() {
   // PC preview (web): show the website in an iframe.
   if (Platform.OS === 'web') {
     return (
-      <View style={{ flex: 1, backgroundColor: '#fff' }}>
+      <View style={{ flex: 1, backgroundColor: palette.bg }}>
         {/* eslint-disable-next-line react/no-unknown-property */}
         <iframe
           title="CEO Salon Website"
@@ -38,17 +43,17 @@ export default function HomeWebScreen() {
 
   if (loadError) {
     return (
-      <View style={styles.errorWrap}>
-        <Text style={styles.errorTitle}>Can’t load the website</Text>
-        <Text style={styles.errorText}>Tried: {startUrl}</Text>
-        <Text style={styles.errorText}>Error: {loadError}</Text>
+      <View style={[styles.errorWrap, { backgroundColor: palette.bg }]}>
+        <Text style={[styles.errorTitle, { color: palette.text }]}>Can’t load the website</Text>
+        <Text style={[styles.errorText, { color: palette.textMuted }]}>Tried: {startUrl}</Text>
+        <Text style={[styles.errorText, { color: palette.textMuted }]}>Error: {loadError}</Text>
 
-        <Text style={[styles.errorText, { marginTop: 10 }]}>
+        <Text style={[styles.errorText, { marginTop: 10, color: palette.textMuted }]}>
           If you’re on a physical device, “localhost” won’t work — use your computer’s LAN IP.
         </Text>
 
         <TouchableOpacity
-          style={styles.button}
+          style={[styles.button, { backgroundColor: palette.primary }]}
           onPress={() => {
             setLoadError(null);
           }}
@@ -57,19 +62,19 @@ export default function HomeWebScreen() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={[styles.button, styles.buttonAlt]}
+          style={[styles.button, styles.buttonAlt, { backgroundColor: palette.primarySoft, borderColor: palette.border }]}
           onPress={() => {
             Linking.openURL(startUrl).catch(() => undefined);
           }}
         >
-          <Text style={[styles.buttonText, styles.buttonAltText]}>Open in browser</Text>
+          <Text style={[styles.buttonText, styles.buttonAltText, { color: palette.primary }]}>Open in browser</Text>
         </TouchableOpacity>
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#fff' }}>
+    <View style={{ flex: 1, backgroundColor: palette.bg }}>
       <NativeWebView
         source={{ uri: startUrl }}
         originWhitelist={['*']}
@@ -80,9 +85,9 @@ export default function HomeWebScreen() {
         allowsBackForwardNavigationGestures={Platform.OS === 'ios'}
         startInLoadingState
         renderLoading={() => (
-          <View style={styles.loading}>
-            <ActivityIndicator size="large" />
-            <Text style={{ marginTop: 10 }}>Loading…</Text>
+          <View style={[styles.loading, { backgroundColor: palette.bg }]}>
+            <ActivityIndicator size="large" color={palette.primary} />
+            <Text style={{ marginTop: 10, color: palette.textMuted }}>Loading…</Text>
           </View>
         )}
         onError={(e: any) => {
@@ -119,24 +124,25 @@ const styles = StyleSheet.create({
   },
   errorWrap: {
     flex: 1,
-    padding: 18,
+    padding: MOBILE_SPACE.xxxl,
     alignItems: 'stretch',
     justifyContent: 'center',
     backgroundColor: '#fff'
   },
   errorTitle: {
-    fontSize: 20,
+    fontSize: MOBILE_TYPE.heading,
     fontWeight: '800'
   },
   errorText: {
-    marginTop: 10,
-    color: '#444'
+    marginTop: MOBILE_SPACE.md,
+    color: '#444',
+    fontSize: MOBILE_TYPE.body
   },
   button: {
-    marginTop: 14,
+    marginTop: MOBILE_SPACE.xl,
     backgroundColor: '#b78a2a',
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    paddingVertical: MOBILE_SPACE.lg,
     alignItems: 'center'
   },
   buttonText: {

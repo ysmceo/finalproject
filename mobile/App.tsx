@@ -6,7 +6,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { NavigationContainer } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
-import { Animated, Image, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
+import { Animated, Image, ImageBackground, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import HomeWebScreen from './src/screens/HomeWebScreen';
 import BookScreen from './src/screens/BookScreen';
@@ -75,8 +75,11 @@ export default function App() {
 function AppShell() {
   const { navigationTheme, resolvedColorScheme } = useThemePrefs();
   const [showIntro, setShowIntro] = useState(true);
+  const [introStage, setIntroStage] = useState<'landing' | 'welcome'>('landing');
   const introOpacity = useRef(new Animated.Value(0)).current;
   const introScale = useRef(new Animated.Value(0.96)).current;
+  const welcomeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const WELCOME_MESSAGE_DURATION_MS = 120000;
 
   useEffect(() => {
     applyHapticPreset('balanced');
@@ -93,7 +96,29 @@ function AppShell() {
         useNativeDriver: true
       })
     ]).start();
+
+    return () => {
+      if (welcomeTimerRef.current) {
+        clearTimeout(welcomeTimerRef.current);
+        welcomeTimerRef.current = null;
+      }
+    };
   }, []);
+
+  const enterAppNow = () => {
+    if (welcomeTimerRef.current) {
+      clearTimeout(welcomeTimerRef.current);
+      welcomeTimerRef.current = null;
+    }
+
+    Animated.timing(introOpacity, {
+      toValue: 0,
+      duration: 300,
+      useNativeDriver: true
+    }).start(() => {
+      setShowIntro(false);
+    });
+  };
 
   const handleEnter = () => {
     Animated.timing(introOpacity, {
@@ -101,7 +126,26 @@ function AppShell() {
       duration: 280,
       useNativeDriver: true
     }).start(() => {
-      setShowIntro(false);
+      setIntroStage('welcome');
+      introOpacity.setValue(0);
+      introScale.setValue(0.98);
+
+      Animated.parallel([
+        Animated.timing(introOpacity, {
+          toValue: 1,
+          duration: 420,
+          useNativeDriver: true
+        }),
+        Animated.timing(introScale, {
+          toValue: 1,
+          duration: 420,
+          useNativeDriver: true
+        })
+      ]).start();
+
+      welcomeTimerRef.current = setTimeout(() => {
+        enterAppNow();
+      }, WELCOME_MESSAGE_DURATION_MS);
     });
   };
 
@@ -109,14 +153,39 @@ function AppShell() {
     return (
       <SafeAreaProvider>
         <View style={styles.introWrap}>
-          <Animated.View style={[styles.introCard, { opacity: introOpacity, transform: [{ scale: introScale }] }]}>
-            <Image source={require('./assets/splash-icon.png')} style={styles.introLogo} resizeMode="contain" />
-            <Text style={styles.introBrand}>D CEO OFFICIAL UNISEX SALON APP</Text>
-            <Text style={styles.introSub}>Welcome ✨</Text>
-            <Pressable style={styles.enterButton} onPress={handleEnter}>
-              <Text style={styles.enterButtonText}>Get Started</Text>
-            </Pressable>
-          </Animated.View>
+          <ImageBackground
+            source={{ uri: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1200&q=80' }}
+            style={styles.introBackdrop}
+            imageStyle={styles.introBackdropImage}
+          >
+            <View style={styles.introBackdropTint} />
+            <View style={styles.introGlowTop} />
+            <View style={styles.introGlowBottom} />
+
+            <Animated.View style={[styles.introCard, { opacity: introOpacity, transform: [{ scale: introScale }] }]}>
+              <Image source={require('./assets/splash-icon.png')} style={styles.introLogo} resizeMode="contain" />
+              <Text style={styles.introBrand}>D CEO OFFICIAL UNISEX SALON APP</Text>
+              {introStage === 'landing' ? (
+                <>
+                  <Text style={styles.introSub}>Welcome ✨</Text>
+                  <Pressable style={styles.enterButton} onPress={handleEnter}>
+                    <Text style={styles.enterButtonText}>Get Started</Text>
+                  </Pressable>
+                </>
+              ) : (
+                <>
+                  <Text style={styles.welcomeTitle}>Your clean look starts with clean care ✨</Text>
+                  <Text style={styles.welcomeBody}>
+                    Fresh routines, clean tools, and healthy grooming choices build confidence every day.
+                  </Text>
+                  <Text style={styles.welcomeFootnote}>Preparing your premium salon experience…</Text>
+                  <Pressable style={[styles.enterButton, styles.enterButtonAlt]} onPress={enterAppNow}>
+                    <Text style={[styles.enterButtonText, styles.enterButtonTextAlt]}>Get Started</Text>
+                  </Pressable>
+                </>
+              )}
+            </Animated.View>
+          </ImageBackground>
         </View>
       </SafeAreaProvider>
     );
@@ -130,12 +199,21 @@ function AppShell() {
           screenOptions={({ route }) => ({
             headerTitleAlign: 'center',
             animation: 'shift',
+            sceneStyle: {
+              backgroundColor: resolvedColorScheme === 'dark' ? '#0f111f' : '#f6f8fc'
+            },
             tabBarHideOnKeyboard: true,
             tabBarActiveTintColor: '#7c46e8',
             tabBarInactiveTintColor: resolvedColorScheme === 'dark' ? '#9aa0b6' : '#726b84',
             headerStyle: {
               backgroundColor: resolvedColorScheme === 'dark' ? '#111426' : '#ffffff'
             },
+            headerRight: () => (
+              <View style={styles.headerBadge}>
+                <Ionicons name="sparkles-outline" size={12} color="#5a31b3" />
+                <Text style={styles.headerBadgeText}>CEO</Text>
+              </View>
+            ),
             headerShadowVisible: false,
             headerTitleStyle: {
               fontWeight: '900',
@@ -176,7 +254,11 @@ function AppShell() {
                 }
               })();
 
-              return <Ionicons name={name} size={focused ? size + 2 : size} color={color} />;
+              return (
+                <View style={[styles.tabIconBubble, focused && styles.tabIconBubbleFocused]}>
+                  <Ionicons name={name} size={focused ? size + 1 : size} color={color} />
+                </View>
+              );
             }
           })}
         >
@@ -260,19 +342,51 @@ const styles = StyleSheet.create({
   },
   introWrap: {
     flex: 1,
-    backgroundColor: '#1c1038',
+    backgroundColor: '#150b31',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 0
+  },
+  introBackdrop: {
+    flex: 1,
+    width: '100%',
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: 24
+  },
+  introBackdropImage: {
+    opacity: 0.34
+  },
+  introBackdropTint: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(27, 10, 58, 0.62)'
+  },
+  introGlowTop: {
+    position: 'absolute',
+    top: -120,
+    right: -60,
+    width: 260,
+    height: 260,
+    borderRadius: 999,
+    backgroundColor: 'rgba(255, 92, 195, 0.22)'
+  },
+  introGlowBottom: {
+    position: 'absolute',
+    bottom: -110,
+    left: -70,
+    width: 280,
+    height: 280,
+    borderRadius: 999,
+    backgroundColor: 'rgba(52, 214, 255, 0.2)'
   },
   introCard: {
     width: '100%',
     maxWidth: 420,
     alignItems: 'center',
-    backgroundColor: '#2a154f',
+    backgroundColor: 'rgba(44, 20, 90, 0.9)',
     borderRadius: 24,
     borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.2)',
+    borderColor: 'rgba(255,255,255,0.24)',
     paddingHorizontal: 20,
     paddingVertical: 28,
     shadowColor: '#000',
@@ -295,21 +409,84 @@ const styles = StyleSheet.create({
   },
   introSub: {
     marginTop: 12,
-    color: '#f4d98a',
+    color: '#ffe08d',
     fontSize: 14,
     fontWeight: '700'
   },
+  welcomeTitle: {
+    marginTop: 14,
+    color: '#ffe59a',
+    fontSize: 18,
+    fontWeight: '900',
+    textAlign: 'center',
+    lineHeight: 24
+  },
+  welcomeBody: {
+    marginTop: 10,
+    color: '#f4eeff',
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 21
+  },
+  welcomeFootnote: {
+    marginTop: 12,
+    color: '#d9cbff',
+    fontSize: 12,
+    fontWeight: '700',
+    letterSpacing: 0.3,
+    textAlign: 'center'
+  },
   enterButton: {
     marginTop: 18,
-    backgroundColor: '#f4d98a',
+    backgroundColor: '#ffd86c',
     paddingHorizontal: 22,
     paddingVertical: 10,
     borderRadius: 999
   },
+  enterButtonAlt: {
+    marginTop: 16,
+    backgroundColor: '#ffffff',
+    borderWidth: 1,
+    borderColor: '#f0e5ff'
+  },
   enterButtonText: {
-    color: '#2a154f',
+    color: '#341064',
     fontWeight: '900',
     fontSize: 14,
     letterSpacing: 0.4
+  },
+  enterButtonTextAlt: {
+    color: '#4d1e9a'
+  },
+  headerBadge: {
+    minWidth: 58,
+    height: 28,
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    marginRight: 10,
+    borderWidth: 1,
+    borderColor: '#e9ddff',
+    backgroundColor: '#f7f0ff',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4
+  },
+  headerBadgeText: {
+    color: '#5a31b3',
+    fontSize: 11,
+    fontWeight: '900',
+    letterSpacing: 0.3
+  },
+  tabIconBubble: {
+    width: 34,
+    height: 26,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center'
+  },
+  tabIconBubbleFocused: {
+    backgroundColor: '#f0e7ff'
   }
 });

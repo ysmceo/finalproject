@@ -1,14 +1,14 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  ActivityIndicator,
   Animated,
   Alert,
   Easing,
-  FlatList,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  TouchableOpacity,
   View
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -17,7 +17,9 @@ import * as Clipboard from 'expo-clipboard';
 
 import { apiGet, ApiError } from '../lib/api';
 import { buildApiUrl } from '../config';
-import type { ProductOrderNotification, ProductOrderTrackResponse, TrackResponse } from '../types';
+import { useThemePrefs } from '../theme';
+import type { ProductOrderTrackResponse, TrackResponse } from '../types';
+import { getMobilePalette, MOBILE_MOTION, MOBILE_SHAPE, MOBILE_SPACE, MOBILE_TYPE } from '../ui/polish';
 
 const LAST_TRACKING_CODE_KEY = 'ceosalon:lastTrackingCode';
 const LAST_BOOKING_EMAIL_KEY = 'ceosalon:lastBookingEmail';
@@ -39,23 +41,49 @@ type TimelineStep = {
   done: boolean;
 };
 
+function normalizeCodeInput(value: string) {
+  return String(value || '').trim().toUpperCase();
+}
+
+function normalizeEmailInput(value: string) {
+  return String(value || '').trim().toLowerCase();
+}
+
+function isValidEmailAddress(email: string) {
+  const normalized = normalizeEmailInput(email);
+  if (!normalized) return false;
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(normalized);
+}
+
+function formatLastUpdated(notifications: Array<{ createdAt: string }> | undefined) {
+  if (!Array.isArray(notifications) || !notifications.length) return 'No updates yet';
+  const latest = notifications[notifications.length - 1];
+  const date = latest && latest.createdAt ? new Date(latest.createdAt) : null;
+  if (!date || Number.isNaN(date.getTime())) return 'No updates yet';
+  return `Last update: ${date.toLocaleString()}`;
+}
+
 function MicroPress({
   onPress,
   style,
   children,
-  disabled
+  disabled,
+  accessibilityLabel,
+  accessibilityHint
 }: {
   onPress: () => void;
   style: any;
   children: React.ReactNode;
   disabled?: boolean;
+  accessibilityLabel?: string;
+  accessibilityHint?: string;
 }) {
   const scale = useRef(new Animated.Value(1)).current;
 
   const to = (value: number) => {
     Animated.timing(scale, {
       toValue: value,
-      duration: 90,
+      duration: MOBILE_MOTION.fast,
       easing: Easing.out(Easing.quad),
       useNativeDriver: true
     }).start();
@@ -67,6 +95,11 @@ function MicroPress({
       onPressOut={() => to(1)}
       onPress={onPress}
       disabled={disabled}
+      accessible
+      accessibilityRole="button"
+      accessibilityState={{ disabled: Boolean(disabled) }}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityHint={accessibilityHint}
     >
       <Animated.View style={[style, { transform: [{ scale }] }]}>{children}</Animated.View>
     </Pressable>
@@ -84,18 +117,18 @@ function StaggerReveal({
   const translateY = useRef(new Animated.Value(10)).current;
 
   useEffect(() => {
-    const delay = Math.min(index * 60, 420);
+    const delay = Math.min(index * MOBILE_MOTION.stagger, MOBILE_MOTION.slow);
     Animated.parallel([
       Animated.timing(opacity, {
         toValue: 1,
-        duration: 260,
+        duration: MOBILE_MOTION.normal,
         delay,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true
       }),
       Animated.timing(translateY, {
         toValue: 0,
-        duration: 260,
+        duration: MOBILE_MOTION.normal,
         delay,
         easing: Easing.out(Easing.cubic),
         useNativeDriver: true
@@ -107,6 +140,9 @@ function StaggerReveal({
 }
 
 export default function TrackScreen(props: any) {
+  const { resolvedColorScheme } = useThemePrefs();
+  const isDark = resolvedColorScheme === 'dark';
+  const palette = getMobilePalette(isDark);
   const initialTrackingCode = String(props?.route?.params?.trackingCode || props?.route?.params?.bookingId || '');
   const initialEmail = String(props?.route?.params?.email || '');
   const initialOrderCode = String(props?.route?.params?.orderCode || '');
@@ -127,7 +163,7 @@ export default function TrackScreen(props: any) {
   useEffect(() => {
     Animated.timing(screenEntry, {
       toValue: 1,
-      duration: 420,
+      duration: MOBILE_MOTION.slow,
       easing: Easing.out(Easing.cubic),
       useNativeDriver: true
     }).start();
@@ -173,26 +209,77 @@ export default function TrackScreen(props: any) {
   function getBookingStatusMeta(status: string) {
     const normalized = String(status || '').trim().toLowerCase();
     if (normalized === 'approved' || normalized === 'accepted') {
-      return { label: '✅ Approved', bg: '#e8f8ec', color: '#126d32', border: '#9ddfb2' };
+      return isDark
+        ? { label: '✅ Approved', bg: '#193227', color: '#9ce8ba', border: '#2f6b4a' }
+        : { label: '✅ Approved', bg: '#e8f8ec', color: '#126d32', border: '#9ddfb2' };
     }
     if (normalized === 'cancelled' || normalized === 'rejected' || normalized === 'declined') {
-      return { label: '❌ Rejected', bg: '#ffe9e9', color: '#9d1c1c', border: '#f2b0b0' };
+      return isDark
+        ? { label: '❌ Rejected', bg: '#381d24', color: '#ffb4b4', border: '#6b3340' }
+        : { label: '❌ Rejected', bg: '#ffe9e9', color: '#9d1c1c', border: '#f2b0b0' };
     }
     if (normalized === 'completed') {
-      return { label: '🎉 Completed', bg: '#e9f3ff', color: '#134f8f', border: '#aac8ee' };
+      return isDark
+        ? { label: '🎉 Completed', bg: '#1d2f4a', color: '#b8d8ff', border: '#35547d' }
+        : { label: '🎉 Completed', bg: '#e9f3ff', color: '#134f8f', border: '#aac8ee' };
     }
-    return { label: '⏳ Pending', bg: '#fff5df', color: '#8a5a00', border: '#f0d2a0' };
+    return isDark
+      ? { label: '⏳ Pending', bg: '#372d1f', color: '#ffd38a', border: '#69563a' }
+      : { label: '⏳ Pending', bg: '#fff5df', color: '#8a5a00', border: '#f0d2a0' };
   }
 
-  function formatProductOrderStatus(status: string) {
+  function getProductOrderStatusMeta(status: string) {
     const normalized = String(status || '').trim().toLowerCase();
-    if (normalized === 'approved') return '✅ Approved';
-    if (normalized === 'processed') return '🧾 Processed';
-    if (normalized === 'shipped') return '🚚 Shipped';
-    if (normalized === 'cancelled') return '❌ Cancelled';
-    if (normalized === 'completed') return '🎉 Completed';
-    return '⏳ Pending';
+    if (normalized === 'approved') {
+      return isDark
+        ? { label: '✅ Approved', bg: '#193227', color: '#9ce8ba', border: '#2f6b4a' }
+        : { label: '✅ Approved', bg: '#e8f8ec', color: '#126d32', border: '#9ddfb2' };
+    }
+    if (normalized === 'processed') {
+      return isDark
+        ? { label: '🧾 Processed', bg: '#1f2d4d', color: '#b8d3ff', border: '#3a538c' }
+        : { label: '🧾 Processed', bg: '#e9f1ff', color: '#1f4fa2', border: '#b9cdf5' };
+    }
+    if (normalized === 'shipped') {
+      return isDark
+        ? { label: '🚚 Shipped', bg: '#2d2144', color: '#ddb9ff', border: '#5a3e84' }
+        : { label: '🚚 Shipped', bg: '#f3e9ff', color: '#5e2b8a', border: '#d2b8ee' };
+    }
+    if (normalized === 'on_the_way') {
+      return isDark
+        ? { label: '🛵 On the way', bg: '#3a2a1f', color: '#ffcb93', border: '#6e5038' }
+        : { label: '🛵 On the way', bg: '#fff1e2', color: '#9a4d00', border: '#f2c79c' };
+    }
+    if (normalized === 'cancelled') {
+      return isDark
+        ? { label: '❌ Cancelled', bg: '#381d24', color: '#ffb4b4', border: '#6b3340' }
+        : { label: '❌ Cancelled', bg: '#ffe9e9', color: '#9d1c1c', border: '#f2b0b0' };
+    }
+    if (normalized === 'delivered' || normalized === 'completed') {
+      return isDark
+        ? { label: '📦 Delivered', bg: '#193227', color: '#9ce8ba', border: '#2f6b4a' }
+        : { label: '📦 Delivered', bg: '#e8f8ec', color: '#126d32', border: '#9ddfb2' };
+    }
+    return isDark
+      ? { label: '⏳ Pending', bg: '#372d1f', color: '#ffd38a', border: '#69563a' }
+      : { label: '⏳ Pending', bg: '#fff5df', color: '#8a5a00', border: '#f0d2a0' };
   }
+
+  const themed = {
+    container: { backgroundColor: palette.bg },
+    card: { backgroundColor: palette.card, borderColor: palette.border },
+    cardInner: { backgroundColor: palette.cardMuted, borderColor: palette.border },
+    text: { color: palette.text },
+    mutedText: { color: palette.textMuted },
+    input: { backgroundColor: palette.inputBg, borderColor: palette.border, color: palette.text },
+    buttonAlt: { backgroundColor: palette.primarySoft, borderColor: palette.border },
+    buttonAltText: { color: palette.primary },
+    progressTrack: { backgroundColor: isDark ? '#2a2f47' : '#ece7f6' },
+    timelinePending: { color: palette.textMuted },
+    timelineDotPending: { backgroundColor: isDark ? '#4b516d' : '#cfc7df' },
+    note: { backgroundColor: isDark ? '#1b2135' : '#fcfbff', borderColor: palette.border },
+    noteProduct: { backgroundColor: isDark ? '#202744' : '#f8f5ff', borderColor: palette.border }
+  };
 
   function isPaidLike(paymentStatus: string) {
     const normalized = String(paymentStatus || '').trim().toLowerCase();
@@ -235,34 +322,52 @@ export default function TrackScreen(props: any) {
       {
         key: 'review',
         label: 'Order processing',
-        done: ['pending', 'approved', 'completed'].includes(normalized)
+        done: ['pending', 'approved', 'processed', 'shipped', 'on_the_way', 'delivered'].includes(normalized)
       },
       {
         key: 'approved',
         label: 'Order approved',
-        done: ['approved', 'processed', 'shipped', 'completed'].includes(normalized)
+        done: ['approved', 'processed', 'shipped', 'on_the_way', 'delivered'].includes(normalized)
       },
       {
         key: 'processed',
         label: 'Order processed',
-        done: ['processed', 'shipped', 'completed'].includes(normalized)
+        done: ['processed', 'shipped', 'on_the_way', 'delivered'].includes(normalized)
       },
       {
         key: 'shipped',
         label: 'Order shipped',
-        done: ['shipped', 'completed'].includes(normalized)
+        done: ['shipped', 'on_the_way', 'delivered'].includes(normalized)
+      },
+      {
+        key: 'on_the_way',
+        label: 'On the way',
+        done: ['on_the_way', 'delivered'].includes(normalized)
       },
       {
         key: 'payment',
         label: 'Payment confirmed',
-        done: paidLike || normalized === 'completed'
+        done: paidLike || normalized === 'delivered'
       },
       {
-        key: 'completed',
-        label: 'Order completed',
-        done: normalized === 'completed'
+        key: 'delivered',
+        label: 'Order delivered',
+        done: normalized === 'delivered' || normalized === 'completed'
       }
     ];
+  }
+
+  function timelineProgressLabel(steps: TimelineStep[]) {
+    const total = Array.isArray(steps) ? steps.length : 0;
+    const completed = Array.isArray(steps) ? steps.filter((step) => step.done).length : 0;
+    return `Progress: ${completed}/${total} steps completed`;
+  }
+
+  function timelineProgressPercent(steps: TimelineStep[]) {
+    const total = Array.isArray(steps) ? steps.length : 0;
+    if (!total) return 0;
+    const completed = Array.isArray(steps) ? steps.filter((step) => step.done).length : 0;
+    return Math.round((completed / total) * 100);
   }
 
   async function fetchTracking() {
@@ -270,14 +375,25 @@ export default function TrackScreen(props: any) {
       Alert.alert('Missing info', 'Enter your Tracking Code and Email.');
       return;
     }
+
+    const normalizedCode = normalizeCodeInput(trackingCode);
+    const normalizedEmail = normalizeEmailInput(email);
+    if (!isValidEmailAddress(normalizedEmail)) {
+      Alert.alert('Invalid email', 'Please enter a valid booking email address.');
+      return;
+    }
+
+    if (normalizedCode !== trackingCode) setTrackingCode(normalizedCode);
+    if (normalizedEmail !== email) setEmail(normalizedEmail);
+
     setLoading(true);
     setData(null);
     setBankDetails(null);
     try {
-      const res = await apiGet<TrackResponse>(`/api/bookings/track?trackingCode=${encodeURIComponent(trackingCode.trim())}&email=${encodeURIComponent(email.trim())}`);
+      const res = await apiGet<TrackResponse>(`/api/bookings/track?trackingCode=${encodeURIComponent(normalizedCode)}&email=${encodeURIComponent(normalizedEmail)}`);
       setData(res);
-      await AsyncStorage.setItem(LAST_TRACKING_CODE_KEY, String(res.booking.trackingCode || trackingCode.trim()).toUpperCase());
-      await AsyncStorage.setItem(LAST_BOOKING_EMAIL_KEY, email.trim());
+      await AsyncStorage.setItem(LAST_TRACKING_CODE_KEY, String(res.booking.trackingCode || normalizedCode).toUpperCase());
+      await AsyncStorage.setItem(LAST_BOOKING_EMAIL_KEY, normalizedEmail);
     } catch (error) {
       const message = error instanceof ApiError ? error.message : (error instanceof Error ? error.message : 'Failed to fetch booking');
       Alert.alert('Error', message);
@@ -302,13 +418,23 @@ export default function TrackScreen(props: any) {
       return;
     }
 
+    const normalizedCode = normalizeCodeInput(orderCode);
+    const normalizedEmail = normalizeEmailInput(orderEmail);
+    if (!isValidEmailAddress(normalizedEmail)) {
+      Alert.alert('Invalid email', 'Please enter a valid product order email address.');
+      return;
+    }
+
+    if (normalizedCode !== orderCode) setOrderCode(normalizedCode);
+    if (normalizedEmail !== orderEmail) setOrderEmail(normalizedEmail);
+
     setOrderLoading(true);
     setOrderData(null);
     try {
-      const res = await apiGet<ProductOrderTrackResponse>(`/api/product-orders/track?orderCode=${encodeURIComponent(orderCode.trim())}&email=${encodeURIComponent(orderEmail.trim())}`);
+      const res = await apiGet<ProductOrderTrackResponse>(`/api/product-orders/track?orderCode=${encodeURIComponent(normalizedCode)}&email=${encodeURIComponent(normalizedEmail)}`);
       setOrderData(res);
-      await AsyncStorage.setItem(LAST_PRODUCT_ORDER_CODE_KEY, String(res.order.orderCode || orderCode.trim()).toUpperCase());
-      await AsyncStorage.setItem(LAST_PRODUCT_ORDER_EMAIL_KEY, orderEmail.trim().toLowerCase());
+      await AsyncStorage.setItem(LAST_PRODUCT_ORDER_CODE_KEY, String(res.order.orderCode || normalizedCode).toUpperCase());
+      await AsyncStorage.setItem(LAST_PRODUCT_ORDER_EMAIL_KEY, normalizedEmail);
     } catch (error) {
       const message = error instanceof ApiError ? error.message : (error instanceof Error ? error.message : 'Failed to fetch product order');
       Alert.alert('Error', message);
@@ -395,6 +521,13 @@ export default function TrackScreen(props: any) {
     Alert.alert('Copied', 'Tracking code copied to clipboard.');
   }
 
+  async function copyOrderCodeToClipboard() {
+    const code = String(orderData?.order?.orderCode || '').trim();
+    if (!code) return;
+    await Clipboard.setStringAsync(code);
+    Alert.alert('Copied', 'Product order code copied to clipboard.');
+  }
+
   async function useSavedBookingDetails() {
     const [savedCode, savedEmail] = await Promise.all([
       AsyncStorage.getItem(LAST_TRACKING_CODE_KEY),
@@ -428,58 +561,174 @@ export default function TrackScreen(props: any) {
   }
 
   return (
-    <View style={styles.container}>
+    <ScrollView
+      style={[styles.container, themed.container]}
+      contentContainerStyle={styles.contentContainer}
+      keyboardShouldPersistTaps="handled"
+      showsVerticalScrollIndicator={false}
+    >
       <Animated.View style={[styles.heroCard, cardIn(20)]}>
         <Text style={styles.heroKicker}>LIVE UPDATES</Text>
         <Text style={styles.h1}>Track your booking</Text>
         <Text style={styles.sub}>Follow booking and product order status in real time.</Text>
       </Animated.View>
 
-      <Animated.View style={[styles.card, cardIn(28)]}>
-        <Text style={styles.cardTitle}>Booking Tracker</Text>
-        <Text style={styles.label}>Tracking Code</Text>
-        <TextInput style={styles.input} value={trackingCode} onChangeText={setTrackingCode} placeholder="e.g. BOOK-ABC12345" autoCapitalize="characters" />
+      <Animated.View style={[styles.quickActionsCard, themed.card, cardIn(24)]}>
+        <Text style={[styles.quickActionsTitle, themed.text]}>Quick actions</Text>
         <View style={styles.rowWrap}>
-          <MicroPress style={styles.buttonSmallAlt} onPress={pasteTrackingCodeFromClipboard}>
-            <Text style={styles.buttonSmallAltText}>Paste code</Text>
+          <MicroPress
+            style={[styles.buttonSmallAlt, themed.buttonAlt]}
+            onPress={useSavedBookingDetails}
+            accessibilityLabel="Load saved booking details"
+            accessibilityHint="Loads your latest saved booking tracking code and email"
+          >
+            <Text style={[styles.buttonSmallAltText, themed.buttonAltText]}>Load booking</Text>
+          </MicroPress>
+          <MicroPress
+            style={[styles.buttonSmallAlt, themed.buttonAlt]}
+            onPress={useSavedOrderDetails}
+            accessibilityLabel="Load saved order details"
+            accessibilityHint="Loads your latest saved product order code and email"
+          >
+            <Text style={[styles.buttonSmallAltText, themed.buttonAltText]}>Load order</Text>
           </MicroPress>
         </View>
-        <Text style={styles.label}>Email</Text>
-        <TextInput style={styles.input} value={email} onChangeText={setEmail} placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" />
+      </Animated.View>
+
+      <Animated.View style={[styles.card, themed.card, cardIn(28)]}>
+        <Text style={styles.cardTitle}>Booking Tracker</Text>
+        <Text style={[styles.label, themed.text]}>Tracking Code</Text>
+        <TextInput
+          style={[styles.input, themed.input]}
+          value={trackingCode}
+          onChangeText={setTrackingCode}
+          onBlur={() => setTrackingCode(normalizeCodeInput(trackingCode))}
+          placeholder="e.g. BOOK-ABC12345"
+          placeholderTextColor={palette.textMuted}
+          autoCapitalize="characters"
+          autoCorrect={false}
+        />
         <View style={styles.rowWrap}>
-          <MicroPress style={styles.buttonSmallAlt} onPress={useSavedBookingDetails}>
-            <Text style={styles.buttonSmallAltText}>Use saved booking</Text>
+          <MicroPress
+            style={[styles.buttonSmallAlt, themed.buttonAlt]}
+            onPress={pasteTrackingCodeFromClipboard}
+            accessibilityLabel="Paste booking tracking code"
+            accessibilityHint="Pastes the tracking code from your clipboard"
+          >
+            <Text style={[styles.buttonSmallAltText, themed.buttonAltText]}>Paste code</Text>
+          </MicroPress>
+        </View>
+        <Text style={[styles.label, themed.text]}>Email</Text>
+        <TextInput
+          style={[styles.input, themed.input]}
+          value={email}
+          onChangeText={setEmail}
+          onBlur={() => setEmail(normalizeEmailInput(email))}
+          placeholder="you@example.com"
+          placeholderTextColor={palette.textMuted}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          autoCorrect={false}
+        />
+        <View style={styles.rowWrap}>
+          <MicroPress
+            style={[styles.buttonSmallAlt, themed.buttonAlt]}
+            onPress={useSavedBookingDetails}
+            accessibilityLabel="Use saved booking details"
+            accessibilityHint="Loads your last saved booking tracking code and email"
+          >
+            <Text style={[styles.buttonSmallAltText, themed.buttonAltText]}>Use saved booking</Text>
           </MicroPress>
         </View>
 
-        <MicroPress style={[styles.button, (!canFetch || loading) && styles.buttonDisabled]} onPress={fetchTracking} disabled={!canFetch || loading}>
+        <MicroPress
+          style={[styles.button, (!canFetch || loading) && styles.buttonDisabled]}
+          onPress={fetchTracking}
+          disabled={!canFetch || loading}
+          accessibilityLabel="Track booking"
+          accessibilityHint="Fetches and shows your booking status and updates"
+        >
           <Text style={styles.buttonText}>{loading ? 'Loading…' : 'Track booking'}</Text>
         </MicroPress>
+        {loading ? (
+          <View style={styles.loadingRow}>
+            <ActivityIndicator size="small" color="#7c46e8" />
+            <Text style={[styles.loadingText, themed.mutedText]}>Fetching booking details…</Text>
+          </View>
+        ) : null}
       </Animated.View>
 
-      <Animated.View style={[styles.card, cardIn(34)]}>
+      <Animated.View style={[styles.card, themed.card, cardIn(34)]}>
         <Text style={styles.cardTitle}>Product Order Tracker</Text>
-        <Text style={styles.h2}>Track your product order</Text>
-        <Text style={styles.label}>Product Order Code</Text>
-        <TextInput style={styles.input} value={orderCode} onChangeText={setOrderCode} placeholder="e.g. ORD-MA4N7X2" autoCapitalize="characters" />
-        <Text style={styles.label}>Order Email</Text>
-        <TextInput style={styles.input} value={orderEmail} onChangeText={setOrderEmail} placeholder="you@example.com" autoCapitalize="none" keyboardType="email-address" />
+        <Text style={[styles.h2, themed.text]}>Track your product order</Text>
+        <Text style={[styles.label, themed.text]}>Product Order Code</Text>
+        <TextInput
+          style={[styles.input, themed.input]}
+          value={orderCode}
+          onChangeText={setOrderCode}
+          onBlur={() => setOrderCode(normalizeCodeInput(orderCode))}
+          placeholder="e.g. ORD-MA4N7X2"
+          placeholderTextColor={palette.textMuted}
+          autoCapitalize="characters"
+          autoCorrect={false}
+        />
+        <Text style={[styles.label, themed.text]}>Order Email</Text>
+        <TextInput
+          style={[styles.input, themed.input]}
+          value={orderEmail}
+          onChangeText={setOrderEmail}
+          onBlur={() => setOrderEmail(normalizeEmailInput(orderEmail))}
+          placeholder="you@example.com"
+          placeholderTextColor={palette.textMuted}
+          autoCapitalize="none"
+          keyboardType="email-address"
+          autoCorrect={false}
+        />
         <View style={styles.rowWrap}>
-          <MicroPress style={styles.buttonSmallAlt} onPress={useSavedOrderDetails}>
-            <Text style={styles.buttonSmallAltText}>Use saved order</Text>
+          <MicroPress
+            style={[styles.buttonSmallAlt, themed.buttonAlt]}
+            onPress={useSavedOrderDetails}
+            accessibilityLabel="Use saved product order details"
+            accessibilityHint="Loads your last saved product order code and email"
+          >
+            <Text style={[styles.buttonSmallAltText, themed.buttonAltText]}>Use saved order</Text>
           </MicroPress>
         </View>
 
-        <MicroPress style={[styles.button, (!canFetchOrder || orderLoading) && styles.buttonDisabled]} onPress={fetchProductTracking} disabled={!canFetchOrder || orderLoading}>
+        <MicroPress
+          style={[styles.button, (!canFetchOrder || orderLoading) && styles.buttonDisabled]}
+          onPress={fetchProductTracking}
+          disabled={!canFetchOrder || orderLoading}
+          accessibilityLabel="Track product order"
+          accessibilityHint="Fetches and shows your product order status and delivery updates"
+        >
           <Text style={styles.buttonText}>{orderLoading ? 'Loading…' : 'Track product order'}</Text>
         </MicroPress>
+        {orderLoading ? (
+          <View style={styles.loadingRow}>
+            <ActivityIndicator size="small" color="#7c46e8" />
+            <Text style={[styles.loadingText, themed.mutedText]}>Fetching product order details…</Text>
+          </View>
+        ) : null}
       </Animated.View>
 
+      {!loading && !orderLoading && !data && !orderData ? (
+        <Animated.View style={[styles.card, themed.card, cardIn(38)]}>
+          <Text style={[styles.h2, themed.text]}>Get started</Text>
+          <Text style={[styles.kvValue, themed.text]}>• Use your booking tracking code + booking email.</Text>
+          <Text style={[styles.kvValue, themed.text]}>• For product orders, use order code + order email.</Text>
+          <Text style={[styles.kvValue, themed.text]}>• You can load saved details from Quick actions above.</Text>
+          <View style={[styles.note, themed.note, { marginTop: 12 }]}> 
+            <Text style={[styles.noteMsg, themed.text]}>Tip: keep your tracking/order code in clipboard, then tap “Paste code” for faster lookup.</Text>
+          </View>
+        </Animated.View>
+      ) : null}
+
       {data ? (
-        <Animated.View style={[styles.card, cardIn(40)]}>
-          <Text style={styles.h2}>Booking</Text>
+        <Animated.View style={[styles.card, themed.card, cardIn(40)]}>
+          <Text style={[styles.h2, themed.text]}>Booking</Text>
           <View style={styles.statusRow}>
-            <Text style={styles.kvLabel}>Status</Text>
+            <Text style={[styles.kvLabel, themed.text]}>Status</Text>
             <View
               style={[
                 styles.statusBadge,
@@ -494,54 +743,88 @@ export default function TrackScreen(props: any) {
               </Text>
             </View>
           </View>
-          <View style={styles.timelineWrap}>
-            {bookingTimeline(data.booking.status, data.booking.paymentStatus).map((step) => (
-              <View key={step.key} style={styles.timelineItem}>
-                <View style={[styles.timelineDot, step.done ? styles.timelineDotDone : styles.timelineDotPending]} />
-                <Text style={[styles.timelineText, step.done ? styles.timelineTextDone : styles.timelineTextPending]}>
-                  {step.label}
-                </Text>
-              </View>
-            ))}
-          </View>
-          <Text style={styles.kvValue}>Tracking Code: {String(data.booking.trackingCode || '').trim() || 'N/A'}</Text>
+          {(() => {
+            const bookingSteps = bookingTimeline(data.booking.status, data.booking.paymentStatus);
+            const bookingPercent = timelineProgressPercent(bookingSteps);
+            return (
+              <>
+                <View style={styles.progressRow}>
+                  <Text style={[styles.progressText, themed.mutedText]}>{timelineProgressLabel(bookingSteps)}</Text>
+                  <Text style={styles.progressPercent}>{bookingPercent}%</Text>
+                </View>
+                <View
+                  style={[styles.progressBarTrack, themed.progressTrack]}
+                  accessible
+                  accessibilityRole="progressbar"
+                  accessibilityLabel="Booking progress"
+                  accessibilityValue={{ min: 0, max: 100, now: bookingPercent }}
+                >
+                  <View style={[styles.progressBarFill, { width: `${bookingPercent}%` }]} />
+                </View>
+                <View style={styles.timelineWrap}>
+                  {bookingSteps.map((step) => (
+                    <View key={step.key} style={styles.timelineItem}>
+                      <View style={[styles.timelineDot, step.done ? styles.timelineDotDone : styles.timelineDotPending, !step.done && themed.timelineDotPending]} />
+                      <Text style={[styles.timelineText, step.done ? styles.timelineTextDone : styles.timelineTextPending, !step.done && themed.timelinePending]}>
+                        {step.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            );
+          })()}
+          <Text style={[styles.kvValue, themed.text]}>Tracking Code: {String(data.booking.trackingCode || '').trim() || 'N/A'}</Text>
           <View style={styles.rowWrap}>
-            <MicroPress style={styles.buttonSmallAlt} onPress={copyTrackingCodeToClipboard}>
-              <Text style={styles.buttonSmallAltText}>Copy tracking code</Text>
+            <MicroPress
+              style={[styles.buttonSmallAlt, themed.buttonAlt]}
+              onPress={copyTrackingCodeToClipboard}
+              accessibilityLabel="Copy booking tracking code"
+              accessibilityHint="Copies your booking tracking code to the clipboard"
+            >
+              <Text style={[styles.buttonSmallAltText, themed.buttonAltText]}>Copy tracking code</Text>
             </MicroPress>
           </View>
-          <Text style={styles.kvValue}>Service: {data.booking.serviceName}</Text>
-          <Text style={styles.kvValue}>Date/Time: {data.booking.date} • {data.booking.time}</Text>
-          <Text style={styles.kvValue}>Payment: {data.booking.paymentStatus} ({data.booking.paymentPlan})</Text>
-          <Text style={styles.kvValue}>Due now: ₦{Number(data.booking.amountDueNow || 0).toLocaleString()}</Text>
-          <Text style={styles.kvValue}>Remaining: ₦{Number(data.booking.amountRemaining || 0).toLocaleString()}</Text>
+          <Text style={[styles.kvValue, themed.text]}>Service: {data.booking.serviceName}</Text>
+          <Text style={[styles.kvValue, themed.text]}>Date/Time: {data.booking.date} • {data.booking.time}</Text>
+          <Text style={[styles.kvValue, themed.text]}>Payment: {data.booking.paymentStatus} ({data.booking.paymentPlan})</Text>
+          <Text style={[styles.kvValue, themed.text]}>Due now: ₦{Number(data.booking.amountDueNow || 0).toLocaleString()}</Text>
+          <Text style={[styles.kvValue, themed.text]}>Remaining: ₦{Number(data.booking.amountRemaining || 0).toLocaleString()}</Text>
+          <Text style={[styles.updatedText, themed.mutedText]}>{formatLastUpdated(data.notifications)}</Text>
           {data.booking.serviceMode === 'home' ? (
-            <Text style={styles.kvValue}>Home address: {data.booking.homeServiceAddress}</Text>
+            <Text style={[styles.kvValue, themed.text]}>Home address: {data.booking.homeServiceAddress}</Text>
           ) : null}
 
           {String(data.booking.paymentMethod || '').trim() === 'Bank Transfer' ? (
             <>
               <View style={styles.rowWrap}>
-                <MicroPress style={styles.buttonSmall} onPress={fetchBankDetails}>
+                <MicroPress
+                  style={styles.buttonSmall}
+                  onPress={fetchBankDetails}
+                  accessibilityLabel="Load bank transfer details"
+                  accessibilityHint="Shows account name, number, and reference for payment"
+                >
                   <Text style={styles.buttonText}>Bank details</Text>
                 </MicroPress>
                 <MicroPress
                   style={[styles.buttonSmall, uploadingReceipt && styles.buttonDisabled]}
                   onPress={uploadReceipt}
                   disabled={uploadingReceipt}
+                  accessibilityLabel="Upload payment receipt"
+                  accessibilityHint="Lets you select and upload a receipt file"
                 >
                   <Text style={styles.buttonText}>{uploadingReceipt ? 'Uploading…' : 'Upload receipt'}</Text>
                 </MicroPress>
               </View>
 
               {bankDetails ? (
-                <View style={styles.cardInner}>
-                  <Text style={styles.h3}>Bank Transfer Details</Text>
-                  <Text style={styles.kvValue}>{bankDetails.bankName}</Text>
-                  <Text style={styles.kvValue}>{bankDetails.accountNumber}</Text>
-                  <Text style={styles.kvValue}>{bankDetails.accountName}</Text>
-                  <Text style={styles.kvValue}>Reference: {bankDetails.reference}</Text>
-                  <Text style={styles.kvValue}>Amount due now: ₦{Number(bankDetails.amountDueNow || 0).toLocaleString()}</Text>
+                <View style={[styles.cardInner, themed.cardInner]}>
+                  <Text style={[styles.h3, themed.text]}>Bank Transfer Details</Text>
+                  <Text style={[styles.kvValue, themed.text]}>{bankDetails.bankName}</Text>
+                  <Text style={[styles.kvValue, themed.text]}>{bankDetails.accountNumber}</Text>
+                  <Text style={[styles.kvValue, themed.text]}>{bankDetails.accountName}</Text>
+                  <Text style={[styles.kvValue, themed.text]}>Reference: {bankDetails.reference}</Text>
+                  <Text style={[styles.kvValue, themed.text]}>Amount due now: ₦{Number(bankDetails.amountDueNow || 0).toLocaleString()}</Text>
                 </View>
               ) : null}
             </>
@@ -550,115 +833,166 @@ export default function TrackScreen(props: any) {
       ) : null}
 
       {orderData ? (
-        <Animated.View style={[styles.card, cardIn(48)]}>
-          <Text style={styles.h2}>Product Order</Text>
+        <Animated.View style={[styles.card, themed.card, cardIn(48)]}>
+          <Text style={[styles.h2, themed.text]}>Product Order</Text>
+          {(() => {
+            const productStatusMeta = getProductOrderStatusMeta(orderData.order.status);
+            return (
           <View style={styles.statusRow}>
-            <Text style={styles.kvLabel}>Status</Text>
-            <View style={[styles.statusBadge, styles.statusBadgeInfo]}>
-              <Text style={[styles.statusText, styles.statusTextInfo]}>{formatProductOrderStatus(orderData.order.status)}</Text>
+            <Text style={[styles.kvLabel, themed.text]}>Status</Text>
+            <View
+              style={[
+                styles.statusBadge,
+                {
+                  backgroundColor: productStatusMeta.bg,
+                  borderColor: productStatusMeta.border
+                }
+              ]}
+            >
+              <Text style={[styles.statusText, { color: productStatusMeta.color }]}> {productStatusMeta.label}</Text>
             </View>
           </View>
-          <View style={styles.timelineWrap}>
-            {productOrderTimeline(orderData.order.status, orderData.order.paymentStatus).map((step) => (
-              <View key={step.key} style={styles.timelineItem}>
-                <View style={[styles.timelineDot, step.done ? styles.timelineDotDone : styles.timelineDotPending]} />
-                <Text style={[styles.timelineText, step.done ? styles.timelineTextDone : styles.timelineTextPending]}>
-                  {step.label}
-                </Text>
-              </View>
-            ))}
+            );
+          })()}
+          {(() => {
+            const productSteps = productOrderTimeline(orderData.order.status, orderData.order.paymentStatus);
+            const productPercent = timelineProgressPercent(productSteps);
+            return (
+              <>
+                <View style={styles.progressRow}>
+                  <Text style={[styles.progressText, themed.mutedText]}>{timelineProgressLabel(productSteps)}</Text>
+                  <Text style={styles.progressPercent}>{productPercent}%</Text>
+                </View>
+                <View
+                  style={[styles.progressBarTrack, themed.progressTrack]}
+                  accessible
+                  accessibilityRole="progressbar"
+                  accessibilityLabel="Product order progress"
+                  accessibilityValue={{ min: 0, max: 100, now: productPercent }}
+                >
+                  <View style={[styles.progressBarFill, { width: `${productPercent}%` }]} />
+                </View>
+                <View style={styles.timelineWrap}>
+                  {productSteps.map((step) => (
+                    <View key={step.key} style={styles.timelineItem}>
+                      <View style={[styles.timelineDot, step.done ? styles.timelineDotDone : styles.timelineDotPending, !step.done && themed.timelineDotPending]} />
+                      <Text style={[styles.timelineText, step.done ? styles.timelineTextDone : styles.timelineTextPending, !step.done && themed.timelinePending]}>
+                        {step.label}
+                      </Text>
+                    </View>
+                  ))}
+                </View>
+              </>
+            );
+          })()}
+          <Text style={[styles.kvValue, themed.text]}>Order Code: {String(orderData.order.orderCode || '').trim() || 'N/A'}</Text>
+          <View style={styles.rowWrap}>
+            <MicroPress
+              style={[styles.buttonSmallAlt, themed.buttonAlt]}
+              onPress={copyOrderCodeToClipboard}
+              accessibilityLabel="Copy product order code"
+              accessibilityHint="Copies your product order code to the clipboard"
+            >
+              <Text style={[styles.buttonSmallAltText, themed.buttonAltText]}>Copy order code</Text>
+            </MicroPress>
           </View>
-          <Text style={styles.kvValue}>Order Code: {String(orderData.order.orderCode || '').trim() || 'N/A'}</Text>
-          <Text style={styles.kvValue}>Payment: {orderData.order.paymentStatus} ({orderData.order.paymentMethod})</Text>
-          <Text style={styles.kvValue}>Total: ₦{Number(orderData.order.totalAmount || 0).toLocaleString()}</Text>
-          <Text style={styles.kvValue}>Due now: ₦{Number(orderData.order.amountDueNow || 0).toLocaleString()}</Text>
-          <Text style={styles.kvValue}>Remaining: ₦{Number(orderData.order.amountRemaining || 0).toLocaleString()}</Text>
-          <Text style={[styles.h3, { marginTop: 10 }]}>Items</Text>
+          <Text style={[styles.kvValue, themed.text]}>Delivery speed: {String(orderData.order.deliverySpeed || 'standard').toUpperCase()}</Text>
+          <Text style={[styles.kvValue, themed.text]}>Payment: {orderData.order.paymentStatus} ({orderData.order.paymentMethod})</Text>
+          <Text style={[styles.kvValue, themed.text]}>Subtotal: ₦{Number(orderData.order.itemsSubtotal || 0).toLocaleString()}</Text>
+          <Text style={[styles.kvValue, themed.text]}>Delivery fee: ₦{Number(orderData.order.deliveryFee || 0).toLocaleString()}</Text>
+          <Text style={[styles.kvValue, themed.text]}>Grand total: ₦{Number(orderData.order.totalAmount || 0).toLocaleString()}</Text>
+          <Text style={[styles.kvValue, themed.text]}>Due now: ₦{Number(orderData.order.amountDueNow || 0).toLocaleString()}</Text>
+          <Text style={[styles.kvValue, themed.text]}>Remaining: ₦{Number(orderData.order.amountRemaining || 0).toLocaleString()}</Text>
+          <Text style={[styles.updatedText, themed.mutedText]}>{formatLastUpdated(orderData.notifications)}</Text>
+          <Text style={[styles.h3, themed.text, { marginTop: 10 }]}>Items</Text>
           {(orderData.order.items || []).map((item, index) => (
             <StaggerReveal key={`${item.productId}-${index}`} index={index}>
-              <Text style={styles.kvValue}>
+              <Text style={[styles.kvValue, themed.text]}>
                 • {item.name} × {item.quantity} — ₦{Number(item.lineTotal || 0).toLocaleString()}
               </Text>
             </StaggerReveal>
           ))}
 
-          <Text style={[styles.h3, { marginTop: 12 }]}>Delivery updates</Text>
-          <FlatList
-            data={(Array.isArray(orderData.notifications) ? orderData.notifications : []) as ProductOrderNotification[]}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={{ paddingTop: 8, gap: 8 }}
-            renderItem={({ item, index }) => (
-              <StaggerReveal index={index}>
-                <View style={styles.note}>
-                  <Text style={styles.noteMsg}>{item.message}</Text>
-                  <Text style={styles.noteMeta}>{new Date(item.createdAt).toLocaleString()}</Text>
-                </View>
-              </StaggerReveal>
+          <Text style={[styles.h3, themed.text, { marginTop: 12 }]}>Delivery updates</Text>
+          <View style={{ paddingTop: 8, gap: 10 }}>
+            {(Array.isArray(orderData.notifications) ? orderData.notifications : []).length ? (
+              (Array.isArray(orderData.notifications) ? orderData.notifications : []).map((item, index) => (
+                <StaggerReveal index={index} key={item.id || `${item.createdAt}-${index}`}>
+                  <View style={[styles.noteProduct, themed.noteProduct]}>
+                    <Text style={[styles.noteMsg, themed.text]}>{item.message}</Text>
+                    <Text style={[styles.noteMeta, themed.mutedText]}>{new Date(item.createdAt).toLocaleString()}</Text>
+                  </View>
+                </StaggerReveal>
+              ))
+            ) : (
+              <Text style={[styles.kvValue, themed.text]}>No delivery updates yet.</Text>
             )}
-            ListEmptyComponent={<Text style={styles.kvValue}>No delivery updates yet.</Text>}
-          />
+          </View>
         </Animated.View>
       ) : null}
 
       {data ? (
-        <View style={[styles.card, { flex: 1 }]}>
-          <Text style={styles.h2}>Notifications</Text>
-          <FlatList
-            data={data.notifications}
-            keyExtractor={(item) => item.id}
-            contentContainerStyle={{ paddingVertical: 10, gap: 10 }}
-            renderItem={({ item, index }) => (
-              <StaggerReveal index={index}>
-                <View style={styles.note}>
-                  <Text style={styles.noteMsg}>{item.message}</Text>
-                  <Text style={styles.noteMeta}>{new Date(item.createdAt).toLocaleString()}</Text>
-                </View>
-              </StaggerReveal>
+        <View style={[styles.card, themed.card, { flex: 1 }]}>
+          <Text style={[styles.h2, themed.text]}>Notifications</Text>
+          <View style={{ paddingVertical: 10, gap: 10 }}>
+            {(Array.isArray(data.notifications) ? data.notifications : []).length ? (
+              (Array.isArray(data.notifications) ? data.notifications : []).map((item, index) => (
+                <StaggerReveal index={index} key={item.id || `${item.createdAt}-${index}`}>
+                  <View style={[styles.note, themed.note]}>
+                    <Text style={[styles.noteMsg, themed.text]}>{item.message}</Text>
+                    <Text style={[styles.noteMeta, themed.mutedText]}>{new Date(item.createdAt).toLocaleString()}</Text>
+                  </View>
+                </StaggerReveal>
+              ))
+            ) : (
+              <Text style={[styles.sub, themed.mutedText]}>No notifications yet.</Text>
             )}
-            ListEmptyComponent={<Text style={styles.sub}>No notifications yet.</Text>}
-          />
+          </View>
         </View>
       ) : null}
-    </View>
+    </ScrollView>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    padding: 16,
     backgroundColor: '#f6f8fc'
   },
+  contentContainer: {
+    padding: MOBILE_SPACE.xxl,
+    paddingBottom: 24
+  },
   h1: {
-    fontSize: 24,
+    fontSize: MOBILE_TYPE.title,
     fontWeight: '800',
     color: '#ffffff'
   },
   heroKicker: {
-    fontSize: 12,
+    fontSize: MOBILE_TYPE.caption,
     fontWeight: '800',
     color: '#f4d98a',
     letterSpacing: 1,
-    marginBottom: 6
+    marginBottom: MOBILE_SPACE.xs
   },
   h2: {
-    fontSize: 18,
+    fontSize: MOBILE_TYPE.heading,
     fontWeight: '800',
     color: '#2d2342'
   },
   h3: {
-    fontSize: 16,
+    fontSize: MOBILE_TYPE.subheading,
     fontWeight: '800',
     color: '#3b2a5e'
   },
   sub: {
-    marginTop: 6,
+    marginTop: MOBILE_SPACE.xs,
     color: '#e9dfff'
   },
   heroCard: {
     backgroundColor: '#2f1d63',
     borderRadius: 18,
-    padding: 16,
+    padding: MOBILE_SPACE.xxl,
     borderWidth: 1,
     borderColor: '#5f35af',
     shadowColor: '#220a4c',
@@ -668,18 +1002,33 @@ const styles = StyleSheet.create({
     elevation: 4
   },
   cardTitle: {
-    fontSize: 13,
+    fontSize: MOBILE_TYPE.label,
     fontWeight: '700',
     color: '#8b5a11',
     textTransform: 'uppercase',
     letterSpacing: 0.6,
-    marginBottom: 4
+    marginBottom: MOBILE_SPACE.xxs
+  },
+  quickActionsCard: {
+    marginTop: MOBILE_SPACE.lg,
+    backgroundColor: '#ffffff',
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    paddingVertical: MOBILE_SPACE.lg,
+    paddingHorizontal: MOBILE_SPACE.xl,
+    borderWidth: 1,
+    borderColor: '#ece7f6'
+  },
+  quickActionsTitle: {
+    fontSize: MOBILE_TYPE.label,
+    fontWeight: '800',
+    color: '#4d3489',
+    marginBottom: 2
   },
   card: {
-    marginTop: 14,
+    marginTop: MOBILE_SPACE.xl,
     backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 14,
+    borderRadius: MOBILE_SHAPE.cardRadius,
+    padding: MOBILE_SPACE.xl,
     borderWidth: 1,
     borderColor: '#ece7f6',
     shadowColor: '#160a2a',
@@ -689,39 +1038,39 @@ const styles = StyleSheet.create({
     elevation: 3
   },
   cardInner: {
-    marginTop: 12,
+    marginTop: MOBILE_SPACE.lg,
     backgroundColor: '#fff8e9',
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    padding: MOBILE_SPACE.lg,
     borderWidth: 1,
     borderColor: '#f3dfb1'
   },
   label: {
-    marginTop: 10,
-    marginBottom: 6,
+    marginTop: MOBILE_SPACE.md,
+    marginBottom: MOBILE_SPACE.xs,
     fontWeight: '700',
     color: '#3b2f54'
   },
   input: {
     borderWidth: 1,
     borderColor: '#d9d2e8',
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 10,
+    borderRadius: MOBILE_SHAPE.inputRadius,
+    paddingHorizontal: MOBILE_SPACE.lg,
+    paddingVertical: MOBILE_SPACE.md,
     backgroundColor: '#fff'
   },
   rowWrap: {
-    marginTop: 12,
+    marginTop: MOBILE_SPACE.lg,
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: 10,
+    gap: MOBILE_SPACE.md,
     alignItems: 'center'
   },
   button: {
-    marginTop: 14,
+    marginTop: MOBILE_SPACE.xl,
     backgroundColor: '#7c46e8',
-    borderRadius: 12,
-    paddingVertical: 12,
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    paddingVertical: MOBILE_SPACE.lg,
     alignItems: 'center',
     shadowColor: '#4f22a8',
     shadowOpacity: 0.25,
@@ -731,9 +1080,9 @@ const styles = StyleSheet.create({
   },
   buttonSmall: {
     backgroundColor: '#7c46e8',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    paddingVertical: MOBILE_SPACE.md,
+    paddingHorizontal: MOBILE_SPACE.lg,
     alignItems: 'center'
   },
   buttonDisabled: {
@@ -741,9 +1090,9 @@ const styles = StyleSheet.create({
   },
   buttonSmallAlt: {
     backgroundColor: '#f5f0ff',
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 12,
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    paddingVertical: MOBILE_SPACE.md,
+    paddingHorizontal: MOBILE_SPACE.lg,
     alignItems: 'center',
     borderWidth: 1,
     borderColor: '#ded1fb'
@@ -756,26 +1105,43 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontWeight: '800'
   },
+  loadingRow: {
+    marginTop: MOBILE_SPACE.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: MOBILE_SPACE.sm
+  },
+  loadingText: {
+    color: '#645b79',
+    fontSize: MOBILE_TYPE.caption,
+    fontWeight: '700'
+  },
   kvValue: {
-    marginTop: 6,
+    marginTop: MOBILE_SPACE.xs,
     color: '#303247'
   },
   kvLabel: {
     fontWeight: '700',
     color: '#41345d'
   },
+  updatedText: {
+    marginTop: MOBILE_SPACE.sm,
+    color: '#7a7490',
+    fontSize: MOBILE_TYPE.caption,
+    fontWeight: '700'
+  },
   statusRow: {
-    marginTop: 8,
-    marginBottom: 4,
+    marginTop: MOBILE_SPACE.sm,
+    marginBottom: MOBILE_SPACE.xxs,
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    gap: 10
+    gap: MOBILE_SPACE.md
   },
   statusBadge: {
     borderWidth: 1,
-    borderRadius: 999,
-    paddingHorizontal: 10,
+    borderRadius: MOBILE_SHAPE.chipRadius,
+    paddingHorizontal: MOBILE_SPACE.md,
     paddingVertical: 5
   },
   statusBadgeInfo: {
@@ -783,7 +1149,7 @@ const styles = StyleSheet.create({
     borderColor: '#aac8ee'
   },
   statusText: {
-    fontSize: 12,
+    fontSize: MOBILE_TYPE.caption,
     fontWeight: '800'
   },
   statusTextInfo: {
@@ -792,35 +1158,79 @@ const styles = StyleSheet.create({
   note: {
     borderWidth: 1,
     borderColor: '#ece7f6',
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    padding: MOBILE_SPACE.lg,
     backgroundColor: '#fcfbff'
   },
+  noteProduct: {
+    borderWidth: 1,
+    borderColor: '#e3dcf7',
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    padding: MOBILE_SPACE.lg,
+    backgroundColor: '#f8f5ff',
+    shadowColor: '#2b155f',
+    shadowOpacity: 0.06,
+    shadowOffset: { width: 0, height: 4 },
+    shadowRadius: 8,
+    elevation: 1
+  },
   noteMsg: {
-    fontSize: 14,
+    fontSize: MOBILE_TYPE.body,
     lineHeight: 20,
     color: '#2f2743'
   },
   noteMeta: {
-    marginTop: 6,
+    marginTop: MOBILE_SPACE.xs,
     color: '#7a7490',
-    fontSize: 12
+    fontSize: MOBILE_TYPE.caption
   },
   timelineWrap: {
-    marginTop: 10,
-    marginBottom: 8,
+    marginTop: MOBILE_SPACE.md,
+    marginBottom: MOBILE_SPACE.sm,
     borderWidth: 1,
     borderColor: '#ece7f6',
-    borderRadius: 12,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    paddingHorizontal: MOBILE_SPACE.md,
+    paddingVertical: MOBILE_SPACE.sm,
     backgroundColor: '#fcfbff',
-    gap: 8
+    gap: MOBILE_SPACE.sm
+  },
+  progressText: {
+    marginTop: MOBILE_SPACE.sm,
+    color: '#5f5773',
+    fontSize: MOBILE_TYPE.caption,
+    fontWeight: '700'
+  },
+  progressRow: {
+    marginTop: MOBILE_SPACE.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: MOBILE_SPACE.sm
+  },
+  progressPercent: {
+    color: '#4f22a8',
+    fontSize: MOBILE_TYPE.caption,
+    fontWeight: '800'
+  },
+  progressBarTrack: {
+    marginTop: MOBILE_SPACE.xs,
+    marginBottom: 2,
+    width: '100%',
+    height: 8,
+    borderRadius: MOBILE_SHAPE.chipRadius,
+    backgroundColor: '#ece7f6',
+    overflow: 'hidden'
+  },
+  progressBarFill: {
+    height: '100%',
+    borderRadius: MOBILE_SHAPE.chipRadius,
+    backgroundColor: '#7c46e8'
   },
   timelineItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8
+    gap: MOBILE_SPACE.sm
   },
   timelineDot: {
     width: 10,
@@ -834,7 +1244,7 @@ const styles = StyleSheet.create({
     backgroundColor: '#cfc7df'
   },
   timelineText: {
-    fontSize: 13
+    fontSize: MOBILE_TYPE.label
   },
   timelineTextDone: {
     color: '#2a3e31',

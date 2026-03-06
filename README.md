@@ -142,9 +142,14 @@ This is a demo application. For production use:
 
 MIT License - feel free to use this project for your own salon business!
 
+## Release Docs
+
+- `CHANGELOG.md` — Chronological history of notable project changes.
+- `RELEASE_NOTES_UI_POLISH_2026-03-05.md` — Latest UI/UX professional polish release summary.
+
 ## Support
 
-For issues, questions, or suggestions, please contact info@ceosaloon.com
+For issues, questions, or suggestions, please contact [info@ceosaloon.com](mailto:info@ceosaloon.com)
 
 ---
 

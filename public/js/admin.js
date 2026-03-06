@@ -4,6 +4,7 @@ const API_URL = '/api/admin';
 
 let currentBookingId = null;
 let currentMessageId = null;
+let currentProductDeliveryFees = { standard: 0, express: 0 };
 
 function ensureToastContainer() {
   let container = document.querySelector('.toast-container');
@@ -100,6 +101,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   loadBookings();
   setupFilterListeners();
   setupProductListeners();
+  setupProductDeliveryFeeListeners();
   initializeClockAndWeather();
   initializeDarkMode();
 });
@@ -291,7 +293,99 @@ function showTab(tabName) {
   } else if (tabName === 'products') {
     loadProducts();
   } else if (tabName === 'productOrders') {
+    loadAdminProductDeliveryFees();
     loadProductOrders();
+  }
+}
+
+function setupProductDeliveryFeeListeners() {
+  const form = document.getElementById('productDeliveryFeeForm');
+  if (!form) return;
+
+  form.addEventListener('submit', handleProductDeliveryFeeSubmit);
+}
+
+function showProductDeliveryFeeMessage(message, type) {
+  const messageEl = document.getElementById('productDeliveryFeeMessage');
+  if (!messageEl) return;
+
+  messageEl.textContent = message;
+  messageEl.className = `message ${type}`;
+
+  setTimeout(() => {
+    messageEl.textContent = '';
+    messageEl.className = 'message';
+  }, 4000);
+}
+
+async function loadAdminProductDeliveryFees() {
+  try {
+    const response = await adminFetch('/product-orders/delivery-fees');
+    const result = await response.json().catch(() => ({}));
+
+    if (!response.ok) {
+      showProductDeliveryFeeMessage(result.error || 'Failed to load delivery fees.', 'error');
+      return;
+    }
+
+    const fees = result && result.fees ? result.fees : {};
+    currentProductDeliveryFees = {
+      standard: Math.max(0, Number(fees.standard || 0)),
+      express: Math.max(0, Number(fees.express || 0))
+    };
+    const standardInput = document.getElementById('adminStandardDeliveryFee');
+    const expressInput = document.getElementById('adminExpressDeliveryFee');
+
+    if (standardInput) standardInput.value = Number(fees.standard || 0);
+    if (expressInput) expressInput.value = Number(fees.express || 0);
+
+    const feeMessage = document.getElementById('productDeliveryFeeMessage');
+    if (feeMessage) {
+      feeMessage.textContent = `Current fees → Standard: ₦${currentProductDeliveryFees.standard.toLocaleString()} • Express: ₦${currentProductDeliveryFees.express.toLocaleString()}`;
+      feeMessage.className = 'message success';
+    }
+  } catch (error) {
+    console.error('Error loading admin delivery fees:', error);
+    showProductDeliveryFeeMessage('Error loading delivery fee settings.', 'error');
+  }
+}
+
+async function handleProductDeliveryFeeSubmit(e) {
+  e.preventDefault();
+
+  const standardInput = document.getElementById('adminStandardDeliveryFee');
+  const expressInput = document.getElementById('adminExpressDeliveryFee');
+  const standard = Math.max(0, Number(standardInput && standardInput.value ? standardInput.value : 0));
+  const express = Math.max(0, Number(expressInput && expressInput.value ? expressInput.value : 0));
+
+  if (!Number.isFinite(standard) || !Number.isFinite(express)) {
+    showProductDeliveryFeeMessage('Please enter valid delivery fee numbers.', 'error');
+    return;
+  }
+
+  try {
+    const response = await adminFetch('/product-orders/delivery-fees', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ standard, express })
+    });
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      showProductDeliveryFeeMessage(result.error || 'Failed to save delivery fee settings.', 'error');
+      return;
+    }
+
+    showProductDeliveryFeeMessage('Delivery fee settings saved successfully.', 'success');
+    currentProductDeliveryFees = { standard, express };
+    showToast({
+      type: 'success',
+      title: 'Delivery fees updated',
+      message: `Standard: ₦${standard.toLocaleString()} • Express: ₦${express.toLocaleString()}`
+    });
+  } catch (error) {
+    console.error('Error saving admin delivery fees:', error);
+    showProductDeliveryFeeMessage('Error saving delivery fee settings.', 'error');
   }
 }
 
@@ -1538,6 +1632,7 @@ function formatDate(dateString) {
 function normalizeBookingStatus(status) {
   if (status === 'accepted') return 'approved';
   if (status === 'declined') return 'cancelled';
+  if (status === 'completed') return 'delivered';
   return status;
 }
 
@@ -1547,8 +1642,9 @@ function getStatusLabel(status) {
     approved: '✓ Approved',
     processed: '🧾 Processed',
     shipped: '🚚 Shipped',
+    on_the_way: '🛵 On the way',
     cancelled: '✗ Declined',
-    completed: '✓ Completed'
+    delivered: '📦 Delivered'
   };
 
   return labels[status] || status;
@@ -1590,11 +1686,17 @@ function displayProductOrders(orders) {
   orders.forEach(order => {
     const normalizedStatus = normalizeBookingStatus(order.status || 'pending');
     const statusLabel = getStatusLabel(normalizedStatus);
+    const normalizedSpeed = String(order.deliverySpeed || 'standard').trim().toLowerCase() === 'express' ? 'express' : 'standard';
+    const configuredFee = Math.max(0, Number(currentProductDeliveryFees[normalizedSpeed] || 0));
+    const orderDeliveryFee = Math.max(0, Number(order.deliveryFee || 0));
+    const feeMismatch = configuredFee !== orderDeliveryFee;
+    const recalcDisabled = normalizedStatus !== 'pending';
     const approveDisabled = normalizedStatus !== 'pending';
     const processDisabled = normalizedStatus !== 'approved';
     const shipDisabled = normalizedStatus !== 'processed';
-    const completeDisabled = normalizedStatus !== 'shipped';
-    const rejectDisabled = ['cancelled', 'completed'].includes(normalizedStatus);
+    const onTheWayDisabled = normalizedStatus !== 'shipped';
+    const deliveredDisabled = normalizedStatus !== 'on_the_way';
+    const rejectDisabled = ['cancelled', 'delivered'].includes(normalizedStatus);
 
     const itemsHtml = Array.isArray(order.items)
       ? order.items.map(i => `<li>${i.name} × ${i.quantity} — ₦${Number(i.lineTotal || 0).toLocaleString()}</li>`).join('')
@@ -1621,8 +1723,20 @@ function displayProductOrders(orders) {
           <strong>₦${Number(order.totalAmount || 0).toLocaleString()}</strong>
         </div>
         <div class="booking-field">
+          <label>Subtotal / Delivery</label>
+          <strong>₦${Number(order.itemsSubtotal || 0).toLocaleString()} + ₦${orderDeliveryFee.toLocaleString()}</strong>
+        </div>
+        <div class="booking-field">
           <label>Payment</label>
           <strong>${order.paymentMethod || 'N/A'}<br>Status: ${order.paymentStatus || 'pending'}</strong>
+        </div>
+        <div class="booking-field">
+          <label>Delivery speed</label>
+          <strong>${String(order.deliverySpeed || 'standard').toUpperCase()}</strong>
+        </div>
+        <div class="booking-field">
+          <label>Configured Fee Preview</label>
+          <strong>₦${configuredFee.toLocaleString()} ${feeMismatch ? '<span class="fee-warning">(Differs from order fee)</span>' : ''}</strong>
         </div>
       </div>
       <div class="booking-field product-order-address" style="margin:10px 0;">
@@ -1637,13 +1751,48 @@ function displayProductOrders(orders) {
         <button class="btn btn-accept" ${approveDisabled ? 'disabled' : ''} onclick="updateProductOrderStatus('${order.id}', 'approved')">✓ Approve</button>
         <button class="btn btn-info" ${processDisabled ? 'disabled' : ''} onclick="updateProductOrderStatus('${order.id}', 'processed')">🧾 Processed</button>
         <button class="btn btn-info" ${shipDisabled ? 'disabled' : ''} onclick="updateProductOrderStatus('${order.id}', 'shipped')">🚚 Shipped</button>
-        <button class="btn btn-accept" ${completeDisabled ? 'disabled' : ''} onclick="updateProductOrderStatus('${order.id}', 'completed')">🎉 Complete</button>
+        <button class="btn btn-info" ${onTheWayDisabled ? 'disabled' : ''} onclick="updateProductOrderStatus('${order.id}', 'on_the_way')">🛵 On the way</button>
+        <button class="btn btn-accept" ${deliveredDisabled ? 'disabled' : ''} onclick="updateProductOrderStatus('${order.id}', 'delivered')">📦 Delivered</button>
+        <button class="btn btn-info" ${recalcDisabled ? 'disabled' : ''} onclick="previewProductOrderRecalculation('${order.id}', ${Number(order.itemsSubtotal || 0)}, ${orderDeliveryFee}, ${Number(order.totalAmount || 0)}, '${normalizedSpeed}', '${normalizedStatus}')">🧮 Recalculate</button>
         <button class="btn btn-decline" ${rejectDisabled ? 'disabled' : ''} onclick="updateProductOrderStatus('${order.id}', 'cancelled')">✗ Reject</button>
         <button class="btn btn-decline" onclick="deleteProductOrder('${order.id}')">Delete</button>
       </div>
     `;
 
     container.appendChild(card);
+  });
+}
+
+function previewProductOrderRecalculation(orderId, itemsSubtotal, storedDeliveryFee, storedTotal, deliverySpeed, status) {
+  const normalizedStatus = String(status || '').trim().toLowerCase();
+  if (normalizedStatus !== 'pending') {
+    showToast({
+      type: 'info',
+      title: 'Preview unavailable',
+      message: 'Recalculation preview is available for pending orders only.'
+    });
+    return;
+  }
+
+  const speed = String(deliverySpeed || '').trim().toLowerCase() === 'express' ? 'express' : 'standard';
+  const configuredFee = Math.max(0, Number(currentProductDeliveryFees[speed] || 0));
+  const subtotal = Math.max(0, Number(itemsSubtotal || 0));
+  const existingFee = Math.max(0, Number(storedDeliveryFee || 0));
+  const existingTotal = Math.max(0, Number(storedTotal || 0));
+  const recalculatedTotal = subtotal + configuredFee;
+  const delta = recalculatedTotal - existingTotal;
+
+  const deltaLabel = delta === 0
+    ? '₦0 (no change)'
+    : delta > 0
+      ? `+₦${delta.toLocaleString()}`
+      : `-₦${Math.abs(delta).toLocaleString()}`;
+
+  showToast({
+    type: delta === 0 ? 'info' : 'success',
+    title: `Recalc Preview • ${orderId}`,
+    message: `Subtotal: ₦${subtotal.toLocaleString()} | Stored fee: ₦${existingFee.toLocaleString()} | Configured fee: ₦${configuredFee.toLocaleString()} | Stored total: ₦${existingTotal.toLocaleString()} | Recalculated total: ₦${recalculatedTotal.toLocaleString()} | Delta: ${deltaLabel}`,
+    timeoutMs: 6000
   });
 }
 

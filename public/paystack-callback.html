@@ -43,49 +43,88 @@
       }
 
       try {
-        const res = await fetch(`/api/payments/paystack/verify/${encodeURIComponent(reference)}`);
-        const data = await res.json();
+        const bookingRes = await fetch(`/api/payments/paystack/verify/${encodeURIComponent(reference)}`);
+        const bookingData = await bookingRes.json().catch(() => ({}));
 
-        if (!res.ok) {
-          resultEl.textContent = 'Payment verification failed.';
-          resultEl.className = 'status bad';
-          detailsEl.textContent = data && data.error ? data.error : 'Unknown error';
+        if (bookingRes.ok) {
+          if (bookingData.paid) {
+            resultEl.textContent = '✅ PAID — Payment verified successfully!';
+            resultEl.className = 'status ok';
+            try {
+              localStorage.setItem('lastPaymentStatus', 'paid');
+              if (bookingData.booking && bookingData.booking.id) {
+                localStorage.setItem('lastPaymentBookingId', bookingData.booking.id);
+              }
+            } catch (e) {
+              // ignore
+            }
+          } else {
+            resultEl.textContent = '❌ NOT PAID — Payment not successful.';
+            resultEl.className = 'status bad';
+            try {
+              localStorage.setItem('lastPaymentStatus', 'failed');
+              if (bookingData.booking && bookingData.booking.id) {
+                localStorage.setItem('lastPaymentBookingId', bookingData.booking.id);
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+
+          if (bookingData.booking && bookingData.booking.id) {
+            detailsEl.innerHTML = `Booking ID: <code>${bookingData.booking.id}</code> | Payment Status: <code>${bookingData.booking.paymentStatus}</code>`;
+          }
+
+          setTimeout(() => {
+            window.location.href = '/#booking';
+          }, 1800);
           return;
         }
 
-        if (data.paid) {
-          resultEl.textContent = '✅ PAID — Payment verified successfully!';
-          resultEl.className = 'status ok';
+        const productRes = await fetch(`/api/product-orders/payments/paystack/verify/${encodeURIComponent(reference)}`);
+        const productData = await productRes.json().catch(() => ({}));
 
+        if (!productRes.ok) {
+          resultEl.textContent = 'Payment verification failed.';
+          resultEl.className = 'status bad';
+          detailsEl.textContent = productData && productData.error
+            ? productData.error
+            : (bookingData && bookingData.error ? bookingData.error : 'Unknown error');
+          return;
+        }
+
+        if (productData.paid) {
+          resultEl.textContent = '✅ PAID — Product payment verified successfully!';
+          resultEl.className = 'status ok';
           try {
-            localStorage.setItem('lastPaymentStatus', 'paid');
-            if (data.booking && data.booking.id) {
-              localStorage.setItem('lastPaymentBookingId', data.booking.id);
+            localStorage.setItem('lastProductPaymentStatus', 'paid');
+            if (productData.order && productData.order.id) {
+              localStorage.setItem('lastProductPaymentOrderId', productData.order.id);
+              localStorage.setItem('lastProductOrderId', productData.order.id);
             }
           } catch (e) {
             // ignore
           }
         } else {
-          resultEl.textContent = '❌ NOT PAID — Payment not successful.';
+          resultEl.textContent = '❌ NOT PAID — Product payment not successful.';
           resultEl.className = 'status bad';
-
           try {
-            localStorage.setItem('lastPaymentStatus', 'failed');
-            if (data.booking && data.booking.id) {
-              localStorage.setItem('lastPaymentBookingId', data.booking.id);
+            localStorage.setItem('lastProductPaymentStatus', 'failed');
+            if (productData.order && productData.order.id) {
+              localStorage.setItem('lastProductPaymentOrderId', productData.order.id);
+              localStorage.setItem('lastProductOrderId', productData.order.id);
             }
           } catch (e) {
             // ignore
           }
         }
 
-        if (data.booking && data.booking.id) {
-          detailsEl.innerHTML = `Booking ID: <code>${data.booking.id}</code> | Payment Status: <code>${data.booking.paymentStatus}</code>`;
+        if (productData.order && productData.order.id) {
+          detailsEl.innerHTML = `Order ID: <code>${productData.order.id}</code> | Payment Status: <code>${productData.order.paymentStatus}</code>`;
         }
 
-        // Auto-return after a short pause.
         setTimeout(() => {
-          window.location.href = '/#booking';
+          window.location.href = '/#order-products';
         }, 1800);
       } catch (e) {
         resultEl.textContent = 'Payment verification error.';

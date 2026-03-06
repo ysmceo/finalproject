@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="CEO Unisex Salon offers professional hair, beauty, grooming, bookings, and product delivery services in Lagos.">
   <title>CEO UNISEX SALON - Professional Hair & Beauty Services</title>
   <link rel="manifest" href="/manifest.json">
   <link rel="icon" href="/images/logo.svg" type="image/svg+xml">
@@ -10,6 +11,8 @@
   <link rel="stylesheet" href="css/style.css">
 </head>
 <body>
+  <a class="skip-link" href="#home">Skip to main content</a>
+  <div id="scrollProgress" class="scroll-progress" aria-hidden="true"></div>
   <!-- Navigation -->
   <nav class="navbar">
     <div class="container">
@@ -31,7 +34,8 @@
           </div>
         </div>
       </div>
-      <ul class="nav-menu">
+      <button id="navMenuToggle" class="nav-toggle" aria-label="Open navigation menu" aria-expanded="false" aria-controls="mainNavMenu">☰</button>
+      <ul id="mainNavMenu" class="nav-menu">
         <li><a href="#home" data-i18n="nav_home">Home</a></li>
         <li><a href="#services" data-i18n="nav_services">Services</a></li>
         <li><a href="#products">Products</a></li>
@@ -54,11 +58,26 @@
   <!-- Hero Section -->
   <section id="home" class="hero">
     <div class="hero-content">
+      <div class="hero-pill">Premium care • Smart booking • Live tracking</div>
       <img class="hero-logo" src="/images/logo.svg" alt="CEO Unisex Salon logo">
       <h1 data-i18n="hero_title">CEO UNISEX SALON</h1>
       <p data-i18n="hero_subtitle">Where Beauty Meets Excellence</p>
       <p class="subtitle" data-i18n="hero_description">Transform Your Look with Our Professional Stylists</p>
       <button class="cta-btn" onclick="scrollToBooking()" data-i18n="hero_cta">Book Your Appointment</button>
+      <div class="hero-stats" aria-label="Salon highlights">
+        <div class="hero-stat">
+          <strong class="hero-stat-value" data-counter-target="12000">0</strong>
+          <span class="hero-stat-label">Happy Clients</span>
+        </div>
+        <div class="hero-stat">
+          <strong class="hero-stat-value" data-counter-target="15">0</strong>
+          <span class="hero-stat-label">Years Experience</span>
+        </div>
+        <div class="hero-stat">
+          <strong class="hero-stat-value" data-counter-target="8">0</strong>
+          <span class="hero-stat-label">Premium Services</span>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -121,6 +140,94 @@
         <!-- Products loaded from API -->
       </div>
 
+    </div>
+  </section>
+
+  <section id="order-products" class="booking-section">
+    <div class="track-bg" aria-hidden="true">
+      <span class="track-bg__slide track-bg__slide--1"></span>
+      <span class="track-bg__slide track-bg__slide--2"></span>
+      <span class="track-bg__slide track-bg__slide--3"></span>
+    </div>
+    <div class="container">
+      <h2>Order Products</h2>
+      <p class="section-subtitle">Place a product order online and choose standard or express delivery.</p>
+
+      <form id="productOrderForm" class="booking-form">
+        <div class="form-group">
+          <label for="productOrderName">Full Name *</label>
+          <input type="text" id="productOrderName" required>
+        </div>
+
+        <div class="form-group">
+          <label for="productOrderEmail">Email Address *</label>
+          <input type="email" id="productOrderEmail" required>
+        </div>
+
+        <div class="form-group">
+          <label for="productOrderPhone">Phone Number *</label>
+          <input type="tel" id="productOrderPhone" required>
+        </div>
+
+        <div class="form-group">
+          <label for="productOrderAddress">Delivery Address *</label>
+          <textarea id="productOrderAddress" rows="3" placeholder="Enter full delivery address" required></textarea>
+          <div class="address-lookup-actions">
+            <button type="button" id="productOrderAddressMapBtn" class="address-map-btn">🗺️ Open map</button>
+            <small id="productOrderAddressLookupStatus" class="form-help-text-tight"></small>
+          </div>
+          <div id="productOrderAddressSuggestions" class="address-suggestions hidden" aria-live="polite"></div>
+        </div>
+
+        <div class="form-group">
+          <label for="productOrderPaymentMethod">Payment Method *</label>
+          <select id="productOrderPaymentMethod" required>
+            <option value="">Select payment method...</option>
+            <option value="Cash">💵 Cash</option>
+            <option value="Bank Transfer">🏦 Bank Transfer</option>
+            <option value="Credit Card">💳 Credit Card</option>
+            <option value="Debit Card">💳 Debit Card</option>
+            <option value="USSD">📱 USSD</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="productOrderDeliverySpeed">Delivery Speed *</label>
+          <select id="productOrderDeliverySpeed" required>
+            <option value="standard">Standard Delivery</option>
+            <option value="express">Express Delivery (Faster)</option>
+          </select>
+          <small class="form-help-text-tight">Express orders are prioritized in courier dispatch and auto-delivery progression.</small>
+        </div>
+
+        <div class="form-group">
+          <label>🛍️ Select Products *</label>
+          <div id="productOrderPicker" class="booking-product-picker">
+            <div class="booking-product-empty">Products will load here...</div>
+          </div>
+          <div id="productOrderSummaryCard" class="order-summary-card" aria-live="polite">
+            <div class="order-summary-row">
+              <span>Items Subtotal</span>
+              <strong id="productOrderSubtotal">₦0</strong>
+            </div>
+            <div class="order-summary-row">
+              <span>Delivery Fee</span>
+              <strong id="productOrderDeliveryFee">₦0</strong>
+            </div>
+            <div class="order-summary-row order-summary-row-total">
+              <span>Estimated Grand Total</span>
+              <strong id="productOrderGrandTotal">₦0</strong>
+            </div>
+            <small id="productOrderSummary" class="form-help-text-tight order-summary-text">Select product(s) to see your live total.</small>
+          </div>
+        </div>
+
+        <button type="submit" class="submit-btn">Place Product Order</button>
+        <button type="button" id="clearProductOrderBtn" class="submit-btn submit-btn-secondary">Clear Form</button>
+      </form>
+
+      <div id="productOrderMessage" class="message"></div>
+      <div id="productOrderResult"></div>
     </div>
   </section>
 
@@ -538,6 +645,11 @@
         <div class="form-group is-initially-hidden" id="homeServiceAddressGroup">
           <label for="homeServiceAddress">Home Service Address *</label>
           <textarea id="homeServiceAddress" rows="3" placeholder="Enter your address for home service..."></textarea>
+          <div class="address-lookup-actions">
+            <button type="button" id="homeServiceAddressMapBtn" class="address-map-btn">🗺️ Open map</button>
+            <small id="homeServiceAddressLookupStatus" class="form-help-text-tight"></small>
+          </div>
+          <div id="homeServiceAddressSuggestions" class="address-suggestions hidden" aria-live="polite"></div>
         </div>
 
         <div class="form-group">
@@ -801,8 +913,8 @@
           </div>
           
           <div class="form-group">
-            <label for="contactMessage"><span data-i18n="contact_message">Message</span> *</label>
-            <textarea id="contactMessage" rows="5" required></textarea>
+            <label for="contactMessageText"><span data-i18n="contact_message">Message</span> *</label>
+            <textarea id="contactMessageText" rows="5" required></textarea>
           </div>
 
           <div class="form-group">
@@ -952,6 +1064,14 @@
       </div>
     </div>
   </footer>
+
+  <div id="floatingBookBar" class="floating-book-bar" aria-hidden="true">
+    <div class="floating-book-bar__inner">
+      <span class="floating-book-bar__text">✨ Ready for your glow-up?</span>
+      <span id="floatingUrgencyChip" class="floating-book-bar__chip" aria-live="polite">Est. slots today: --</span>
+      <button id="floatingBookNowBtn" type="button" class="floating-book-bar__btn">Book now</button>
+    </div>
+  </div>
 
   <!-- Language Selection Modal -->
   <div id="languageModal" class="modal">

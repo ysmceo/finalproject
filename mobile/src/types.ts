@@ -91,6 +91,9 @@ export type ProductOrder = {
   id: string;
   orderCode: string;
   status: string;
+  deliverySpeed?: 'standard' | 'express' | string;
+  itemsSubtotal?: number;
+  deliveryFee?: number;
   paymentStatus: string;
   paymentMethod: string;
   totalAmount: number;
@@ -101,6 +104,9 @@ export type ProductOrder = {
   paymentReference: string;
   bankTransferReference: string;
   items: ProductOrderItem[];
+  shippedAt?: string | null;
+  onTheWayAt?: string | null;
+  deliveredAt?: string | null;
   createdAt: string;
   updatedAt?: string | null;
 };

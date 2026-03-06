@@ -696,7 +696,7 @@ async function maybeSendProductOrderStatusEmail({ order, previousStatus, newStat
     return { sent: false, skipped: true, reason: 'No status change' };
   }
 
-  const notifyStatuses = ['processed', 'shipped', 'completed', 'cancelled'];
+  const notifyStatuses = ['processed', 'shipped', 'on_the_way', 'delivered', 'cancelled'];
   if (!notifyStatuses.includes(next)) {
     return { sent: false, skipped: true, reason: 'No email for this status' };
   }
@@ -720,12 +720,19 @@ async function maybeSendProductOrderStatusEmail({ order, previousStatus, newStat
       subtitle: 'Your package is on the way.',
       body: 'Your order has been shipped and is currently in transit to your delivery address.'
     },
-    completed: {
-      label: 'Completed',
-      emoji: '🎉',
+    on_the_way: {
+      label: 'On the way',
+      emoji: '🛵',
+      accent: '#ff8c00',
+      subtitle: 'Courier update: your order is now on the way.',
+      body: 'Your order is currently with our courier rider and heading to your location.'
+    },
+    delivered: {
+      label: 'Delivered',
+      emoji: '📦',
       accent: '#1e9d53',
-      subtitle: 'Your order delivery is complete.',
-      body: 'Your product order has been completed successfully. Thank you for shopping with us.'
+      subtitle: 'Your order has been delivered.',
+      body: 'Your product order has been delivered successfully. Thank you for shopping with us.'
     },
     cancelled: {
       label: 'Cancelled',
@@ -879,6 +886,8 @@ const MONNIFY_BASE_URL = process.env.MONNIFY_BASE_URL || (MONNIFY_ENV === 'sandb
 const SALON_BANK_ACCOUNT_NUMBER = process.env.SALON_BANK_ACCOUNT_NUMBER || '0204661552';
 const SALON_BANK_NAME = process.env.SALON_BANK_NAME || 'YSMBANK CEOS';
 const SALON_BANK_ACCOUNT_NAME = process.env.SALON_BANK_ACCOUNT_NAME || 'CEO SALOON';
+const PRODUCT_STANDARD_DELIVERY_FEE = Math.max(0, Number(process.env.PRODUCT_STANDARD_DELIVERY_FEE || 0));
+const PRODUCT_EXPRESS_DELIVERY_FEE = Math.max(0, Number(process.env.PRODUCT_EXPRESS_DELIVERY_FEE || 1500));
 
 let monnifyAccessTokenCache = {
   token: '',
@@ -1012,6 +1021,12 @@ function initializeDatabase() {
       messages: [],
       admins: [],
       adminAccessCodes: [],
+      settings: {
+        productDeliveryFees: {
+          standard: PRODUCT_STANDARD_DELIVERY_FEE,
+          express: PRODUCT_EXPRESS_DELIVERY_FEE
+        }
+      },
       products: getDefaultProducts(),
       services: [
         { id: 1, name: 'Hair Cut', price: 5000, duration: 30 },
@@ -1042,6 +1057,31 @@ function readDatabase() {
   if (!Array.isArray(db.adminAccessCodes)) db.adminAccessCodes = [];
   if (!Array.isArray(db.bookingNotifications)) db.bookingNotifications = [];
   if (!Array.isArray(db.productOrderNotifications)) db.productOrderNotifications = [];
+  if (!db.settings || typeof db.settings !== 'object') db.settings = {};
+
+  let shouldPersistSettings = false;
+  if (!db.settings.productDeliveryFees || typeof db.settings.productDeliveryFees !== 'object') {
+    db.settings.productDeliveryFees = {
+      standard: PRODUCT_STANDARD_DELIVERY_FEE,
+      express: PRODUCT_EXPRESS_DELIVERY_FEE
+    };
+    shouldPersistSettings = true;
+  } else {
+    const standard = Number(db.settings.productDeliveryFees.standard);
+    const express = Number(db.settings.productDeliveryFees.express);
+    const normalizedStandard = Number.isFinite(standard) && standard >= 0 ? standard : PRODUCT_STANDARD_DELIVERY_FEE;
+    const normalizedExpress = Number.isFinite(express) && express >= 0 ? express : PRODUCT_EXPRESS_DELIVERY_FEE;
+
+    if (normalizedStandard !== standard || normalizedExpress !== express) {
+      db.settings.productDeliveryFees.standard = normalizedStandard;
+      db.settings.productDeliveryFees.express = normalizedExpress;
+      shouldPersistSettings = true;
+    }
+  }
+
+  if (shouldPersistSettings) {
+    writeDatabase(db);
+  }
 
   if (db.products.length === 0) {
     db.products = getDefaultProducts();
@@ -1079,10 +1119,164 @@ function normalizeProductOrderStatus(status) {
   const normalized = String(status || '').trim().toLowerCase();
   if (normalized === 'accepted') return 'approved';
   if (normalized === 'declined' || normalized === 'rejected') return 'cancelled';
-  if (['pending', 'approved', 'processed', 'shipped', 'completed', 'cancelled'].includes(normalized)) {
+  if (normalized === 'completed') return 'delivered';
+  if (['pending', 'approved', 'processed', 'shipped', 'on_the_way', 'delivered', 'cancelled'].includes(normalized)) {
     return normalized;
   }
   return '';
+}
+
+function normalizeDeliverySpeed(speed) {
+  const normalized = String(speed || '').trim().toLowerCase();
+  if (['express', 'fast'].includes(normalized)) return 'express';
+  return 'standard';
+}
+
+function getProductDeliveryFeeSettings(db) {
+  const standardFromDb = Number(db && db.settings && db.settings.productDeliveryFees
+    ? db.settings.productDeliveryFees.standard
+    : NaN);
+  const expressFromDb = Number(db && db.settings && db.settings.productDeliveryFees
+    ? db.settings.productDeliveryFees.express
+    : NaN);
+
+  return {
+    standard: Number.isFinite(standardFromDb) && standardFromDb >= 0
+      ? standardFromDb
+      : PRODUCT_STANDARD_DELIVERY_FEE,
+    express: Number.isFinite(expressFromDb) && expressFromDb >= 0
+      ? expressFromDb
+      : PRODUCT_EXPRESS_DELIVERY_FEE
+  };
+}
+
+function getProductOrderDeliveryFee(speed, db) {
+  const normalized = normalizeDeliverySpeed(speed);
+  const fees = getProductDeliveryFeeSettings(db);
+  if (normalized === 'express') {
+    return fees.express;
+  }
+  return fees.standard;
+}
+
+function getDeliveryAutomationThresholds(speed) {
+  const normalized = normalizeDeliverySpeed(speed);
+  if (normalized === 'express') {
+    return {
+      shippedToOnTheWayMs: 30 * 60 * 1000,
+      onTheWayToDeliveredMs: 6 * 60 * 60 * 1000
+    };
+  }
+
+  return {
+    shippedToOnTheWayMs: 2 * 60 * 60 * 1000,
+    onTheWayToDeliveredMs: 24 * 60 * 60 * 1000
+  };
+}
+
+async function maybeAutoAdvanceProductOrderDelivery(db, order) {
+  if (!db || !order) return false;
+
+  let changed = false;
+  const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+
+  order.deliverySpeed = normalizeDeliverySpeed(order.deliverySpeed);
+  const thresholds = getDeliveryAutomationThresholds(order.deliverySpeed);
+
+  const currentStatus = normalizeProductOrderStatus(order.status || 'pending') || 'pending';
+  order.status = currentStatus;
+
+  if (!order.statusTimestamps || typeof order.statusTimestamps !== 'object') {
+    order.statusTimestamps = {};
+  }
+
+  const timestamps = order.statusTimestamps;
+
+  const ensureTimestamp = (key, fallbackValue) => {
+    const existing = String(timestamps[key] || '').trim();
+    if (existing) return existing;
+    const fallback = String(fallbackValue || '').trim();
+    if (fallback) {
+      timestamps[key] = fallback;
+      return fallback;
+    }
+    timestamps[key] = nowIso;
+    return timestamps[key];
+  };
+
+  if (['shipped', 'on_the_way', 'delivered'].includes(order.status)) {
+    const shippedAt = ensureTimestamp('shippedAt', order.shippedAt || order.updatedAt || order.createdAt);
+    order.shippedAt = shippedAt;
+  }
+
+  if (['on_the_way', 'delivered'].includes(order.status)) {
+    const onTheWayAt = ensureTimestamp('onTheWayAt', order.onTheWayAt || order.shippedAt || order.updatedAt || order.createdAt);
+    order.onTheWayAt = onTheWayAt;
+  }
+
+  if (order.status === 'delivered') {
+    const deliveredAt = ensureTimestamp('deliveredAt', order.deliveredAt || order.onTheWayAt || order.updatedAt || order.createdAt);
+    order.deliveredAt = deliveredAt;
+  }
+
+  const shippedAtMs = Date.parse(String(order.shippedAt || timestamps.shippedAt || ''));
+  if (order.status === 'shipped' && Number.isFinite(shippedAtMs) && (nowMs - shippedAtMs) >= thresholds.shippedToOnTheWayMs) {
+    const previousStatus = order.status;
+    order.status = 'on_the_way';
+    order.onTheWayAt = nowIso;
+    timestamps.onTheWayAt = nowIso;
+    order.updatedAt = nowIso;
+    changed = true;
+
+    addProductOrderNotification(
+      db,
+      order,
+      'order_on_the_way',
+      `🛵 Your order (${order.orderCode}) is now on the way with our courier rider.`
+    );
+
+    try {
+      await maybeSendProductOrderStatusEmail({
+        order,
+        previousStatus,
+        newStatus: 'on_the_way'
+      });
+    } catch (error) {
+      order.lastStatusEmailError = error && error.message ? String(error.message) : 'Email send failed';
+      order.lastStatusEmailErrorAt = nowIso;
+    }
+  }
+
+  const onTheWayAtMs = Date.parse(String(order.onTheWayAt || timestamps.onTheWayAt || ''));
+  if (order.status === 'on_the_way' && Number.isFinite(onTheWayAtMs) && (nowMs - onTheWayAtMs) >= thresholds.onTheWayToDeliveredMs) {
+    const previousStatus = order.status;
+    order.status = 'delivered';
+    order.deliveredAt = nowIso;
+    timestamps.deliveredAt = nowIso;
+    order.updatedAt = nowIso;
+    changed = true;
+
+    addProductOrderNotification(
+      db,
+      order,
+      'order_delivered',
+      `📦 Your order (${order.orderCode}) has been delivered by the courier rider. Enjoy!`
+    );
+
+    try {
+      await maybeSendProductOrderStatusEmail({
+        order,
+        previousStatus,
+        newStatus: 'delivered'
+      });
+    } catch (error) {
+      order.lastStatusEmailError = error && error.message ? String(error.message) : 'Email send failed';
+      order.lastStatusEmailErrorAt = nowIso;
+    }
+  }
+
+  return changed;
 }
 
 function addProductOrderNotification(db, order, type, message) {
@@ -1478,7 +1672,8 @@ app.post('/api/product-orders', async (req, res) => {
     phone,
     address,
     paymentMethod,
-    items
+    items,
+    deliverySpeed
   } = req.body || {};
 
   const normalizedName = String(name || '').trim();
@@ -1487,6 +1682,7 @@ app.post('/api/product-orders', async (req, res) => {
   const normalizedAddress = String(address || '').trim();
   const normalizedPaymentMethod = String(paymentMethod || '').trim();
   const normalizedItems = Array.isArray(items) ? items : [];
+  const normalizedDeliverySpeed = normalizeDeliverySpeed(deliverySpeed);
 
   if (!normalizedName || !normalizedEmail || !normalizedPhone || !normalizedAddress || !normalizedPaymentMethod) {
     return res.status(400).json({ error: 'name, email, phone, address and paymentMethod are required' });
@@ -1502,7 +1698,7 @@ app.post('/api/product-orders', async (req, res) => {
 
   const db = readDatabase();
   const orderItems = [];
-  let totalAmount = 0;
+  let itemsSubtotal = 0;
 
   for (const item of normalizedItems) {
     const productId = Number(item && item.productId);
@@ -1520,7 +1716,7 @@ app.post('/api/product-orders', async (req, res) => {
 
     const unitPrice = Number(product.price || 0);
     const lineTotal = unitPrice * qty;
-    totalAmount += lineTotal;
+    itemsSubtotal += lineTotal;
 
     orderItems.push({
       productId: Number(product.id),
@@ -1532,9 +1728,12 @@ app.post('/api/product-orders', async (req, res) => {
     });
   }
 
-  if (totalAmount <= 0) {
+  if (itemsSubtotal <= 0) {
     return res.status(400).json({ error: 'Order amount must be greater than zero' });
   }
+
+  const deliveryFee = getProductOrderDeliveryFee(normalizedDeliverySpeed, db);
+  const totalAmount = itemsSubtotal + deliveryFee;
 
   // Reserve stock at checkout submission.
   for (const line of orderItems) {
@@ -1554,6 +1753,8 @@ app.post('/api/product-orders', async (req, res) => {
     address: normalizedAddress,
     paymentMethod: normalizedPaymentMethod,
     items: orderItems,
+    itemsSubtotal,
+    deliveryFee,
     totalAmount,
     amountDueNow: totalAmount,
     amountRemaining: totalAmount,
@@ -1562,6 +1763,10 @@ app.post('/api/product-orders', async (req, res) => {
     paymentReference: '',
     paidAmount: 0,
     bankTransferReference: '',
+    deliverySpeed: normalizedDeliverySpeed,
+    statusTimestamps: {
+      createdAt: new Date().toISOString()
+    },
     status: normalizeProductOrderStatus('pending'),
     createdAt: new Date().toISOString()
   };
@@ -1576,7 +1781,7 @@ app.post('/api/product-orders', async (req, res) => {
     db,
     order,
     'order_created',
-    `🧾 Your order (${order.orderCode}) has been received and is pending review.`
+    `🧾 Your order (${order.orderCode}) has been received and is pending review. Delivery speed: ${order.deliverySpeed}.`
   );
 
   let adminEmailResult = null;
@@ -1585,7 +1790,7 @@ app.post('/api/product-orders', async (req, res) => {
       const recipients = Array.from(new Set(db.admins.map(a => normalizeEmail(a.email)).filter(Boolean)));
       if (recipients.length) {
         const itemsHtml = order.items.map(i => `<li>${String(i.name).replace(/</g,'&lt;').replace(/>/g,'&gt;')} × ${i.quantity} — ₦${Number(i.lineTotal || 0).toLocaleString()}</li>`).join('');
-        const text = `New product order received.\n\nOrder ID: ${order.id}\nCustomer: ${order.name}\nEmail: ${order.email}\nPhone: ${order.phone}\nTotal: ₦${Number(order.totalAmount || 0).toLocaleString()}\nPayment Method: ${order.paymentMethod}`;
+        const text = `New product order received.\n\nOrder ID: ${order.id}\nCustomer: ${order.name}\nEmail: ${order.email}\nPhone: ${order.phone}\nTotal: ₦${Number(order.totalAmount || 0).toLocaleString()}\nPayment Method: ${order.paymentMethod}\nDelivery Speed: ${order.deliverySpeed}`;
         const html = `
           <div style="font-family: Arial, sans-serif; line-height:1.5;">
             <h2 style="margin:0 0 10px; color:#4a0e4e;">🛒 New Product Order</h2>
@@ -1594,6 +1799,7 @@ app.post('/api/product-orders', async (req, res) => {
             <p><strong>Phone:</strong> ${String(order.phone).replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>
             <p><strong>Address:</strong> ${String(order.address).replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>
             <p><strong>Payment Method:</strong> ${String(order.paymentMethod).replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>
+            <p><strong>Delivery Speed:</strong> ${String(order.deliverySpeed).replace(/</g,'&lt;').replace(/>/g,'&gt;')}</p>
             <p><strong>Total:</strong> ₦${Number(order.totalAmount || 0).toLocaleString()}</p>
             <p><strong>Items:</strong></p>
             <ul>${itemsHtml}</ul>
@@ -1635,8 +1841,56 @@ app.post('/api/product-orders', async (req, res) => {
   });
 });
 
+// Product order delivery fee configuration (Customer)
+app.get('/api/product-orders/delivery-fees', (req, res) => {
+  const db = readDatabase();
+  const speed = String(req.query.deliverySpeed || '').trim();
+  const normalizedSpeed = normalizeDeliverySpeed(speed);
+
+  const fees = getProductDeliveryFeeSettings(db);
+
+  return res.json({
+    fees,
+    selectedSpeed: normalizedSpeed,
+    selectedFee: fees[normalizedSpeed]
+  });
+});
+
+// Product order delivery fee configuration (Admin)
+app.get('/api/admin/product-orders/delivery-fees', requireAdminAuth, (req, res) => {
+  const db = readDatabase();
+  return res.json({
+    fees: getProductDeliveryFeeSettings(db)
+  });
+});
+
+app.put('/api/admin/product-orders/delivery-fees', requireAdminAuth, (req, res) => {
+  const db = readDatabase();
+  const standardRaw = Number(req.body && req.body.standard);
+  const expressRaw = Number(req.body && req.body.express);
+
+  if (!Number.isFinite(standardRaw) || !Number.isFinite(expressRaw)) {
+    return res.status(400).json({ error: 'standard and express delivery fees must be valid numbers' });
+  }
+
+  const standard = Math.max(0, standardRaw);
+  const express = Math.max(0, expressRaw);
+
+  if (!db.settings || typeof db.settings !== 'object') {
+    db.settings = {};
+  }
+
+  db.settings.productDeliveryFees = { standard, express };
+  writeDatabase(db);
+
+  return res.json({
+    message: 'Product delivery fees updated successfully',
+    fees: db.settings.productDeliveryFees
+  });
+});
+
 // Track product order by order code + email (Customer)
-app.get('/api/product-orders/track', (req, res) => {
+app.get('/api/product-orders/track', async (req, res) => {
   const orderCode = String(req.query.orderCode || '').trim().toUpperCase();
   const email = normalizeEmail(req.query.email);
 
@@ -1655,6 +1909,11 @@ app.get('/api/product-orders/track', (req, res) => {
     return res.status(401).json({ error: 'Email does not match this product order' });
   }
 
+  const autoAdvanced = await maybeAutoAdvanceProductOrderDelivery(db, order);
+  if (autoAdvanced) {
+    writeDatabase(db);
+  }
+
   const notifications = (db.productOrderNotifications || [])
     .filter(n => String(n.orderId) === String(order.id))
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
@@ -1666,6 +1925,8 @@ app.get('/api/product-orders/track', (req, res) => {
       status: order.status,
       paymentStatus: order.paymentStatus,
       paymentMethod: order.paymentMethod,
+      itemsSubtotal: Number(order.itemsSubtotal || 0),
+      deliveryFee: Number(order.deliveryFee || 0),
       totalAmount: order.totalAmount,
       amountDueNow: order.amountDueNow,
       amountRemaining: order.amountRemaining,
@@ -1673,6 +1934,10 @@ app.get('/api/product-orders/track', (req, res) => {
       paymentProvider: order.paymentProvider,
       paymentReference: order.paymentReference,
       bankTransferReference: order.bankTransferReference,
+      deliverySpeed: order.deliverySpeed,
+      shippedAt: order.shippedAt || null,
+      onTheWayAt: order.onTheWayAt || null,
+      deliveredAt: order.deliveredAt || null,
       items: Array.isArray(order.items) ? order.items : [],
       createdAt: order.createdAt,
       updatedAt: order.updatedAt || null
@@ -1682,7 +1947,7 @@ app.get('/api/product-orders/track', (req, res) => {
 });
 
 // Track product order by id OR order code (legacy/customer convenience)
-app.get('/api/product-orders/:id/track', (req, res) => {
+app.get('/api/product-orders/:id/track', async (req, res) => {
   const lookupToken = String(req.params.id || '').trim();
   const lookupCode = lookupToken.toUpperCase();
   const email = normalizeEmail(req.query.email);
@@ -1701,6 +1966,11 @@ app.get('/api/product-orders/:id/track', (req, res) => {
 
   if (normalizeEmail(order.email) !== email) {
     return res.status(401).json({ error: 'Email does not match this product order' });
+  }
+
+  const autoAdvanced = await maybeAutoAdvanceProductOrderDelivery(db, order);
+  if (autoAdvanced) {
+    writeDatabase(db);
   }
 
   const notifications = (db.productOrderNotifications || [])
@@ -3058,8 +3328,19 @@ app.get('/api/admin/bookings', requireAdminAuth, (req, res) => {
 });
 
 // Get all product orders (Admin)
-app.get('/api/admin/product-orders', requireAdminAuth, (req, res) => {
+app.get('/api/admin/product-orders', requireAdminAuth, async (req, res) => {
   const db = readDatabase();
+  let hasAutoChanges = false;
+  for (const order of (db.productOrders || [])) {
+    // eslint-disable-next-line no-await-in-loop
+    const changed = await maybeAutoAdvanceProductOrderDelivery(db, order);
+    if (changed) hasAutoChanges = true;
+  }
+
+  if (hasAutoChanges) {
+    writeDatabase(db);
+  }
+
   res.json(db.productOrders || []);
 });
 
@@ -3068,8 +3349,9 @@ app.put('/api/admin/product-orders/:id', requireAdminAuth, async (req, res) => {
   const orderId = String(req.params.id || '').trim();
   const requestedStatus = String((req.body && req.body.status) || '').trim().toLowerCase();
   const status = normalizeProductOrderStatus(requestedStatus);
+  const requestedDeliverySpeed = normalizeDeliverySpeed(req.body && req.body.deliverySpeed);
 
-  if (!['pending', 'approved', 'processed', 'shipped', 'cancelled', 'completed'].includes(status)) {
+  if (!['pending', 'approved', 'processed', 'shipped', 'on_the_way', 'delivered', 'cancelled'].includes(status)) {
     return res.status(400).json({ error: 'Invalid status' });
   }
 
@@ -3082,9 +3364,19 @@ app.put('/api/admin/product-orders/:id', requireAdminAuth, async (req, res) => {
 
   const previousStatus = normalizeProductOrderStatus(order.status || 'pending') || 'pending';
   const statusChanged = previousStatus !== status;
+  const speedChanged = normalizeDeliverySpeed(order.deliverySpeed) !== requestedDeliverySpeed;
 
+  order.deliverySpeed = requestedDeliverySpeed;
   order.status = status;
   order.updatedAt = new Date().toISOString();
+
+  if (!order.statusTimestamps || typeof order.statusTimestamps !== 'object') {
+    order.statusTimestamps = {};
+  }
+
+  if (!order.statusTimestamps.createdAt) {
+    order.statusTimestamps.createdAt = String(order.createdAt || order.updatedAt || new Date().toISOString());
+  }
 
   if (statusChanged && status === 'approved') {
     addProductOrderNotification(db, order, 'order_approved', `✅ Your order (${order.orderCode}) has been approved and queued for processing.`);
@@ -3095,15 +3387,29 @@ app.put('/api/admin/product-orders/:id', requireAdminAuth, async (req, res) => {
   }
 
   if (statusChanged && status === 'shipped') {
+    order.shippedAt = order.updatedAt;
+    order.statusTimestamps.shippedAt = order.updatedAt;
     addProductOrderNotification(db, order, 'order_shipped', `🚚 Your order (${order.orderCode}) has been shipped and is on the way.`);
   }
 
-  if (statusChanged && status === 'completed') {
-    addProductOrderNotification(db, order, 'order_completed', `🎉 Your order (${order.orderCode}) has been completed. Thank you for shopping with us.`);
+  if (statusChanged && status === 'on_the_way') {
+    order.onTheWayAt = order.updatedAt;
+    order.statusTimestamps.onTheWayAt = order.updatedAt;
+    addProductOrderNotification(db, order, 'order_on_the_way', `🛵 Your order (${order.orderCode}) is now on the way with our courier rider.`);
+  }
+
+  if (statusChanged && status === 'delivered') {
+    order.deliveredAt = order.updatedAt;
+    order.statusTimestamps.deliveredAt = order.updatedAt;
+    addProductOrderNotification(db, order, 'order_delivered', `📦 Your order (${order.orderCode}) has been delivered by the courier rider. Enjoy!`);
   }
 
   if (statusChanged && status === 'cancelled') {
     addProductOrderNotification(db, order, 'order_cancelled', `❌ Your order (${order.orderCode}) was cancelled. Please contact support if needed.`);
+  }
+
+  if (speedChanged) {
+    addProductOrderNotification(db, order, 'delivery_speed_updated', `⚡ Delivery speed updated to ${order.deliverySpeed}.`);
   }
 
   let customerEmail;
@@ -3132,6 +3438,7 @@ app.put('/api/admin/product-orders/:id', requireAdminAuth, async (req, res) => {
       ? `Product order status updated to ${status}`
       : `Product order already ${status}. No status change.`,
     statusChanged,
+    speedChanged,
     previousStatus,
     currentStatus: status,
     notifications: {
