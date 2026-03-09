@@ -81,6 +81,43 @@ This project supports a staged migration strategy from `database.json` to Prisma
 - `npm run prisma:push` → sync schema to SQLite database.
 - `npm run prisma:sync-json` → import existing `database.json` records into Prisma.
 
+## Vercel Deployment (Production)
+
+This repository is prepared for Vercel serverless deployment using:
+
+- `api/index.js` (serverless entrypoint)
+- `vercel.json` (route config)
+
+### Important production notes
+
+- Do **not** rely on local file persistence in Vercel.
+- `database.json` writes are not durable in serverless runtime.
+- `public/uploads` local file uploads are not durable.
+- For production, use a hosted database via `DATABASE_URL` (recommended: Postgres/Neon/Supabase).
+- For uploads, use external object storage (for example Cloudinary or S3).
+
+### Required Vercel environment variables
+
+Set these in your Vercel Project → Settings → Environment Variables:
+
+- `PUBLIC_BASE_URL` = your Vercel domain (for example `https://your-app.vercel.app`)
+- `DATABASE_URL`
+- `DATA_STORE_MODE=auto`
+- `ADMIN_SECRET_PASSCODE`
+- `INVOICE_ACCESS_TOKEN_SECRET`
+
+Set payment/email variables as needed (`PAYSTACK_*`, `STRIPE_*`, `MONNIFY_*`, `SMTP_*`, etc.).
+
+### Deploy steps
+
+1. Import GitHub repo into Vercel.
+2. Configure environment variables.
+3. Deploy to production.
+4. Validate key endpoints:
+     - `/api/services`
+     - `/api/bookings/available-slots?date=YYYY-MM-DD`
+     - `/api/payments/paystack/status`
+
 ## Project Structure
 
 ```

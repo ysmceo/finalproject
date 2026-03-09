@@ -15,12 +15,14 @@ require('dotenv').config();
 
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
+const IS_VERCEL_RUNTIME = Boolean(process.env.VERCEL);
 const ADMIN_SECRET_PASSCODE = process.env.ADMIN_SECRET_PASSCODE || 'CHANGE_ME_ADMIN_PASSCODE';
 const ONE_TIME_CODE_TTL_MS = 10 * 60 * 1000;
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || '';
 const PAYSTACK_PAYMENT_PAGE_URL = process.env.PAYSTACK_PAYMENT_PAGE_URL || '';
 let ACTIVE_PORT = PORT;
-let PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL || `http://localhost:${ACTIVE_PORT}`;
+let PUBLIC_BASE_URL = process.env.PUBLIC_BASE_URL
+  || (process.env.VERCEL_URL ? `https://${String(process.env.VERCEL_URL).trim()}` : `http://localhost:${ACTIVE_PORT}`);
 const GROK_API_KEY = String(process.env.GROK_API_KEY || '').trim();
 const GROK_BASE_URL = String(process.env.GROK_BASE_URL || 'https://api.x.ai/v1').trim().replace(/\/+$/, '');
 const GROK_MODEL = String(process.env.GROK_MODEL || 'grok-2-latest').trim();
@@ -5395,7 +5397,7 @@ app.post('/api/admin/verify', (req, res) => {
   }
 });
 
-const hasExplicitPublicBaseUrl = Boolean(String(process.env.PUBLIC_BASE_URL || '').trim());
+const hasExplicitPublicBaseUrl = Boolean(String(process.env.PUBLIC_BASE_URL || process.env.VERCEL_URL || '').trim());
 const preferredPorts = [
   Number(PORT),
   3002,
@@ -5446,4 +5448,8 @@ function startServerWithPortFallback(index = 0) {
   });
 }
 
-startServerWithPortFallback();
+if (!IS_VERCEL_RUNTIME && require.main === module) {
+  startServerWithPortFallback();
+}
+
+module.exports = app;
