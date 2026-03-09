@@ -1,20 +1,113 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { ActivityIndicator, Linking, Platform, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-import { WEB_BASE_URL } from '../config';
+import { WEB_BASE_URL, WEB_BASE_URL_CANDIDATES } from '../config';
 import { useThemePrefs } from '../theme';
 import { getMobilePalette, MOBILE_SHAPE, MOBILE_SPACE, MOBILE_TYPE } from '../ui/polish';
 
-export default function HomeWebScreen() {
+type HomeWebScreenRouteParams = {
+  /**
+   * Optional website path/hash to open from WEB_BASE_URL.
+   * Examples: '#booking', '#track-booking', '/admin.html'
+   */
+  initialPath?: string;
+};
+
+type HomeWebScreenProps = {
+  route?: {
+    params?: HomeWebScreenRouteParams;
+  };
+};
+
+export default function HomeWebScreen({ route }: HomeWebScreenProps) {
   const { resolvedColorScheme } = useThemePrefs();
   const isDark = resolvedColorScheme === 'dark';
   const palette = getMobilePalette(isDark);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [resolvedBaseUrl, setResolvedBaseUrl] = useState<string>(WEB_BASE_URL);
+  const [resolvingBaseUrl, setResolvingBaseUrl] = useState<boolean>(true);
+  const [reloadVersion, setReloadVersion] = useState<number>(0);
+
+  const resolveReachableBaseUrl = useCallback(async () => {
+    setResolvingBaseUrl(true);
+
+    const candidates = Array.isArray(WEB_BASE_URL_CANDIDATES) && WEB_BASE_URL_CANDIDATES.length
+      ? WEB_BASE_URL_CANDIDATES
+      : [WEB_BASE_URL];
+
+    for (const candidate of candidates) {
+      const base = String(candidate || '').replace(/\/+$/, '');
+      if (!base) continue;
+
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 4000);
+
+      try {
+        const probe = await fetch(`${base}/api/products`, {
+          method: 'GET',
+          headers: { Accept: 'application/json' },
+          signal: controller.signal
+        });
+
+        if (!probe.ok) continue;
+
+        const data = await probe.json().catch(() => null);
+        if (!Array.isArray(data)) continue;
+
+        setResolvedBaseUrl(base);
+        setResolvingBaseUrl(false);
+        setLoadError(null);
+        return;
+      } catch {
+        // Try next candidate.
+      } finally {
+        clearTimeout(timeout);
+      }
+    }
+
+    setResolvedBaseUrl(String(WEB_BASE_URL || '').replace(/\/+$/, ''));
+    setResolvingBaseUrl(false);
+    setLoadError('Unable to reach website server. Please ensure backend is running and reachable from this device.');
+  }, []);
+
+  useEffect(() => {
+    resolveReachableBaseUrl();
+  }, [resolveReachableBaseUrl, reloadVersion]);
 
   const startUrl = useMemo(() => {
-    // Keep it simple: load the public website root.
-    return WEB_BASE_URL;
-  }, []);
+    // Keep it simple: load the public website root or a specific section.
+    const initialPath = String(route?.params?.initialPath || '').trim();
+    const base = String(resolvedBaseUrl || WEB_BASE_URL).replace(/\/+$/, '');
+
+    if (!initialPath) return base;
+
+    if (initialPath.startsWith('#')) {
+      return `${base}/${initialPath}`;
+    }
+
+    const normalizedPath = initialPath.startsWith('/') ? initialPath : `/${initialPath}`;
+    return `${base}${normalizedPath}`;
+  }, [resolvedBaseUrl, route?.params?.initialPath]);
+
+  if (resolvingBaseUrl) {
+    return (
+      <View style={[styles.loading, { backgroundColor: palette.bg }]}>
+        <ActivityIndicator size="large" color={palette.primary} />
+        <Text style={{ marginTop: 10, color: palette.textMuted }}>Connecting to website…</Text>
+      </View>
+    );
+  }
+
+  const handleRetry = () => {
+    setLoadError(null);
+    setReloadVersion(prev => prev + 1);
+  };
+
+  const connectionLabel = useMemo(() => {
+    const value = String(resolvedBaseUrl || WEB_BASE_URL).trim();
+    if (!value) return 'Connected: unknown';
+    return `Connected: ${value}`;
+  }, [resolvedBaseUrl]);
 
   // IMPORTANT: react-native-webview is not supported on Expo Web.
   // Also: importing it at the top-level can break the web bundle.
@@ -29,8 +122,12 @@ export default function HomeWebScreen() {
   if (Platform.OS === 'web') {
     return (
       <View style={{ flex: 1, backgroundColor: palette.bg }}>
+        <View style={[styles.connectionBanner, { backgroundColor: palette.cardMuted, borderColor: palette.border }]}>
+          <Text numberOfLines={1} style={[styles.connectionBannerText, { color: palette.textMuted }]}>{connectionLabel}</Text>
+        </View>
         {/* eslint-disable-next-line react/no-unknown-property */}
         <iframe
+          key={`${startUrl}:${reloadVersion}`}
           title="CEO Salon Website"
           src={startUrl}
           width="100%"
@@ -54,9 +151,7 @@ export default function HomeWebScreen() {
 
         <TouchableOpacity
           style={[styles.button, { backgroundColor: palette.primary }]}
-          onPress={() => {
-            setLoadError(null);
-          }}
+          onPress={handleRetry}
         >
           <Text style={styles.buttonText}>Retry</Text>
         </TouchableOpacity>
@@ -75,7 +170,11 @@ export default function HomeWebScreen() {
 
   return (
     <View style={{ flex: 1, backgroundColor: palette.bg }}>
+      <View style={[styles.connectionBanner, { backgroundColor: palette.cardMuted, borderColor: palette.border }]}>
+        <Text numberOfLines={1} style={[styles.connectionBannerText, { color: palette.textMuted }]}>{connectionLabel}</Text>
+      </View>
       <NativeWebView
+        key={`${startUrl}:${reloadVersion}`}
         source={{ uri: startUrl }}
         originWhitelist={['*']}
         setSupportMultipleWindows={false}
@@ -97,6 +196,9 @@ export default function HomeWebScreen() {
           const code = e?.nativeEvent?.statusCode;
           setLoadError(code ? `HTTP ${code}` : 'HTTP error');
         }}
+        onLoad={() => {
+          setLoadError(null);
+        }}
         onShouldStartLoadWithRequest={(req: any) => {
           const url = String(req.url || '');
 
@@ -117,6 +219,19 @@ export default function HomeWebScreen() {
 }
 
 const styles = StyleSheet.create({
+  connectionBanner: {
+    marginHorizontal: MOBILE_SPACE.lg,
+    marginTop: MOBILE_SPACE.md,
+    marginBottom: MOBILE_SPACE.xs,
+    borderRadius: MOBILE_SHAPE.chipRadius,
+    borderWidth: 1,
+    paddingHorizontal: MOBILE_SPACE.md,
+    paddingVertical: MOBILE_SPACE.xs
+  },
+  connectionBannerText: {
+    fontSize: MOBILE_TYPE.micro,
+    fontWeight: '700'
+  },
   loading: {
     flex: 1,
     alignItems: 'center',

@@ -8,7 +8,11 @@ import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { Animated, Image, ImageBackground, Platform, Pressable, StyleSheet, Text, View } from 'react-native';
 
+import HomeScreen from './src/screens/HomeScreen';
 import HomeWebScreen from './src/screens/HomeWebScreen';
+import GalleryScreen from './src/screens/GalleryScreen';
+import TeamScreen from './src/screens/TeamScreen';
+import ContactScreen from './src/screens/ContactScreen';
 import BookScreen from './src/screens/BookScreen';
 import TrackScreen from './src/screens/TrackScreen';
 import AdminScreen from './src/screens/AdminScreen';
@@ -18,16 +22,19 @@ import SettingsScreen from './src/screens/SettingsScreen';
 
 export type RootTabParamList = {
   Home: undefined;
-  Book: undefined;
-  Track: { bookingId?: string; email?: string } | undefined;
-  Admin: undefined;
+  Gallery: undefined;
+  Team: undefined;
+  Contact: undefined;
+  Book: { initialPath?: string } | undefined;
+  Track: { initialPath?: string } | undefined;
+  Admin: { initialPath?: string } | undefined;
   Settings: undefined;
 };
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
 
 export default function App() {
-  const content = (
+  const renderContent = () => (
     <ThemeProvider>
       <AppShell />
     </ThemeProvider>
@@ -43,24 +50,14 @@ export default function App() {
           </View>
         </View>
 
-        <View style={styles.deviceRow}
-        >
+        <View style={styles.deviceRow}>
           <View style={styles.deviceCol}>
             <View style={styles.deviceLabelRow}>
-              <Ionicons name="logo-apple" size={14} color="#cfd5e3" />
-              <View style={{ width: 6 }} />
               <Ionicons name="phone-portrait-outline" size={14} color="#cfd5e3" />
-            </View>
-            <View style={[styles.phoneFrame, styles.phoneFrameIphone]}>{content}</View>
-          </View>
-
-          <View style={styles.deviceCol}>
-            <View style={styles.deviceLabelRow}>
-              <Ionicons name="logo-android" size={14} color="#cfd5e3" />
               <View style={{ width: 6 }} />
-              <Ionicons name="phone-portrait-outline" size={14} color="#cfd5e3" />
+              <Text style={styles.deviceLabelText}>Mobile Preview</Text>
             </View>
-            <View style={[styles.phoneFrame, styles.phoneFrameAndroid]}>{content}</View>
+            <View style={[styles.phoneFrame, styles.phoneFrameIphone]}>{renderContent()}</View>
           </View>
         </View>
       </View>
@@ -68,7 +65,7 @@ export default function App() {
   }
 
   return (
-    content
+    renderContent()
   );
 }
 
@@ -79,7 +76,7 @@ function AppShell() {
   const introOpacity = useRef(new Animated.Value(0)).current;
   const introScale = useRef(new Animated.Value(0.96)).current;
   const welcomeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const WELCOME_MESSAGE_DURATION_MS = 120000;
+  const WELCOME_MESSAGE_DURATION_MS = 5000;
 
   useEffect(() => {
     applyHapticPreset('balanced');
@@ -240,7 +237,13 @@ function AppShell() {
               const name = (() => {
                 switch (route.name) {
                   case 'Home':
-                    return focused ? 'globe' : 'globe-outline';
+                    return focused ? 'home' : 'home-outline';
+                  case 'Gallery':
+                    return focused ? 'images' : 'images-outline';
+                  case 'Team':
+                    return focused ? 'people' : 'people-outline';
+                  case 'Contact':
+                    return focused ? 'call' : 'call-outline';
                   case 'Book':
                     return focused ? 'calendar' : 'calendar-outline';
                   case 'Track':
@@ -262,7 +265,10 @@ function AppShell() {
             }
           })}
         >
-          <Tab.Screen name="Home" component={HomeWebScreen} options={{ title: 'Website' }} />
+          <Tab.Screen name="Home" component={HomeScreen} options={{ title: 'Home' }} />
+          <Tab.Screen name="Gallery" component={GalleryScreen} options={{ title: 'Gallery' }} />
+          <Tab.Screen name="Team" component={TeamScreen} options={{ title: 'Team' }} />
+          <Tab.Screen name="Contact" component={ContactScreen} options={{ title: 'Contact' }} />
           <Tab.Screen name="Book" component={BookScreen} options={{ title: 'Book' }} />
           <Tab.Screen name="Track" component={TrackScreen} options={{ title: 'Track' }} />
           <Tab.Screen name="Admin" component={AdminScreen} options={{ title: 'Admin' }} />
@@ -312,6 +318,11 @@ const styles = StyleSheet.create({
   deviceLabelRow: {
     flexDirection: 'row',
     alignItems: 'center'
+  },
+  deviceLabelText: {
+    color: '#cfd5e3',
+    fontSize: 12,
+    fontWeight: '700'
   },
   phoneFrame: {
     width: 390, // iPhone 14-ish logical width

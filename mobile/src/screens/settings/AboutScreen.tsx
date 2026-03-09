@@ -82,6 +82,21 @@ export default function AboutScreen() {
           <Text style={[styles.text, { marginTop: 8, color: '#6b7280' }]}>If you’re on a phone and nothing loads, it’s usually the base URL or firewall.</Text>
         </View>
       </SettingsCard>
+
+      <SettingsSectionTitle>Trust & Support</SettingsSectionTitle>
+      <SettingsCard>
+        <View style={styles.pad}>
+          <Text style={styles.badgeTitle}>Professional profile</Text>
+          <Text style={styles.text}>✅ Real-time booking & order tracking</Text>
+          <Text style={styles.text}>✅ WhatsApp and call support available</Text>
+          <Text style={styles.text}>✅ Mature, secure payment-ready experience</Text>
+        </View>
+        <View style={styles.pillsBottom}>
+          <SettingsPill label="Call Salon" onPress={() => open('tel:07036939125')} variant="ghost" />
+          <SettingsPill label="WhatsApp" onPress={() => open('https://wa.me/2347036939125')} variant="ghost" />
+          <SettingsPill label="Email" onPress={() => open('mailto:okontaysm@gmail.com')} variant="ghost" />
+        </View>
+      </SettingsCard>
     </ScrollView>
   );
 }
@@ -117,5 +132,10 @@ const styles = StyleSheet.create({
   text: {
     color: '#2f2745',
     lineHeight: 20
+  },
+  badgeTitle: {
+    color: '#2f3b58',
+    fontWeight: '800',
+    marginBottom: 8
   }
 });

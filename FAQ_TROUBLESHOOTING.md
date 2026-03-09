@@ -229,7 +229,7 @@ const dateString = now.toLocaleDateString('en-US', {
 3. Verify internet connection
 4. Try clearing cache and refreshing
 5. Test with different browser
-6. Contact admin at info@ceosaloon.com
+6. Contact admin at okontaysm@gmail.com
 
 ### Files to Check
 - `main.js` - Website time/weather/dark mode

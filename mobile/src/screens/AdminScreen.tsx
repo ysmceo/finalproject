@@ -3,11 +3,13 @@ import {
   ActivityIndicator,
   Alert,
   FlatList,
+  KeyboardAvoidingView,
   Linking,
   Platform,
   Pressable,
   RefreshControl,
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -15,6 +17,7 @@ import {
 } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
+import { useNavigation } from '@react-navigation/native';
 
 import { API_BASE_URL, WEB_BASE_URL } from '../config';
 import { ApiError, apiGetAuth, apiPostJson, apiPutJsonAuth } from '../lib/api';
@@ -47,6 +50,8 @@ export default function AdminScreen() {
       </View>
     );
   }
+
+  const navigation = useNavigation<any>();
 
   const [token, setToken] = useState<string>('');
   const [email, setEmail] = useState('');
@@ -289,127 +294,163 @@ export default function AdminScreen() {
   if (!isLoggedIn) {
     return (
       <SafeAreaView style={styles.wrap}>
-        <View style={styles.header}>
-          <Text style={styles.h1}>Admin</Text>
-          <Pressable
-            onPress={() => {
-              triggerLightHaptic();
-              openAdminWebsite();
-            }}
-            style={({ pressed }) => [styles.linkBtn, pressed && styles.pressed, pressed && styles.tapScale]}
+        <KeyboardAvoidingView
+          style={styles.authKeyboardWrap}
+          behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+          keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
+        >
+          <ScrollView
+            contentContainerStyle={styles.authScrollContent}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="on-drag"
+            showsVerticalScrollIndicator={false}
           >
-            <Ionicons name="globe-outline" size={16} color="#b78a2a" />
-            <Text style={styles.linkText}>Open web admin</Text>
-          </Pressable>
-        </View>
-
-        <Text style={styles.sub}>Sign in to view and manage all bookings.</Text>
-
-        <View style={styles.card}>
-          <Text style={styles.label}>Email</Text>
-          <TextInput
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-            placeholder="admin@ceosaloon.com"
-            style={styles.input}
-          />
-
-          <Text style={styles.label}>Password</Text>
-          <TextInput
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-            placeholder="••••••••"
-            style={styles.input}
-          />
-
-          <Text style={styles.label}>Secret passcode</Text>
-          <TextInput
-            value={secretPasscode}
-            onChangeText={setSecretPasscode}
-            secureTextEntry
-            placeholder="Your admin secret passcode"
-            style={styles.input}
-          />
-
-          <Pressable
-            onPress={() => {
-              triggerLightHaptic();
-              login();
-            }}
-            disabled={busy}
-            style={({ pressed }) => [styles.primaryBtn, (busy || pressed) && styles.primaryBtnPressed, pressed && styles.tapScale]}
-          >
-            <Text style={styles.primaryBtnText}>{busy ? 'Signing in…' : 'Sign in'}</Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => {
-              triggerLightHaptic();
-              setShowForgotPassword(prev => !prev);
-            }}
-            style={({ pressed }) => [styles.forgotToggleBtn, pressed && styles.primaryBtnPressed, pressed && styles.tapScale]}
-          >
-            <Text style={styles.forgotToggleText}>
-              {showForgotPassword ? 'Hide password reset options' : 'Forgot password? Tap to reset'}
-            </Text>
-            <Ionicons
-              name={showForgotPassword ? 'chevron-up-outline' : 'chevron-down-outline'}
-              size={16}
-              color="#667085"
-            />
-          </Pressable>
-
-          {showForgotPassword ? (
-            <View style={styles.forgotPanel}>
+            <View style={styles.header}>
+              <Text style={styles.h1}>Admin</Text>
               <Pressable
                 onPress={() => {
                   triggerLightHaptic();
-                  requestPasswordResetOtp();
+                  openAdminWebsite();
                 }}
-                disabled={busy}
-                style={({ pressed }) => [styles.secondaryBtn, (busy || pressed) && styles.primaryBtnPressed, pressed && styles.tapScale]}
+                style={({ pressed }) => [styles.linkBtn, pressed && styles.pressed, pressed && styles.tapScale]}
               >
-                <Text style={styles.secondaryBtnText}>Send password reset OTP</Text>
-              </Pressable>
-
-              <Text style={styles.label}>Reset OTP code</Text>
-              <TextInput
-                value={resetCode}
-                onChangeText={setResetCode}
-                keyboardType="number-pad"
-                placeholder="Enter 6-digit OTP"
-                style={styles.input}
-              />
-
-              <Text style={styles.label}>New password</Text>
-              <TextInput
-                value={newPassword}
-                onChangeText={setNewPassword}
-                secureTextEntry
-                placeholder="Enter new password"
-                style={styles.input}
-              />
-
-              <Pressable
-                onPress={() => {
-                  triggerLightHaptic();
-                  resetPassword();
-                }}
-                disabled={busy}
-                style={({ pressed }) => [styles.secondaryBtn, (busy || pressed) && styles.primaryBtnPressed, pressed && styles.tapScale]}
-              >
-                <Text style={styles.secondaryBtnText}>Reset password</Text>
+                <Ionicons name="globe-outline" size={16} color="#b78a2a" />
+                <Text style={styles.linkText}>Open web admin</Text>
               </Pressable>
             </View>
-          ) : null}
 
-          <Text style={styles.note}>
-            Server: {normalizeUrl(API_BASE_URL)}
-          </Text>
-        </View>
+            <Text style={styles.sub}>Sign in to view and manage all bookings.</Text>
+
+            <View style={styles.quickAccessRow}>
+              <Pressable
+                onPress={() => {
+                  triggerLightHaptic();
+                  navigation.navigate('Track');
+                }}
+                style={({ pressed }) => [styles.linkBtn, pressed && styles.pressed, pressed && styles.tapScale]}
+              >
+                <Ionicons name="search-outline" size={16} color="#344054" />
+                <Text style={styles.secondaryLinkText}>Track</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  triggerLightHaptic();
+                  navigation.navigate('Settings');
+                }}
+                style={({ pressed }) => [styles.linkBtn, pressed && styles.pressed, pressed && styles.tapScale]}
+              >
+                <Ionicons name="settings-outline" size={16} color="#344054" />
+                <Text style={styles.secondaryLinkText}>Settings</Text>
+              </Pressable>
+            </View>
+
+            <View style={styles.card}>
+              <Text style={styles.label}>Email</Text>
+              <TextInput
+                value={email}
+                onChangeText={setEmail}
+                autoCapitalize="none"
+                keyboardType="email-address"
+                placeholder="admin@ceosaloon.com"
+                style={styles.input}
+              />
+
+              <Text style={styles.label}>Password</Text>
+              <TextInput
+                value={password}
+                onChangeText={setPassword}
+                secureTextEntry
+                placeholder="••••••••"
+                style={styles.input}
+              />
+
+              <Text style={styles.label}>Secret passcode</Text>
+              <TextInput
+                value={secretPasscode}
+                onChangeText={setSecretPasscode}
+                secureTextEntry
+                placeholder="Your admin secret passcode"
+                style={styles.input}
+              />
+
+              <Pressable
+                onPress={() => {
+                  triggerLightHaptic();
+                  login();
+                }}
+                disabled={busy}
+                style={({ pressed }) => [styles.primaryBtn, (busy || pressed) && styles.primaryBtnPressed, pressed && styles.tapScale]}
+              >
+                <Text style={styles.primaryBtnText}>{busy ? 'Signing in…' : 'Sign in'}</Text>
+              </Pressable>
+
+              <Pressable
+                onPress={() => {
+                  triggerLightHaptic();
+                  setShowForgotPassword(prev => !prev);
+                }}
+                style={({ pressed }) => [styles.forgotToggleBtn, pressed && styles.primaryBtnPressed, pressed && styles.tapScale]}
+              >
+                <Text style={styles.forgotToggleText}>
+                  {showForgotPassword ? 'Hide password reset options' : 'Forgot password? Tap to reset'}
+                </Text>
+                <Ionicons
+                  name={showForgotPassword ? 'chevron-up-outline' : 'chevron-down-outline'}
+                  size={16}
+                  color="#667085"
+                />
+              </Pressable>
+
+              {showForgotPassword ? (
+                <View style={styles.forgotPanel}>
+                  <Pressable
+                    onPress={() => {
+                      triggerLightHaptic();
+                      requestPasswordResetOtp();
+                    }}
+                    disabled={busy}
+                    style={({ pressed }) => [styles.secondaryBtn, (busy || pressed) && styles.primaryBtnPressed, pressed && styles.tapScale]}
+                  >
+                    <Text style={styles.secondaryBtnText}>Send password reset OTP</Text>
+                  </Pressable>
+
+                  <Text style={styles.label}>Reset OTP code</Text>
+                  <TextInput
+                    value={resetCode}
+                    onChangeText={setResetCode}
+                    keyboardType="number-pad"
+                    placeholder="Enter 6-digit OTP"
+                    style={styles.input}
+                  />
+
+                  <Text style={styles.label}>New password</Text>
+                  <TextInput
+                    value={newPassword}
+                    onChangeText={setNewPassword}
+                    secureTextEntry
+                    placeholder="Enter new password"
+                    style={styles.input}
+                  />
+
+                  <Pressable
+                    onPress={() => {
+                      triggerLightHaptic();
+                      resetPassword();
+                    }}
+                    disabled={busy}
+                    style={({ pressed }) => [styles.secondaryBtn, (busy || pressed) && styles.primaryBtnPressed, pressed && styles.tapScale]}
+                  >
+                    <Text style={styles.secondaryBtnText}>Reset password</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+
+              <Text style={styles.note}>
+                Server: {normalizeUrl(API_BASE_URL)}
+              </Text>
+            </View>
+          </ScrollView>
+        </KeyboardAvoidingView>
       </SafeAreaView>
     );
   }
@@ -420,6 +461,26 @@ export default function AdminScreen() {
         <View>
           <Text style={styles.h1}>Bookings</Text>
           <Text style={styles.subSmall}>Signed in as {email || 'admin'}</Text>
+          <View style={styles.quickAccessRowCompact}>
+            <Pressable
+              onPress={() => {
+                triggerLightHaptic();
+                navigation.navigate('Track');
+              }}
+              style={({ pressed }) => [styles.miniPill, pressed && styles.pressed, pressed && styles.tapScale]}
+            >
+              <Text style={styles.miniPillText}>Track</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => {
+                triggerLightHaptic();
+                navigation.navigate('Settings');
+              }}
+              style={({ pressed }) => [styles.miniPill, pressed && styles.pressed, pressed && styles.tapScale]}
+            >
+              <Text style={styles.miniPillText}>Settings</Text>
+            </Pressable>
+          </View>
         </View>
 
         <View style={{ flexDirection: 'row', gap: 10 }}>
@@ -512,6 +573,12 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: '#f6f8fc'
   },
+  authKeyboardWrap: {
+    flex: 1
+  },
+  authScrollContent: {
+    paddingBottom: 24
+  },
   header: {
     paddingHorizontal: 16,
     paddingTop: 10,
@@ -530,10 +597,34 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     color: '#6b5f86'
   },
+  quickAccessRow: {
+    paddingHorizontal: 16,
+    marginBottom: 12,
+    flexDirection: 'row',
+    gap: 10
+  },
   subSmall: {
     marginTop: 4,
     color: '#6b5f86',
     fontSize: 12
+  },
+  quickAccessRowCompact: {
+    marginTop: 8,
+    flexDirection: 'row',
+    gap: 8
+  },
+  miniPill: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#e3daef',
+    backgroundColor: '#f8f5ff'
+  },
+  miniPillText: {
+    color: '#4f5fa8',
+    fontSize: 11,
+    fontWeight: '800'
   },
   card: {
     marginHorizontal: 16,
@@ -634,6 +725,10 @@ const styles = StyleSheet.create({
   linkText: {
     color: '#7c46e8',
     fontWeight: '900'
+  },
+  secondaryLinkText: {
+    color: '#344054',
+    fontWeight: '800'
   },
   pressed: {
     opacity: 0.85

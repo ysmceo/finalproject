@@ -37,36 +37,51 @@ export type MobilePalette = {
   bg: string;
   card: string;
   cardMuted: string;
+  cardElevated: string;
   border: string;
   text: string;
   textMuted: string;
   primary: string;
   primarySoft: string;
+  secondary: string;
+  warm: string;
+  success: string;
+  danger: string;
   inputBg: string;
 };
 
 const lightPalette: MobilePalette = {
-  bg: '#f7f6ff',
+  bg: '#f4f6f9',
   card: '#ffffff',
-  cardMuted: '#f8f4ff',
-  border: '#e6dcff',
-  text: '#2a1d4f',
-  textMuted: '#665a8f',
-  primary: '#8b3dff',
-  primarySoft: '#efe6ff',
-  inputBg: '#fcfaff'
+  cardMuted: '#f6f7fb',
+  cardElevated: '#ffffff',
+  border: '#dce2ea',
+  text: '#1f2a3d',
+  textMuted: '#5f6e84',
+  primary: '#4f5fa8',
+  primarySoft: '#e9edf8',
+  secondary: '#3e7cb8',
+  warm: '#c58442',
+  success: '#248f5a',
+  danger: '#e5484d',
+  inputBg: '#fafbfd'
 };
 
 const darkPalette: MobilePalette = {
-  bg: '#0e1022',
-  card: '#1a1f39',
-  cardMuted: '#222947',
-  border: '#343d68',
-  text: '#f6f2ff',
-  textMuted: '#b8b0de',
-  primary: '#b07aff',
-  primarySoft: '#2d244a',
-  inputBg: '#161b33'
+  bg: '#111520',
+  card: '#1a2233',
+  cardMuted: '#222c40',
+  cardElevated: '#202a3d',
+  border: '#33415b',
+  text: '#eef3ff',
+  textMuted: '#a8b4cb',
+  primary: '#8190d9',
+  primarySoft: '#2a334a',
+  secondary: '#73a8d8',
+  warm: '#c99b62',
+  success: '#54c388',
+  danger: '#ff858d',
+  inputBg: '#182132'
 };
 
 export function getMobilePalette(isDark: boolean): MobilePalette {

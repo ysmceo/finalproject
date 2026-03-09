@@ -71,6 +71,8 @@ type AddressSuggestion = {
   lon: string;
 };
 
+type BookSectionKey = 'details' | 'services' | 'products' | 'schedule' | 'payment' | 'preview';
+
 const LAST_BOOKING_ID_KEY = 'ceosalon:lastBookingId';
 const LAST_BOOKING_EMAIL_KEY = 'ceosalon:lastBookingEmail';
 const LAST_BOOKING_NAME_KEY = 'ceosalon:lastBookingName';
@@ -173,11 +175,22 @@ export default function BookScreen() {
   const [addressLookupError, setAddressLookupError] = useState('');
   const [refreshment, setRefreshment] = useState<'No' | 'Yes'>('No');
   const [specialRequests, setSpecialRequests] = useState('');
+  const [showBackToTop, setShowBackToTop] = useState(false);
 
   const [paystackStatus, setPaystackStatus] = useState<PaystackStatusResponse | null>(null);
   const [monnifyStatus, setMonnifyStatus] = useState<MonnifyStatusResponse | null>(null);
-  const screenEntry = useRef(new Animated.Value(0)).current;
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [sectionOffsets, setSectionOffsets] = useState<Record<BookSectionKey, number>>({
+    details: 0,
+    services: 0,
+    products: 0,
+    schedule: 0,
+    payment: 0,
+    preview: 0
+  });
+  const [activeSection, setActiveSection] = useState<'services' | 'products' | 'booking'>('services');
   const suppressNextAddressLookup = useRef(false);
+  const screenEntry = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(screenEntry, {
@@ -664,6 +677,24 @@ export default function BookScreen() {
     }
   }
 
+  function handleScrollPosition(y: number) {
+    const shouldShow = y > 360;
+    setShowBackToTop((prev) => (prev === shouldShow ? prev : shouldShow));
+  }
+
+  function scrollToTop() {
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+  }
+
+  function setSectionOffset(section: BookSectionKey, y: number) {
+    setSectionOffsets((prev) => ({ ...prev, [section]: y }));
+  }
+
+  function jumpToSection(section: BookSectionKey) {
+    const y = Number(sectionOffsets[section] || 0);
+    scrollViewRef.current?.scrollTo({ y: Math.max(0, y - 110), animated: true });
+  }
+
   const themed = {
     containerBg: { backgroundColor: palette.bg },
     centerBg: { backgroundColor: palette.bg },
@@ -715,15 +746,55 @@ export default function BookScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, themed.containerBg]} keyboardShouldPersistTaps="handled">
+    <View style={styles.screenWrap}>
+    <ScrollView
+      ref={scrollViewRef}
+      contentContainerStyle={[styles.container, themed.containerBg]}
+      keyboardShouldPersistTaps="handled"
+      onScroll={(event) => handleScrollPosition(event.nativeEvent.contentOffset.y)}
+      scrollEventThrottle={16}
+    >
       <Animated.View style={[styles.heroCard, cardIn(20)]}>
         <Text style={styles.heroKicker}>CEO UNISEX SALON</Text>
         <Text style={styles.h1}>Book an Appointment</Text>
         <Text style={styles.sub}>Fast, beautiful booking with instant tracking and payment options.</Text>
+
+        <View style={styles.quickNavRow}>
+          <MicroPress style={styles.quickNavChip} onPress={() => navigation.navigate('Track')}>
+            <Text style={styles.quickNavChipText}>Go to Track</Text>
+          </MicroPress>
+          <MicroPress style={styles.quickNavChip} onPress={() => navigation.navigate('Contact')}>
+            <Text style={styles.quickNavChipText}>Contact</Text>
+          </MicroPress>
+          <MicroPress style={styles.quickNavChip} onPress={() => navigation.navigate('Settings')}>
+            <Text style={styles.quickNavChipText}>Settings</Text>
+          </MicroPress>
+        </View>
       </Animated.View>
 
       <Animated.View style={[styles.card, themed.cardBorder, cardIn(28)]}>
         <Text style={styles.cardTitle}>Booking Details</Text>
+        <Text style={styles.reachabilityTitle}>Jump to section</Text>
+        <View style={styles.rowWrap}>
+          <MicroPress style={[styles.quickChip, themed.chip]} onPress={() => jumpToSection('details')}>
+            <Text style={[styles.quickChipText, themed.chipText]}>Your details</Text>
+          </MicroPress>
+          <MicroPress style={[styles.quickChip, themed.chip]} onPress={() => jumpToSection('services')}>
+            <Text style={[styles.quickChipText, themed.chipText]}>Services</Text>
+          </MicroPress>
+          <MicroPress style={[styles.quickChip, themed.chip]} onPress={() => jumpToSection('products')}>
+            <Text style={[styles.quickChipText, themed.chipText]}>Products</Text>
+          </MicroPress>
+          <MicroPress style={[styles.quickChip, themed.chip]} onPress={() => jumpToSection('schedule')}>
+            <Text style={[styles.quickChipText, themed.chipText]}>Schedule</Text>
+          </MicroPress>
+          <MicroPress style={[styles.quickChip, themed.chip]} onPress={() => jumpToSection('payment')}>
+            <Text style={[styles.quickChipText, themed.chipText]}>Payment</Text>
+          </MicroPress>
+          <MicroPress style={[styles.quickChip, themed.chip]} onPress={() => jumpToSection('preview')}>
+            <Text style={[styles.quickChipText, themed.chipText]}>Preview</Text>
+          </MicroPress>
+        </View>
         <View style={styles.progressChipRow}>
           <View style={styles.progressChip}><Text style={styles.progressChipText}>1. Your details</Text></View>
           <View style={styles.progressChip}><Text style={styles.progressChipText}>2. Schedule</Text></View>
@@ -745,6 +816,9 @@ export default function BookScreen() {
             <Text style={[styles.quickChipText, themed.chipText]}>Clear form</Text>
           </MicroPress>
         </View>
+
+        <View onLayout={(event) => setSectionOffset('details', event.nativeEvent.layout.y)} />
+        <Text style={styles.sectionTitle}>Your details</Text>
         <Text style={[styles.label, themed.label]}>Name</Text>
         <TextInput style={[styles.input, themed.input]} value={name} onChangeText={setName} placeholder="Full name" placeholderTextColor={palette.textMuted} />
 
@@ -771,6 +845,8 @@ export default function BookScreen() {
           keyboardType="phone-pad"
         />
 
+        <View onLayout={(event) => setSectionOffset('services', event.nativeEvent.layout.y)} />
+        <Text style={styles.sectionTitle}>Services</Text>
         <Text style={[styles.label, themed.label]}>Services (select one or more)</Text>
         <View style={styles.rowWrap}>
           {services.map((s) => (
@@ -786,6 +862,8 @@ export default function BookScreen() {
           ))}
         </View>
 
+        <View onLayout={(event) => setSectionOffset('products', event.nativeEvent.layout.y)} />
+        <Text style={styles.sectionTitle}>Products</Text>
         <Text style={[styles.label, themed.label]}>Products (optional add-ons)</Text>
         <View style={styles.rowWrap}>
           {products.map((product) => {
@@ -816,6 +894,8 @@ export default function BookScreen() {
           })}
         </View>
 
+        <View onLayout={(event) => setSectionOffset('schedule', event.nativeEvent.layout.y)} />
+        <Text style={styles.sectionTitle}>Schedule</Text>
         <Text style={[styles.label, themed.label]}>Date (YYYY-MM-DD)</Text>
         <View style={styles.rowWrap}>
           <TouchableOpacity style={[styles.pickerButton, themed.picker]} onPress={() => setShowDatePicker(true)}>
@@ -876,6 +956,8 @@ export default function BookScreen() {
         <Text style={[styles.label, themed.label]}>Language</Text>
         <TextInput style={[styles.input, themed.input]} value={language} onChangeText={setLanguage} placeholder="English" placeholderTextColor={palette.textMuted} />
 
+        <View onLayout={(event) => setSectionOffset('payment', event.nativeEvent.layout.y)} />
+        <Text style={styles.sectionTitle}>Payment</Text>
         <Text style={[styles.label, themed.label]}>Payment method</Text>
         <View style={styles.row}>
           <TouchableOpacity
@@ -984,6 +1066,7 @@ export default function BookScreen() {
 
         {selectedServices.length ? (
           <View style={styles.previewBox}>
+            <View onLayout={(event) => setSectionOffset('preview', event.nativeEvent.layout.y)} />
             <Text style={styles.previewTitle}>Booking preview</Text>
             <Text style={[styles.hint, themed.mutedText]}>Services: {selectedServices.map((service) => service.name).join(', ')}</Text>
             <Text style={[styles.hint, themed.mutedText]}>Duration: {totalDuration} mins</Text>
@@ -1055,10 +1138,40 @@ export default function BookScreen() {
         </Animated.View>
       ) : null}
     </ScrollView>
+    <View style={styles.floatingQuickNav}>
+      <MicroPress
+        style={[styles.floatingQuickNavBtn, { backgroundColor: palette.card, borderColor: palette.border }]}
+        onPress={() => jumpToSection('details')}
+      >
+        <Text style={[styles.floatingQuickNavText, { color: palette.text }]}>Details</Text>
+      </MicroPress>
+      <MicroPress
+        style={[styles.floatingQuickNavBtn, { backgroundColor: palette.card, borderColor: palette.border }]}
+        onPress={() => jumpToSection('schedule')}
+      >
+        <Text style={[styles.floatingQuickNavText, { color: palette.text }]}>Schedule</Text>
+      </MicroPress>
+      <MicroPress
+        style={[styles.floatingQuickNavBtn, { backgroundColor: palette.primarySoft, borderColor: palette.border }]}
+        onPress={() => jumpToSection('preview')}
+      >
+        <Text style={[styles.floatingQuickNavText, { color: palette.primary }]}>Preview</Text>
+      </MicroPress>
+    </View>
+    {showBackToTop ? (
+      <Pressable style={styles.backToTopButton} onPress={scrollToTop}>
+        <Text style={styles.backToTopText}>↑ Top</Text>
+      </Pressable>
+    ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screenWrap: {
+    flex: 1,
+    position: 'relative'
+  },
   container: {
     padding: MOBILE_SPACE.xxl,
     paddingBottom: 36,
@@ -1096,6 +1209,25 @@ const styles = StyleSheet.create({
     marginTop: MOBILE_SPACE.xs,
     color: '#e9dfff'
   },
+  quickNavRow: {
+    marginTop: MOBILE_SPACE.md,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: MOBILE_SPACE.sm
+  },
+  quickNavChip: {
+    paddingHorizontal: MOBILE_SPACE.md,
+    paddingVertical: MOBILE_SPACE.xs,
+    borderRadius: MOBILE_SHAPE.chipRadius,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.26)',
+    backgroundColor: 'rgba(255,255,255,0.16)'
+  },
+  quickNavChipText: {
+    color: '#ffffff',
+    fontWeight: '800',
+    fontSize: MOBILE_TYPE.caption
+  },
   heroCard: {
     backgroundColor: '#37166d',
     borderRadius: 18,
@@ -1115,6 +1247,13 @@ const styles = StyleSheet.create({
     textTransform: 'uppercase',
     letterSpacing: 0.6,
     marginBottom: MOBILE_SPACE.xxs
+  },
+  reachabilityTitle: {
+    marginTop: MOBILE_SPACE.xs,
+    marginBottom: MOBILE_SPACE.xxs,
+    color: '#5a6175',
+    fontWeight: '700',
+    fontSize: MOBILE_TYPE.caption
   },
   card: {
     marginTop: MOBILE_SPACE.xl,
@@ -1141,6 +1280,13 @@ const styles = StyleSheet.create({
     marginBottom: MOBILE_SPACE.xs,
     fontWeight: '700',
     color: '#3b2f54'
+  },
+  sectionTitle: {
+    marginTop: MOBILE_SPACE.lg,
+    marginBottom: MOBILE_SPACE.xxs,
+    fontSize: MOBILE_TYPE.subheading,
+    fontWeight: '900',
+    color: '#2f3b58'
   },
   input: {
     borderWidth: 1,
@@ -1391,5 +1537,50 @@ const styles = StyleSheet.create({
   mono: {
     marginTop: MOBILE_SPACE.xs,
     color: '#303247'
+  },
+  backToTopButton: {
+    position: 'absolute',
+    right: 16,
+    bottom: 18,
+    backgroundColor: '#7c46e8',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 999,
+    shadowColor: '#2a0b57',
+    shadowOpacity: 0.25,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 4
+  },
+  backToTopText: {
+    color: '#fff',
+    fontWeight: '900',
+    fontSize: MOBILE_TYPE.caption
+  },
+  floatingQuickNav: {
+    position: 'absolute',
+    left: 12,
+    right: 78,
+    bottom: 16,
+    flexDirection: 'row',
+    gap: MOBILE_SPACE.sm,
+    alignItems: 'center'
+  },
+  floatingQuickNavBtn: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: MOBILE_SHAPE.chipRadius,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1d2538',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 8,
+    elevation: 2
+  },
+  floatingQuickNavText: {
+    fontSize: MOBILE_TYPE.caption,
+    fontWeight: '800'
   }
 });

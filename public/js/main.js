@@ -65,6 +65,263 @@ function clearFieldInvalid(fieldEl) {
   fieldEl.removeAttribute('aria-invalid');
 }
 
+function markFieldValid(fieldEl) {
+  if (!fieldEl) return;
+  fieldEl.classList.add('field-valid');
+}
+
+function clearFieldValid(fieldEl) {
+  if (!fieldEl) return;
+  fieldEl.classList.remove('field-valid');
+}
+
+function normalizePhoneDigits(value) {
+  return String(value || '').replace(/\D+/g, '');
+}
+
+function isValidPhoneNumber(value) {
+  const digits = normalizePhoneDigits(value);
+  return digits.length >= 10 && digits.length <= 15;
+}
+
+function getInlineValidationElement(fieldEl) {
+  if (!(fieldEl instanceof HTMLElement)) return null;
+  const group = fieldEl.closest('.form-group');
+  if (!group) return null;
+
+  const fieldId = String(fieldEl.id || '').trim();
+  if (!fieldId) return null;
+
+  const hintId = `${fieldId}InlineValidationHint`;
+  let hintEl = group.querySelector(`#${hintId}`);
+  if (hintEl instanceof HTMLElement) {
+    return hintEl;
+  }
+
+  hintEl = document.createElement('small');
+  hintEl.id = hintId;
+  hintEl.className = 'form-inline-validation is-neutral';
+  hintEl.setAttribute('aria-live', 'polite');
+  hintEl.textContent = '';
+
+  const existingStaticHint = Array.from(group.querySelectorAll('.form-help-text-tight, .form-help-text'))
+    .find(el => !String(el.id || '').endsWith('InlineValidationHint'));
+
+  if (existingStaticHint && existingStaticHint.parentNode === group) {
+    existingStaticHint.insertAdjacentElement('afterend', hintEl);
+  } else {
+    group.appendChild(hintEl);
+  }
+
+  return hintEl;
+}
+
+function setInlineValidationState(fieldEl, state, message) {
+  const hintEl = getInlineValidationElement(fieldEl);
+  if (!hintEl) return;
+
+  hintEl.classList.remove('is-neutral', 'is-valid', 'is-invalid');
+  hintEl.classList.add(state === 'valid' ? 'is-valid' : state === 'invalid' ? 'is-invalid' : 'is-neutral');
+  hintEl.textContent = String(message || '').trim();
+}
+
+function validateBookingField(fieldEl) {
+  if (!fieldEl) return true;
+  const fieldId = String(fieldEl.id || '').trim();
+  const rawValue = String(fieldEl.value || '').trim();
+
+  if (!fieldId) return true;
+
+  if (!rawValue) {
+    clearFieldInvalid(fieldEl);
+    clearFieldValid(fieldEl);
+    setInlineValidationState(fieldEl, 'neutral', '');
+    return false;
+  }
+
+  if (fieldId === 'name') {
+    const isValid = rawValue.length >= 3;
+    if (isValid) {
+      clearFieldInvalid(fieldEl);
+      markFieldValid(fieldEl);
+      setInlineValidationState(fieldEl, 'valid', 'Looks good.');
+      return true;
+    }
+    clearFieldValid(fieldEl);
+    markFieldInvalid(fieldEl);
+    setInlineValidationState(fieldEl, 'invalid', 'Please enter at least 3 characters.');
+    return false;
+  }
+
+  if (fieldId === 'email') {
+    const isValid = isValidEmailAddress(rawValue);
+    if (isValid) {
+      clearFieldInvalid(fieldEl);
+      markFieldValid(fieldEl);
+      setInlineValidationState(fieldEl, 'valid', 'Email format looks correct.');
+      return true;
+    }
+    clearFieldValid(fieldEl);
+    markFieldInvalid(fieldEl);
+    setInlineValidationState(fieldEl, 'invalid', 'Enter a valid email like you@example.com.');
+    return false;
+  }
+
+  if (fieldId === 'phone') {
+    const isValid = isValidPhoneNumber(rawValue);
+    if (isValid) {
+      clearFieldInvalid(fieldEl);
+      markFieldValid(fieldEl);
+      setInlineValidationState(fieldEl, 'valid', 'Phone number looks valid.');
+      return true;
+    }
+    clearFieldValid(fieldEl);
+    markFieldInvalid(fieldEl);
+    setInlineValidationState(fieldEl, 'invalid', 'Use a valid phone number (10–15 digits).');
+    return false;
+  }
+
+  if (fieldId === 'date') {
+    const selectedDate = new Date(`${rawValue}T00:00:00`);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const isValid = !Number.isNaN(selectedDate.getTime()) && selectedDate >= today;
+
+    if (isValid) {
+      clearFieldInvalid(fieldEl);
+      markFieldValid(fieldEl);
+      setInlineValidationState(fieldEl, 'valid', 'Date selected.');
+      return true;
+    }
+
+    clearFieldValid(fieldEl);
+    markFieldInvalid(fieldEl);
+    setInlineValidationState(fieldEl, 'invalid', 'Please choose today or a future date.');
+    return false;
+  }
+
+  if (fieldId === 'time') {
+    const isValid = /^\d{2}:\d{2}$/.test(rawValue);
+    if (isValid) {
+      clearFieldInvalid(fieldEl);
+      markFieldValid(fieldEl);
+      setInlineValidationState(fieldEl, 'valid', 'Time selected.');
+      return true;
+    }
+    clearFieldValid(fieldEl);
+    markFieldInvalid(fieldEl);
+    setInlineValidationState(fieldEl, 'invalid', 'Please select a valid time.');
+    return false;
+  }
+
+  return true;
+}
+
+function initializeBookingInlineValidation() {
+  const bookingForm = document.getElementById('bookingForm');
+  if (!(bookingForm instanceof HTMLFormElement)) return;
+
+  const fields = ['name', 'email', 'phone', 'date', 'time']
+    .map(id => document.getElementById(id))
+    .filter(Boolean);
+
+  fields.forEach(fieldEl => {
+    if (!(fieldEl instanceof HTMLInputElement)) return;
+    if (fieldEl.dataset.inlineValidationBound === 'true') return;
+
+    fieldEl.addEventListener('input', () => {
+      validateBookingField(fieldEl);
+    });
+
+    fieldEl.addEventListener('blur', () => {
+      validateBookingField(fieldEl);
+    });
+
+    fieldEl.dataset.inlineValidationBound = 'true';
+  });
+}
+
+function getBookingRequiredReadinessFields() {
+  return [
+    document.getElementById('name'),
+    document.getElementById('email'),
+    document.getElementById('phone'),
+    document.getElementById('service'),
+    document.getElementById('date'),
+    document.getElementById('time'),
+    document.getElementById('paymentMethod'),
+    document.getElementById('paymentPlan')
+  ].filter(Boolean);
+}
+
+function isFilledBookingField(fieldEl) {
+  if (!fieldEl) return false;
+  const value = String(fieldEl.value || '').trim();
+  return value.length > 0;
+}
+
+function updateBookingReadinessMeter() {
+  const percentEl = document.getElementById('bookingReadinessPercent');
+  const barEl = document.getElementById('bookingReadinessBar');
+  const hintEl = document.getElementById('bookingReadinessHint');
+  const trackEl = document.querySelector('.booking-readiness__track');
+  const fields = getBookingRequiredReadinessFields();
+
+  if (!percentEl || !barEl || !hintEl || !trackEl || !fields.length) return;
+
+  const filled = fields.filter(isFilledBookingField).length;
+  const percent = Math.round((filled / fields.length) * 100);
+
+  percentEl.textContent = `${percent}%`;
+  barEl.style.width = `${percent}%`;
+  trackEl.setAttribute('aria-valuenow', String(percent));
+
+  if (percent >= 100) {
+    hintEl.textContent = 'Excellent. Your booking details are complete and ready to submit.';
+  } else if (percent >= 70) {
+    hintEl.textContent = 'Almost there — complete the remaining required fields.';
+  } else if (percent >= 40) {
+    hintEl.textContent = 'Good progress. Keep filling required details.';
+  } else {
+    hintEl.textContent = 'Complete required fields to continue smoothly.';
+  }
+}
+
+function initializeBookingReadinessMeter() {
+  const bookingForm = document.getElementById('bookingForm');
+  if (!(bookingForm instanceof HTMLFormElement)) return;
+
+  const fields = getBookingRequiredReadinessFields();
+  fields.forEach(fieldEl => {
+    if (!fieldEl || fieldEl.dataset.readinessBound === 'true') return;
+    fieldEl.addEventListener('input', updateBookingReadinessMeter);
+    fieldEl.addEventListener('change', updateBookingReadinessMeter);
+    fieldEl.dataset.readinessBound = 'true';
+  });
+
+  updateBookingReadinessMeter();
+}
+
+function generateSupportTicketRef(prefix = 'CSR') {
+  const now = new Date();
+  const datePart = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
+  const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
+  return `${prefix}-${datePart}-${randomPart}`;
+}
+
+function renderContactTicketRef(ticketRef) {
+  const refEl = document.getElementById('contactTicketRef');
+  if (!refEl) return;
+
+  const cleanRef = String(ticketRef || '').trim();
+  if (!cleanRef) {
+    refEl.innerHTML = '';
+    return;
+  }
+
+  refEl.innerHTML = `<span class="customer-ticket-ref__chip">🎟️ Support Ticket: ${escapeHtmlText(cleanRef)}</span>`;
+}
+
 function escapeHtmlText(value) {
   return String(value || '')
     .replace(/&/g, '&amp;')
@@ -998,6 +1255,19 @@ function renderProductOrderCreated(result) {
       </div>
     `
     : '';
+  const invoiceActionHtml = order && order.orderCode && order.email
+    ? `
+      <div class="product-order-action-row">
+        <button
+          type="button"
+          class="submit-btn product-invoice-download-btn"
+          data-order-code="${escapeHtmlText(String(order.orderCode || ''))}"
+          data-order-email="${escapeHtmlText(String(order.email || '').toLowerCase())}">
+          Download Product Invoice (PDF)
+        </button>
+      </div>
+    `
+    : '';
 
   box.innerHTML = `
     <div class="bank-pay-card" style="margin-top:12px;">
@@ -1015,6 +1285,7 @@ function renderProductOrderCreated(result) {
       ${itemsHtml}
       ${bankHtml}
       ${paymentActionHtml}
+      ${invoiceActionHtml}
     </div>
   `;
 }
@@ -1287,15 +1558,59 @@ function setupEventListeners() {
   if (productOrderResult && !productOrderResult.dataset.bindingsReady) {
     productOrderResult.addEventListener('click', event => {
       const target = event.target;
-      if (!(target instanceof HTMLElement) || !target.classList.contains('product-order-pay-btn')) return;
+      if (!(target instanceof HTMLElement)) return;
 
-      handleProductOrderPayNow({
-        orderId: target.dataset.orderId || '',
-        email: target.dataset.orderEmail || '',
-        paymentMethod: target.dataset.paymentMethod || ''
-      });
+      if (target.classList.contains('product-order-pay-btn')) {
+        handleProductOrderPayNow({
+          orderId: target.dataset.orderId || '',
+          email: target.dataset.orderEmail || '',
+          paymentMethod: target.dataset.paymentMethod || ''
+        });
+        return;
+      }
+
+      if (target.classList.contains('product-invoice-download-btn')) {
+        handleInvoiceDownload({
+          resourceType: 'product',
+          code: target.dataset.orderCode || '',
+          email: target.dataset.orderEmail || '',
+          messageTargetId: 'productOrderMessage'
+        });
+      }
     });
     productOrderResult.dataset.bindingsReady = 'true';
+  }
+
+  const trackResult = document.getElementById('trackResult');
+  if (trackResult && !trackResult.dataset.bindingsReady) {
+    trackResult.addEventListener('click', event => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || !target.classList.contains('booking-invoice-download-btn')) return;
+
+      handleInvoiceDownload({
+        resourceType: 'booking',
+        code: target.dataset.bookingCode || '',
+        email: target.dataset.bookingEmail || '',
+        messageTargetId: 'trackMessage'
+      });
+    });
+    trackResult.dataset.bindingsReady = 'true';
+  }
+
+  const trackProductResult = document.getElementById('trackProductResult');
+  if (trackProductResult && !trackProductResult.dataset.bindingsReady) {
+    trackProductResult.addEventListener('click', event => {
+      const target = event.target;
+      if (!(target instanceof HTMLElement) || !target.classList.contains('product-invoice-download-btn')) return;
+
+      handleInvoiceDownload({
+        resourceType: 'product',
+        code: target.dataset.orderCode || '',
+        email: target.dataset.orderEmail || '',
+        messageTargetId: 'trackProductMessage'
+      });
+    });
+    trackProductResult.dataset.bindingsReady = 'true';
   }
   document.getElementById('adminLoginBtn').addEventListener('click', openAdminModal);
   document.getElementById('adminLoginForm').addEventListener('submit', handleAdminLogin);
@@ -1434,6 +1749,8 @@ function setupEventListeners() {
   });
 
   initializeAddressLookupAssist();
+  initializeBookingInlineValidation();
+  initializeBookingReadinessMeter();
 }
 
 function initializeTrackingLookup() {
@@ -1790,7 +2107,53 @@ function buildProductTrackStatusSteps(status) {
   `;
 }
 
-function renderTrackResult(payload) {
+async function handleInvoiceDownload({ resourceType, code, email, messageTargetId }) {
+  const normalizedCode = String(code || '').trim().toUpperCase();
+  const normalizedEmail = String(email || '').trim().toLowerCase();
+
+  if (!normalizedCode || !normalizedEmail) {
+    showMessage(messageTargetId, 'Invoice download needs a valid code and email.', 'error');
+    return;
+  }
+
+  if (!isValidEmailAddress(normalizedEmail)) {
+    showMessage(messageTargetId, 'Please provide a valid email to download the invoice.', 'error');
+    return;
+  }
+
+  try {
+    const response = await fetch(`${API_URL}/invoices/access-link`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        resourceType,
+        code: normalizedCode,
+        email: normalizedEmail
+      })
+    });
+
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      showMessage(messageTargetId, result.error || 'Unable to generate secure invoice link.', 'error');
+      return;
+    }
+
+    const endpoint = String(result && result.secureInvoiceUrl ? result.secureInvoiceUrl : '').trim();
+    if (!endpoint) {
+      showMessage(messageTargetId, 'Invoice link was not generated. Please try again.', 'error');
+      return;
+    }
+
+    const opened = window.open(endpoint, '_blank', 'noopener');
+    if (!opened) {
+      window.location.href = endpoint;
+    }
+  } catch (error) {
+    showMessage(messageTargetId, 'Failed to request invoice link. Please try again.', 'error');
+  }
+}
+
+function renderTrackResult(payload, bookingEmail = '') {
   const box = document.getElementById('trackResult');
   if (!box) return;
 
@@ -1805,6 +2168,22 @@ function renderTrackResult(payload) {
   const latestNote = notifications.length ? notifications[notifications.length - 1] : null;
   const latestNoteText = latestNote ? String(latestNote.message || '') : 'No update yet. Please check again later.';
   const statusMeta = getTrackStatusMeta(booking.status);
+  const invoiceLookupCode = String(booking.trackingCode || booking.id || '').trim().toUpperCase();
+  const invoiceEmail = String(bookingEmail || booking.email || localStorage.getItem('lastBookingEmail') || '').trim().toLowerCase();
+  const invoiceActionHtml = invoiceLookupCode && invoiceEmail
+    ? `
+      <div class="product-order-action-row">
+        <button
+          type="button"
+          class="submit-btn booking-invoice-download-btn"
+          data-booking-code="${escapeHtmlText(invoiceLookupCode)}"
+          data-booking-email="${escapeHtmlText(invoiceEmail)}">
+          Download Booking Invoice (PDF)
+        </button>
+        <small class="product-order-action-note">Invoice opens in a new tab and downloads as PDF.</small>
+      </div>
+    `
+    : '';
 
   box.innerHTML = `
     <div class="bank-pay-card" style="margin-top:12px;">
@@ -1818,6 +2197,7 @@ function renderTrackResult(payload) {
       <div class="track-status-summary">${statusMeta.summary}</div>
       ${buildTrackStatusSteps(booking.status)}
       <div class="bank-pay-muted" style="margin-top:10px;"><strong>Latest update:</strong> ${latestNoteText}</div>
+      ${invoiceActionHtml}
     </div>
   `;
 }
@@ -1855,7 +2235,7 @@ async function handleTrackingLookup(e) {
 
     localStorage.setItem('lastTrackingCode', trackingCode);
     localStorage.setItem('lastBookingEmail', email);
-    renderTrackResult(result);
+    renderTrackResult(result, email);
     showMessage('trackMessage', 'Tracking result loaded successfully.', 'success');
   } catch (error) {
     console.error('Tracking lookup error:', error);
@@ -1863,7 +2243,7 @@ async function handleTrackingLookup(e) {
   }
 }
 
-function renderProductTrackResult(payload) {
+function renderProductTrackResult(payload, orderEmail = '') {
   const box = document.getElementById('trackProductResult');
   if (!box) return;
 
@@ -1884,6 +2264,8 @@ function renderProductTrackResult(payload) {
   const paymentStatus = String(order.paymentStatus || 'pending').trim().toLowerCase();
   const canPayNow = isProductOrderOnlinePaymentMethod(order.paymentMethod) && ['pending', 'initiated', 'failed'].includes(paymentStatus) && Number(order.amountDueNow || 0) > 0;
   const cachedOrderEmail = String(localStorage.getItem(LAST_PRODUCT_ORDER_EMAIL_KEY) || '').trim().toLowerCase();
+  const invoiceLookupCode = String(order.orderCode || order.id || '').trim().toUpperCase();
+  const invoiceEmail = String(orderEmail || order.email || cachedOrderEmail || '').trim().toLowerCase();
   const paymentActionHtml = canPayNow && cachedOrderEmail
     ? `
       <div class="product-order-action-row">
@@ -1896,6 +2278,20 @@ function renderProductTrackResult(payload) {
           Pay Remaining Amount (Paystack)
         </button>
         <small class="product-order-action-note">Use the same order email to continue secure payment.</small>
+      </div>
+    `
+    : '';
+  const invoiceActionHtml = invoiceLookupCode && invoiceEmail
+    ? `
+      <div class="product-order-action-row">
+        <button
+          type="button"
+          class="submit-btn product-invoice-download-btn"
+          data-order-code="${escapeHtmlText(invoiceLookupCode)}"
+          data-order-email="${escapeHtmlText(invoiceEmail)}">
+          Download Product Invoice (PDF)
+        </button>
+        <small class="product-order-action-note">Use your order code + email invoice copy anytime.</small>
       </div>
     `
     : '';
@@ -1920,6 +2316,7 @@ function renderProductTrackResult(payload) {
       <div class="bank-pay-label" style="margin-top:6px;">Items</div>
       ${itemsHtml}
       ${paymentActionHtml}
+      ${invoiceActionHtml}
     </div>
   `;
 }
@@ -1957,7 +2354,7 @@ async function handleProductTrackingLookup(e) {
 
     localStorage.setItem(LAST_PRODUCT_ORDER_CODE_KEY, orderCode);
     localStorage.setItem(LAST_PRODUCT_ORDER_EMAIL_KEY, email);
-    renderProductTrackResult(result);
+    renderProductTrackResult(result, email);
     showMessage('trackProductMessage', 'Product order tracking result loaded successfully.', 'success');
   } catch (error) {
     console.error('Product tracking lookup error:', error);
@@ -2355,6 +2752,8 @@ function toggleHomeServiceAddress() {
       clearAddressLookupUi(homeAddressConfig);
     }
   }
+
+  updateBookingReadinessMeter();
 }
 
 function updatePaymentSummary() {
@@ -2457,6 +2856,33 @@ function toggleForgotPasswordPanel() {
 async function handleBooking(e) {
   e.preventDefault();
 
+  const bookingNameInput = document.getElementById('name');
+  const bookingEmailInput = document.getElementById('email');
+  const bookingPhoneInput = document.getElementById('phone');
+  const bookingDateInput = document.getElementById('date');
+  const bookingTimeInput = document.getElementById('time');
+
+  const inlineValidationTargets = [
+    bookingNameInput,
+    bookingEmailInput,
+    bookingPhoneInput,
+    bookingDateInput,
+    bookingTimeInput
+  ].filter(Boolean);
+
+  const hasInlineValidationError = inlineValidationTargets
+    .map(field => validateBookingField(field))
+    .some(isValid => !isValid);
+
+  if (hasInlineValidationError) {
+    const firstInvalid = inlineValidationTargets.find(field => field.classList && field.classList.contains('field-error'));
+    if (firstInvalid && typeof firstInvalid.focus === 'function') {
+      firstInvalid.focus();
+    }
+    showMessage('bookingMessage', 'Please fix the highlighted booking fields and try again.', 'error');
+    return;
+  }
+
   const selectedProducts = collectBookingProductSelections();
   const homeServiceRequested = document.getElementById('homeServiceRequested').checked;
   const homeServiceAddress = document.getElementById('homeServiceAddress').value;
@@ -2467,7 +2893,6 @@ async function handleBooking(e) {
   }
 
   const refreshmentSelection = document.querySelector('input[name="refreshment"]:checked');
-  const bookingEmailInput = document.getElementById('email');
   const emailValue = String(bookingEmailInput.value || '').trim().toLowerCase();
 
   if (!isValidEmailAddress(emailValue)) {
@@ -2541,6 +2966,7 @@ async function handleBooking(e) {
       document.getElementById('imagePreview').innerHTML = '';
       renderBookingProductPicker(cachedProducts);
       updateOnlinePaymentVisibility();
+      updateBookingReadinessMeter();
     } else {
       showMessage('bookingMessage', result.error || languageManager.translate('booking_error'), 'error');
     }
@@ -2564,12 +2990,27 @@ async function handleContact(e) {
   }
   clearFieldInvalid(contactEmailInput);
   
+  const supportTicketRef = generateSupportTicketRef();
+
   const formData = new FormData();
+  const supportPriority = String(document.getElementById('customerCarePriority')?.value || 'normal').trim();
+  const preferredReplyChannel = String(document.getElementById('preferredContactChannel')?.value || 'email').trim();
+  const contactSubjectEl = document.getElementById('contactSubject');
+  const subjectRaw = String(contactSubjectEl && contactSubjectEl.value ? contactSubjectEl.value : '').trim();
+  const subjectPrefix = supportPriority === 'urgent'
+    ? '[URGENT] '
+    : supportPriority === 'priority'
+      ? '[PRIORITY] '
+      : '';
+
   formData.append('name', document.getElementById('contactName').value);
   formData.append('email', contactEmail);
-  formData.append('subject', document.getElementById('contactSubject').value);
+  formData.append('subject', `${subjectPrefix}${subjectRaw}`);
   formData.append('message', document.getElementById('contactMessageText').value);
   formData.append('reportType', document.getElementById('reportType').value || '');
+  formData.append('supportPriority', supportPriority);
+  formData.append('preferredReplyChannel', preferredReplyChannel);
+  formData.append('supportTicketRef', supportTicketRef);
   
   // Add file if selected
   const reportFile = document.getElementById('reportFile').files[0];
@@ -2584,15 +3025,18 @@ async function handleContact(e) {
     });
     
     if (response.ok) {
-      showMessage('contactMessage', languageManager.translate('contact_success'), 'success');
+      showMessage('contactMessage', `${languageManager.translate('contact_success')} Ticket: ${supportTicketRef}`, 'success');
+      renderContactTicketRef(supportTicketRef);
       document.getElementById('contactForm').reset();
       document.getElementById('reportFilePreview').innerHTML = '';
     } else {
       showMessage('contactMessage', languageManager.translate('contact_error'), 'error');
+      renderContactTicketRef('');
     }
   } catch (error) {
     console.error('Error:', error);
     showMessage('contactMessage', languageManager.translate('contact_error'), 'error');
+    renderContactTicketRef('');
   }
 }
 

@@ -38,6 +38,25 @@
   - View customer messages
   - Delete bookings/messages
 
+## Runtime Data Store Modes (JSON vs Prisma)
+
+This project supports runtime datastore modes via `DATA_STORE_MODE`:
+
+- `DATA_STORE_MODE=json` → read/write using JSON only.
+- `DATA_STORE_MODE=auto` → Prisma-primary read path with safe JSON fallback (recommended).
+- `DATA_STORE_MODE=prisma` → force Prisma-primary read path.
+
+Recommended local/prod setup:
+
+- Set `DATABASE_URL` and use `DATA_STORE_MODE=auto`.
+- Keep JSON snapshots available for compatibility and fallback.
+
+If needed, run Prisma maintenance commands:
+
+- `npm run prisma:generate`
+- `npm run prisma:push`
+- `npm run prisma:sync-json`
+
 ## Sample Booking
 
 To test the booking system:
@@ -119,8 +138,8 @@ Data is stored in `database.json`. Delete this file to reset all bookings and me
 ## Support
 
 For questions or issues, please contact:
-- Email: info@ceosaloon.com
-- Phone: +234 (0) 701 SALOON
+- Email: okontaysm@gmail.com
+- Phone: 07036939125
 
 ---
 

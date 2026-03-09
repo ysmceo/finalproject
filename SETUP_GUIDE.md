@@ -44,6 +44,25 @@ npm start
 2. Open terminal (Ctrl + `)
 3. Type `npm start`
 
+## 🗄️ Runtime Data Store Modes (JSON vs Prisma)
+
+This project supports runtime datastore modes via `DATA_STORE_MODE`:
+
+- `DATA_STORE_MODE=json` → read/write using JSON only.
+- `DATA_STORE_MODE=auto` → Prisma-primary read path with safe JSON fallback (recommended).
+- `DATA_STORE_MODE=prisma` → force Prisma-primary read path.
+
+Recommended setup:
+
+- Set `DATABASE_URL` and use `DATA_STORE_MODE=auto`.
+- Keep JSON snapshots available for compatibility and fallback.
+
+Prisma maintenance commands:
+
+- `npm run prisma:generate`
+- `npm run prisma:push`
+- `npm run prisma:sync-json`
+
 ## 🌐 Access Points
 
 | Page | URL | Description |

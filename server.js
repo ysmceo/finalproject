@@ -7,6 +7,9 @@ const crypto = require('crypto');
 const { v4: uuidv4 } = require('uuid');
 const multer = require('multer');
 const nodemailer = require('nodemailer');
+const PDFDocument = require('pdfkit');
+const jwt = require('jsonwebtoken');
+const { PrismaClient } = require('@prisma/client');
 const Stripe = require('stripe');
 require('dotenv').config();
 
@@ -79,6 +82,12 @@ const SEND_BOOKING_STATUS_EMAILS = String(process.env.SEND_BOOKING_STATUS_EMAILS
 const SEND_ADMIN_NEW_BOOKING_EMAILS = String(process.env.SEND_ADMIN_NEW_BOOKING_EMAILS || 'false').trim().toLowerCase() === 'true';
 const SEND_BOOKING_TRACKING_CODE_EMAILS = String(process.env.SEND_BOOKING_TRACKING_CODE_EMAILS || 'true').trim().toLowerCase() === 'true';
 const SEND_PRODUCT_ORDER_STATUS_EMAILS = String(process.env.SEND_PRODUCT_ORDER_STATUS_EMAILS || 'true').trim().toLowerCase() === 'true';
+const SEND_BOOKING_INVOICE_EMAILS = String(process.env.SEND_BOOKING_INVOICE_EMAILS || 'true').trim().toLowerCase() === 'true';
+const SEND_PRODUCT_ORDER_INVOICE_EMAILS = String(process.env.SEND_PRODUCT_ORDER_INVOICE_EMAILS || 'true').trim().toLowerCase() === 'true';
+const INVOICE_ACCESS_TOKEN_SECRET = String(process.env.INVOICE_ACCESS_TOKEN_SECRET || ADMIN_SECRET_PASSCODE || 'CHANGE_ME_INVOICE_SECRET').trim();
+const INVOICE_ACCESS_TOKEN_TTL_SECONDS = Number(process.env.INVOICE_ACCESS_TOKEN_TTL_SECONDS) > 0
+  ? Number(process.env.INVOICE_ACCESS_TOKEN_TTL_SECONDS)
+  : 900;
 const PAYMENT_RECEIPTS_BCC = process.env.PAYMENT_RECEIPTS_BCC || '';
 const SEND_ADMIN_LOGIN_OTP_EMAILS = String(process.env.SEND_ADMIN_LOGIN_OTP_EMAILS || 'true').trim().toLowerCase() === 'true';
 const SEND_ADMIN_LOGIN_OTP_SMS = String(process.env.SEND_ADMIN_LOGIN_OTP_SMS || 'true').trim().toLowerCase() === 'true';
@@ -210,7 +219,7 @@ function getMailer(overrides = {}) {
   return transporter;
 }
 
-async function sendEmail({ to, subject, text, html, replyTo, bcc }) {
+async function sendEmail({ to, subject, text, html, replyTo, bcc, attachments }) {
   const mailPayload = {
     from: SMTP_FROM,
     to,
@@ -218,7 +227,8 @@ async function sendEmail({ to, subject, text, html, replyTo, bcc }) {
     subject,
     text,
     html,
-    replyTo: replyTo || undefined
+    replyTo: replyTo || undefined,
+    attachments: Array.isArray(attachments) && attachments.length ? attachments : undefined
   };
 
   try {
@@ -784,6 +794,213 @@ async function maybeSendProductOrderStatusEmail({ order, previousStatus, newStat
   return { sent: true };
 }
 
+async function maybeSendBookingInvoiceEmail({ booking }) {
+  if (!SEND_BOOKING_INVOICE_EMAILS) {
+    return { sent: false, skipped: true, reason: 'SEND_BOOKING_INVOICE_EMAILS=false' };
+  }
+
+  if (!isSmtpConfigured()) {
+    return { sent: false, skipped: true, reason: 'SMTP not configured' };
+  }
+
+  if (!booking || !booking.email) {
+    return { sent: false, skipped: true, reason: 'Missing booking/email' };
+  }
+
+  if (booking.bookingInvoiceEmailSentAt) {
+    return { sent: false, skipped: true, reason: 'Already sent' };
+  }
+
+  const toEmail = normalizeEmail(booking.email);
+  const bookingId = String(booking.id || '').trim();
+  const invoiceNo = `INV-SVC-${bookingId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase() || 'N/A'}`;
+  const customerName = String(booking.name || 'Customer').trim();
+  const serviceName = String(booking.serviceName || 'Salon Service').trim();
+  const when = `${String(booking.date || '').trim()}${String(booking.time || '').trim() ? ` at ${String(booking.time || '').trim()}` : ''}`.trim() || 'N/A';
+  const paymentMethod = String(booking.paymentMethod || 'N/A').trim();
+  const paymentPlan = String(booking.paymentPlan || 'N/A').trim();
+  const subtotal = Number(booking.price || 0);
+  const dueNow = Number(booking.amountDueNow || 0);
+  const remaining = Number(booking.amountRemaining || 0);
+  const productsTotal = Number(booking.requestedProductsTotal || 0);
+  const total = Number(subtotal + productsTotal || dueNow + remaining || 0);
+  const trackingCode = getBookingTrackingCode(booking);
+
+  const subject = `Service Invoice - ${invoiceNo}`;
+  const text = `Hi ${customerName},\n\nHere is your service invoice from CEO Unisex Salon.\n\nInvoice No: ${invoiceNo}\nBooking ID: ${bookingId || 'N/A'}\nTracking Code: ${trackingCode}\nService: ${serviceName}\nScheduled: ${when}\nPayment Method: ${paymentMethod}\nPayment Plan: ${paymentPlan}\nService Subtotal: ₦${subtotal.toLocaleString()}\nProducts Total: ₦${productsTotal.toLocaleString()}\nTotal: ₦${total.toLocaleString()}\nAmount Due Now: ₦${dueNow.toLocaleString()}\nAmount Remaining: ₦${remaining.toLocaleString()}\n\nThank you for choosing CEO Unisex Salon.`;
+
+  const pdfBuffer = await buildInvoicePdfBuffer({
+    invoiceTitle: 'Service Invoice',
+    invoiceNumber: invoiceNo,
+    customerName,
+    details: [
+      { label: 'Booking ID', value: bookingId || 'N/A' },
+      { label: 'Tracking Code', value: trackingCode },
+      { label: 'Service', value: serviceName },
+      { label: 'Scheduled', value: when },
+      { label: 'Payment Method', value: paymentMethod },
+      { label: 'Payment Plan', value: paymentPlan }
+    ],
+    totals: [
+      { label: 'Service Subtotal', value: `₦${subtotal.toLocaleString()}` },
+      { label: 'Products Total', value: `₦${productsTotal.toLocaleString()}` },
+      { label: 'Total', value: `₦${total.toLocaleString()}` },
+      { label: 'Amount Due Now', value: `₦${dueNow.toLocaleString()}` },
+      { label: 'Amount Remaining', value: `₦${remaining.toLocaleString()}` }
+    ]
+  });
+
+  const html = buildColorfulEmailShell({
+    title: '🧾 Service Invoice',
+    subtitle: 'Your booking invoice is ready',
+    accent: '#2b6ef2',
+    bodyHtml: `
+      <p style="margin:0 0 10px;">Hi <strong>${escapeHtml(customerName)}</strong>,</p>
+      <p style="margin:0 0 14px; color:#4c3f63;">Thank you for your booking. Your invoice details are below.</p>
+      <div style="padding:14px; border:1px solid #d9e6ff; border-radius:12px; background:linear-gradient(180deg,#f6f9ff 0%,#ffffff 100%);">
+        <div><strong>Invoice No:</strong> ${escapeHtml(invoiceNo)}</div>
+        <div><strong>Booking ID:</strong> ${escapeHtml(bookingId || 'N/A')}</div>
+        <div><strong>Tracking Code:</strong> ${escapeHtml(trackingCode)}</div>
+        <div><strong>Service:</strong> ${escapeHtml(serviceName)}</div>
+        <div><strong>Scheduled:</strong> ${escapeHtml(when)}</div>
+        <div><strong>Payment Method:</strong> ${escapeHtml(paymentMethod)}</div>
+        <div><strong>Payment Plan:</strong> ${escapeHtml(paymentPlan)}</div>
+        <hr style="border:none; border-top:1px solid #d9e6ff; margin:10px 0;">
+        <div><strong>Service Subtotal:</strong> ₦${subtotal.toLocaleString()}</div>
+        <div><strong>Products Total:</strong> ₦${productsTotal.toLocaleString()}</div>
+        <div><strong>Total:</strong> ₦${total.toLocaleString()}</div>
+        <div><strong>Amount Due Now:</strong> ₦${dueNow.toLocaleString()}</div>
+        <div><strong>Amount Remaining:</strong> ₦${remaining.toLocaleString()}</div>
+      </div>
+    `
+  });
+
+  const info = await sendEmail({
+    to: toEmail,
+    subject,
+    text,
+    html,
+    attachments: [
+      {
+        filename: `${invoiceNo}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      }
+    ]
+  });
+
+  booking.bookingInvoiceEmailSentAt = new Date().toISOString();
+  booking.bookingInvoiceEmailTo = toEmail;
+  booking.bookingInvoiceEmailMessageId = info && info.messageId ? info.messageId : undefined;
+  booking.invoiceNumber = invoiceNo;
+
+  return { sent: true, invoiceNumber: invoiceNo };
+}
+
+async function maybeSendProductOrderInvoiceEmail({ order }) {
+  if (!SEND_PRODUCT_ORDER_INVOICE_EMAILS) {
+    return { sent: false, skipped: true, reason: 'SEND_PRODUCT_ORDER_INVOICE_EMAILS=false' };
+  }
+
+  if (!isSmtpConfigured()) {
+    return { sent: false, skipped: true, reason: 'SMTP not configured' };
+  }
+
+  if (!order || !order.email) {
+    return { sent: false, skipped: true, reason: 'Missing order/email' };
+  }
+
+  if (order.orderInvoiceEmailSentAt) {
+    return { sent: false, skipped: true, reason: 'Already sent' };
+  }
+
+  const toEmail = normalizeEmail(order.email);
+  const orderId = String(order.id || '').trim();
+  const orderCode = String(order.orderCode || orderId || 'N/A').trim();
+  const invoiceNo = `INV-PRD-${orderId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase() || 'N/A'}`;
+  const customerName = String(order.name || 'Customer').trim();
+  const paymentMethod = String(order.paymentMethod || 'N/A').trim();
+  const deliverySpeed = String(order.deliverySpeed || 'standard').toUpperCase();
+  const subtotal = Number(order.itemsSubtotal || 0);
+  const deliveryFee = Number(order.deliveryFee || 0);
+  const total = Number(order.totalAmount || 0);
+  const amountDueNow = Number(order.amountDueNow || total);
+  const items = Array.isArray(order.items) ? order.items : [];
+  const itemsText = items.length
+    ? items.map(item => `${item.name} × ${item.quantity} — ₦${Number(item.lineTotal || 0).toLocaleString()}`).join('\n')
+    : 'No item lines';
+
+  const subject = `Product Order Invoice - ${invoiceNo}`;
+  const text = `Hi ${customerName},\n\nHere is your product order invoice from CEO Unisex Salon.\n\nInvoice No: ${invoiceNo}\nOrder Code: ${orderCode}\nOrder ID: ${orderId || 'N/A'}\nPayment Method: ${paymentMethod}\nDelivery Speed: ${deliverySpeed}\n\nItems:\n${itemsText}\n\nSubtotal: ₦${subtotal.toLocaleString()}\nDelivery Fee: ₦${deliveryFee.toLocaleString()}\nTotal: ₦${total.toLocaleString()}\nAmount Due Now: ₦${amountDueNow.toLocaleString()}\n\nThank you for shopping with CEO Unisex Salon.`;
+
+  const pdfBuffer = await buildInvoicePdfBuffer({
+    invoiceTitle: 'Product Order Invoice',
+    invoiceNumber: invoiceNo,
+    customerName,
+    details: [
+      { label: 'Order Code', value: orderCode },
+      { label: 'Order ID', value: orderId || 'N/A' },
+      { label: 'Payment Method', value: paymentMethod },
+      { label: 'Delivery Speed', value: deliverySpeed },
+      { label: 'Items', value: items.length ? items.map(item => `${item.name} x ${item.quantity}`).join(', ') : 'No item lines' }
+    ],
+    totals: [
+      { label: 'Subtotal', value: `₦${subtotal.toLocaleString()}` },
+      { label: 'Delivery Fee', value: `₦${deliveryFee.toLocaleString()}` },
+      { label: 'Total', value: `₦${total.toLocaleString()}` },
+      { label: 'Amount Due Now', value: `₦${amountDueNow.toLocaleString()}` }
+    ]
+  });
+
+  const itemsHtml = items.length
+    ? `<ul style="margin:8px 0 0 16px; padding:0;">${items.map(item => `<li>${escapeHtml(String(item.name || 'Item'))} × ${Number(item.quantity || 0)} — ₦${Number(item.lineTotal || 0).toLocaleString()}</li>`).join('')}</ul>`
+    : '<div>No item lines</div>';
+
+  const html = buildColorfulEmailShell({
+    title: '🛍️ Product Order Invoice',
+    subtitle: 'Your order invoice is ready',
+    accent: '#8f2aa8',
+    bodyHtml: `
+      <p style="margin:0 0 10px;">Hi <strong>${escapeHtml(customerName)}</strong>,</p>
+      <p style="margin:0 0 14px; color:#4c3f63;">Thank you for your order. Please find your invoice details below.</p>
+      <div style="padding:14px; border:1px solid #eadff7; border-radius:12px; background:linear-gradient(180deg,#fbf7ff 0%,#ffffff 100%);">
+        <div><strong>Invoice No:</strong> ${escapeHtml(invoiceNo)}</div>
+        <div><strong>Order Code:</strong> ${escapeHtml(orderCode)}</div>
+        <div><strong>Order ID:</strong> ${escapeHtml(orderId || 'N/A')}</div>
+        <div><strong>Payment Method:</strong> ${escapeHtml(paymentMethod)}</div>
+        <div><strong>Delivery Speed:</strong> ${escapeHtml(deliverySpeed)}</div>
+        <div style="margin-top:8px;"><strong>Items:</strong>${itemsHtml}</div>
+        <hr style="border:none; border-top:1px solid #eadff7; margin:10px 0;">
+        <div><strong>Subtotal:</strong> ₦${subtotal.toLocaleString()}</div>
+        <div><strong>Delivery Fee:</strong> ₦${deliveryFee.toLocaleString()}</div>
+        <div><strong>Total:</strong> ₦${total.toLocaleString()}</div>
+        <div><strong>Amount Due Now:</strong> ₦${amountDueNow.toLocaleString()}</div>
+      </div>
+    `
+  });
+
+  const info = await sendEmail({
+    to: toEmail,
+    subject,
+    text,
+    html,
+    attachments: [
+      {
+        filename: `${invoiceNo}.pdf`,
+        content: pdfBuffer,
+        contentType: 'application/pdf'
+      }
+    ]
+  });
+
+  order.orderInvoiceEmailSentAt = new Date().toISOString();
+  order.orderInvoiceEmailTo = toEmail;
+  order.orderInvoiceEmailMessageId = info && info.messageId ? info.messageId : undefined;
+  order.invoiceNumber = invoiceNo;
+
+  return { sent: true, invoiceNumber: invoiceNo };
+}
+
 async function sendSmsViaTermii({ to, message }) {
   if (!isTermiiConfigured()) {
     const err = new Error('Termii is not configured');
@@ -1011,42 +1228,109 @@ app.get('/male-stylist.jpg', (req, res) => {
 
 // Database file path
 const dbPath = path.join(__dirname, 'database.json');
+const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
+const DATA_STORE_MODE = String(process.env.DATA_STORE_MODE || 'auto').trim().toLowerCase();
 
-// Initialize database
-function initializeDatabase() {
-  if (!fs.existsSync(dbPath)) {
-    const initialData = {
-      bookings: [],
-      productOrders: [],
-      messages: [],
-      admins: [],
-      adminAccessCodes: [],
-      settings: {
-        productDeliveryFees: {
-          standard: PRODUCT_STANDARD_DELIVERY_FEE,
-          express: PRODUCT_EXPRESS_DELIVERY_FEE
-        }
-      },
-      products: getDefaultProducts(),
-      services: [
-        { id: 1, name: 'Hair Cut', price: 5000, duration: 30 },
-        { id: 2, name: 'Hair Coloring', price: 15000, duration: 60 },
-        { id: 3, name: 'Facial Treatment', price: 8000, duration: 45 },
-        { id: 4, name: 'Manicure', price: 4000, duration: 30 },
-        { id: 5, name: 'Pedicure', price: 5000, duration: 40 },
-        { id: 6, name: 'Hair Spa', price: 12000, duration: 60 },
-        { id: 7, name: 'Beard Trim', price: 3000, duration: 20 },
-        { id: 8, name: 'Full Body Massage', price: 18000, duration: 60 },
-        { id: 9, name: 'Wig Revamping', price: 15000, duration: 1440 }
-      ]
-    };
-    fs.writeFileSync(dbPath, JSON.stringify(initialData, null, 2));
+let prismaClient = null;
+let prismaSyncInFlight = false;
+let prismaSyncQueued = false;
+let prismaPrimaryCache = null;
+let prismaPrimaryCacheLoadedAt = 0;
+let prismaPrimaryCacheRefreshInFlight = false;
+
+function isPrismaMirrorEnabled() {
+  return Boolean(DATABASE_URL);
+}
+
+function isPrismaPrimaryEnabled() {
+  if (!isPrismaMirrorEnabled()) return false;
+  if (DATA_STORE_MODE === 'json') return false;
+  if (DATA_STORE_MODE === 'prisma') return true;
+  // auto mode
+  return true;
+}
+
+function getPrismaClient() {
+  if (!isPrismaMirrorEnabled()) {
+    return null;
+  }
+
+  if (prismaClient) {
+    return prismaClient;
+  }
+
+  prismaClient = new PrismaClient();
+  return prismaClient;
+}
+
+function toDateOrNull(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return null;
+  const parsed = new Date(raw);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function safeStringify(value) {
+  try {
+    return JSON.stringify(value ?? {});
+  } catch (error) {
+    return '{}';
   }
 }
 
-// Helper functions to read/write database
-function readDatabase() {
-  const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+function arrayOf(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function getDefaultServices() {
+  return [
+    { id: 1, name: 'Hair Cut', price: 5000, duration: 30 },
+    { id: 2, name: 'Hair Coloring', price: 15000, duration: 60 },
+    { id: 3, name: 'Facial Treatment', price: 8000, duration: 45 },
+    { id: 4, name: 'Manicure', price: 4000, duration: 30 },
+    { id: 5, name: 'Pedicure', price: 5000, duration: 40 },
+    { id: 6, name: 'Hair Spa', price: 12000, duration: 60 },
+    { id: 7, name: 'Beard Trim', price: 3000, duration: 20 },
+    { id: 8, name: 'Full Body Massage', price: 18000, duration: 60 },
+    { id: 9, name: 'Wig Revamping', price: 15000, duration: 1440 }
+  ];
+}
+
+function buildBaseDatabaseShape() {
+  return {
+    bookings: [],
+    productOrders: [],
+    messages: [],
+    admins: [],
+    adminAccessCodes: [],
+    settings: {
+      productDeliveryFees: {
+        standard: PRODUCT_STANDARD_DELIVERY_FEE,
+        express: PRODUCT_EXPRESS_DELIVERY_FEE
+      }
+    },
+    products: getDefaultProducts(),
+    services: getDefaultServices(),
+    bookingNotifications: [],
+    productOrderNotifications: []
+  };
+}
+
+function parseJsonSafely(value, fallbackValue) {
+  try {
+    const parsed = JSON.parse(String(value || ''));
+    return parsed == null ? fallbackValue : parsed;
+  } catch (error) {
+    return fallbackValue;
+  }
+}
+
+function normalizeDatabaseObject(inputDb) {
+  const base = buildBaseDatabaseShape();
+  const db = {
+    ...base,
+    ...(inputDb && typeof inputDb === 'object' ? inputDb : {})
+  };
 
   if (!Array.isArray(db.bookings)) db.bookings = [];
   if (!Array.isArray(db.productOrders)) db.productOrders = [];
@@ -1059,44 +1343,295 @@ function readDatabase() {
   if (!Array.isArray(db.productOrderNotifications)) db.productOrderNotifications = [];
   if (!db.settings || typeof db.settings !== 'object') db.settings = {};
 
-  let shouldPersistSettings = false;
   if (!db.settings.productDeliveryFees || typeof db.settings.productDeliveryFees !== 'object') {
     db.settings.productDeliveryFees = {
       standard: PRODUCT_STANDARD_DELIVERY_FEE,
       express: PRODUCT_EXPRESS_DELIVERY_FEE
     };
-    shouldPersistSettings = true;
   } else {
     const standard = Number(db.settings.productDeliveryFees.standard);
     const express = Number(db.settings.productDeliveryFees.express);
-    const normalizedStandard = Number.isFinite(standard) && standard >= 0 ? standard : PRODUCT_STANDARD_DELIVERY_FEE;
-    const normalizedExpress = Number.isFinite(express) && express >= 0 ? express : PRODUCT_EXPRESS_DELIVERY_FEE;
-
-    if (normalizedStandard !== standard || normalizedExpress !== express) {
-      db.settings.productDeliveryFees.standard = normalizedStandard;
-      db.settings.productDeliveryFees.express = normalizedExpress;
-      shouldPersistSettings = true;
-    }
-  }
-
-  if (shouldPersistSettings) {
-    writeDatabase(db);
+    db.settings.productDeliveryFees.standard = Number.isFinite(standard) && standard >= 0
+      ? standard
+      : PRODUCT_STANDARD_DELIVERY_FEE;
+    db.settings.productDeliveryFees.express = Number.isFinite(express) && express >= 0
+      ? express
+      : PRODUCT_EXPRESS_DELIVERY_FEE;
   }
 
   if (db.products.length === 0) {
     db.products = getDefaultProducts();
-    writeDatabase(db);
   } else {
-    const mergedProducts = mergeProductDefaults(db.products);
-    const hasChanges = JSON.stringify(mergedProducts) !== JSON.stringify(db.products);
+    db.products = mergeProductDefaults(db.products);
+  }
 
-    if (hasChanges) {
-      db.products = mergedProducts;
-      writeDatabase(db);
-    }
+  if (db.services.length === 0) {
+    db.services = getDefaultServices();
   }
 
   return db;
+}
+
+async function buildDatabaseObjectFromPrisma() {
+  const prisma = getPrismaClient();
+  if (!prisma) {
+    return null;
+  }
+
+  const [
+    bookingRows,
+    orderRows,
+    messageRows,
+    adminRows,
+    serviceRows,
+    productRows,
+    bookingNotificationRows,
+    productOrderNotificationRows,
+    appSetting
+  ] = await Promise.all([
+    prisma.bookingRecord.findMany(),
+    prisma.productOrderRecord.findMany(),
+    prisma.messageRecord.findMany(),
+    prisma.adminRecord.findMany(),
+    prisma.serviceRecord.findMany(),
+    prisma.productRecord.findMany(),
+    prisma.bookingNotificationRecord.findMany(),
+    prisma.productOrderNotificationRecord.findMany(),
+    prisma.appSetting.findUnique({ where: { id: 1 } })
+  ]);
+
+  const db = buildBaseDatabaseShape();
+  db.bookings = bookingRows.map((row) => parseJsonSafely(row.raw, { id: row.id, email: row.email || '', status: row.status || '' }));
+  db.productOrders = orderRows.map((row) => parseJsonSafely(row.raw, { id: row.id, email: row.email || '', status: row.status || '' }));
+  db.messages = messageRows.map((row) => parseJsonSafely(row.raw, { id: row.id, email: row.email || '', status: row.status || '' }));
+  db.admins = adminRows.map((row) => parseJsonSafely(row.raw, { id: row.id, email: row.email || '', name: row.name || '' }));
+  db.services = serviceRows.map((row) => parseJsonSafely(row.raw, { id: row.id, name: row.name, price: row.price, duration: row.duration || 0 }));
+  db.products = productRows.map((row) => parseJsonSafely(row.raw, { id: row.id, name: row.name, category: row.category || '', price: row.price, stock: row.stock || 0, image: row.image || '' }));
+  db.bookingNotifications = bookingNotificationRows.map((row) => parseJsonSafely(row.raw, { id: row.id, bookingId: row.bookingId || '' }));
+  db.productOrderNotifications = productOrderNotificationRows.map((row) => parseJsonSafely(row.raw, { id: row.id, orderId: row.orderId || '' }));
+
+  db.settings = parseJsonSafely(appSetting && appSetting.raw ? appSetting.raw : '{}', db.settings);
+  db.adminAccessCodes = [];
+
+  return normalizeDatabaseObject(db);
+}
+
+async function refreshPrismaPrimaryCache() {
+  if (!isPrismaPrimaryEnabled()) return;
+  if (prismaPrimaryCacheRefreshInFlight) return;
+
+  prismaPrimaryCacheRefreshInFlight = true;
+  try {
+    const fromPrisma = await buildDatabaseObjectFromPrisma();
+    if (fromPrisma) {
+      prismaPrimaryCache = fromPrisma;
+      prismaPrimaryCacheLoadedAt = Date.now();
+    }
+  } catch (error) {
+    console.warn('[Prisma Primary] Cache refresh failed:', error && error.message ? String(error.message) : error);
+  } finally {
+    prismaPrimaryCacheRefreshInFlight = false;
+  }
+}
+
+function buildPrismaMirrorPayload(db) {
+  return {
+    bookings: arrayOf(db.bookings)
+      .map((item) => ({
+        id: String(item && item.id ? item.id : '').trim(),
+        trackingCode: item && item.trackingCode ? String(item.trackingCode) : null,
+        email: item && item.email ? normalizeEmail(item.email) : null,
+        status: item && item.status ? String(item.status) : null,
+        createdAt: toDateOrNull(item && item.createdAt),
+        updatedAt: toDateOrNull(item && item.updatedAt),
+        raw: safeStringify(item)
+      }))
+      .filter((item) => item.id),
+    productOrders: arrayOf(db.productOrders)
+      .map((item) => ({
+        id: String(item && item.id ? item.id : '').trim(),
+        orderCode: item && item.orderCode ? String(item.orderCode) : null,
+        email: item && item.email ? normalizeEmail(item.email) : null,
+        status: item && item.status ? String(item.status) : null,
+        createdAt: toDateOrNull(item && item.createdAt),
+        updatedAt: toDateOrNull(item && item.updatedAt),
+        raw: safeStringify(item)
+      }))
+      .filter((item) => item.id),
+    messages: arrayOf(db.messages)
+      .map((item) => ({
+        id: String(item && item.id ? item.id : '').trim(),
+        email: item && item.email ? normalizeEmail(item.email) : null,
+        status: item && item.status ? String(item.status) : null,
+        createdAt: toDateOrNull(item && item.createdAt),
+        raw: safeStringify(item)
+      }))
+      .filter((item) => item.id),
+    admins: arrayOf(db.admins)
+      .map((item) => ({
+        id: String(item && item.id ? item.id : '').trim(),
+        email: item && item.email ? normalizeEmail(item.email) : null,
+        name: item && item.name ? String(item.name) : null,
+        createdAt: toDateOrNull(item && item.createdAt),
+        raw: safeStringify(item)
+      }))
+      .filter((item) => item.id),
+    services: arrayOf(db.services)
+      .map((item) => ({
+        id: Number(item && item.id),
+        name: String(item && item.name ? item.name : ''),
+        price: Number(item && item.price ? item.price : 0),
+        duration: Number.isFinite(Number(item && item.duration)) ? Number(item.duration) : null,
+        raw: safeStringify(item)
+      }))
+      .filter((item) => Number.isFinite(item.id)),
+    products: arrayOf(db.products)
+      .map((item) => ({
+        id: Number(item && item.id),
+        name: String(item && item.name ? item.name : ''),
+        category: item && item.category ? String(item.category) : null,
+        price: Number(item && item.price ? item.price : 0),
+        stock: Number.isFinite(Number(item && item.stock)) ? Number(item.stock) : null,
+        image: item && item.image ? String(item.image) : null,
+        updatedAt: toDateOrNull(item && item.updatedAt),
+        raw: safeStringify(item)
+      }))
+      .filter((item) => Number.isFinite(item.id)),
+    bookingNotifications: arrayOf(db.bookingNotifications)
+      .map((item) => ({
+        id: String(item && item.id ? item.id : '').trim(),
+        bookingId: item && item.bookingId ? String(item.bookingId) : null,
+        email: item && item.email ? normalizeEmail(item.email) : null,
+        type: item && item.type ? String(item.type) : null,
+        createdAt: toDateOrNull(item && item.createdAt),
+        raw: safeStringify(item)
+      }))
+      .filter((item) => item.id),
+    productOrderNotifications: arrayOf(db.productOrderNotifications)
+      .map((item) => ({
+        id: String(item && item.id ? item.id : '').trim(),
+        orderId: item && item.orderId ? String(item.orderId) : null,
+        email: item && item.email ? normalizeEmail(item.email) : null,
+        type: item && item.type ? String(item.type) : null,
+        createdAt: toDateOrNull(item && item.createdAt),
+        raw: safeStringify(item)
+      }))
+      .filter((item) => item.id),
+    settingsRaw: safeStringify(db.settings || {})
+  };
+}
+
+async function prismaReplaceTable(tx, tableName, rows) {
+  await tx[tableName].deleteMany();
+  if (rows.length) {
+    await tx[tableName].createMany({ data: rows });
+  }
+}
+
+async function syncJsonDatabaseToPrisma(dbSnapshot) {
+  if (!isPrismaMirrorEnabled()) {
+    return { synced: false, skipped: true, reason: 'DATABASE_URL not configured' };
+  }
+
+  const prisma = getPrismaClient();
+  if (!prisma) {
+    return { synced: false, skipped: true, reason: 'Prisma client unavailable' };
+  }
+
+  const payload = buildPrismaMirrorPayload(dbSnapshot || {});
+
+  await prisma.$transaction(async (tx) => {
+    await prismaReplaceTable(tx, 'bookingRecord', payload.bookings);
+    await prismaReplaceTable(tx, 'productOrderRecord', payload.productOrders);
+    await prismaReplaceTable(tx, 'messageRecord', payload.messages);
+    await prismaReplaceTable(tx, 'adminRecord', payload.admins);
+    await prismaReplaceTable(tx, 'serviceRecord', payload.services);
+    await prismaReplaceTable(tx, 'productRecord', payload.products);
+    await prismaReplaceTable(tx, 'bookingNotificationRecord', payload.bookingNotifications);
+    await prismaReplaceTable(tx, 'productOrderNotificationRecord', payload.productOrderNotifications);
+
+    await tx.appSetting.upsert({
+      where: { id: 1 },
+      update: { raw: payload.settingsRaw },
+      create: { id: 1, raw: payload.settingsRaw }
+    });
+  });
+
+  return { synced: true };
+}
+
+async function triggerPrismaMirrorSync(dbSnapshot) {
+  if (!isPrismaMirrorEnabled()) {
+    return;
+  }
+
+  if (prismaSyncInFlight) {
+    prismaSyncQueued = true;
+    return;
+  }
+
+  prismaSyncInFlight = true;
+  let snapshot = dbSnapshot;
+
+  try {
+    do {
+      prismaSyncQueued = false;
+      await syncJsonDatabaseToPrisma(snapshot || readDatabase());
+
+      if (prismaSyncQueued) {
+        snapshot = readDatabaseFromJsonDisk();
+      }
+    } while (prismaSyncQueued);
+  } catch (error) {
+    console.warn('[Prisma Mirror] Sync failed:', error && error.message ? String(error.message) : error);
+  } finally {
+    prismaSyncInFlight = false;
+  }
+}
+
+// Initialize database
+function initializeDatabase() {
+  if (!fs.existsSync(dbPath)) {
+    const initialData = normalizeDatabaseObject(buildBaseDatabaseShape());
+    fs.writeFileSync(dbPath, JSON.stringify(initialData, null, 2));
+  }
+}
+
+function writeDatabaseFile(data) {
+  fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
+}
+
+function readDatabaseFromJsonDisk() {
+  const db = JSON.parse(fs.readFileSync(dbPath, 'utf8'));
+  const normalizedDb = normalizeDatabaseObject(db);
+  let shouldPersist = false;
+
+  if (JSON.stringify(normalizedDb) !== JSON.stringify(db)) {
+    shouldPersist = true;
+  }
+
+  if (shouldPersist) {
+    writeDatabaseFile(normalizedDb);
+  }
+
+  return normalizedDb;
+}
+
+// Helper functions to read/write database
+function readDatabase() {
+  if (!isPrismaPrimaryEnabled()) {
+    return readDatabaseFromJsonDisk();
+  }
+
+  if (prismaPrimaryCache) {
+    return normalizeDatabaseObject(prismaPrimaryCache);
+  }
+
+  const fallbackDb = readDatabaseFromJsonDisk();
+  prismaPrimaryCache = fallbackDb;
+  prismaPrimaryCacheLoadedAt = Date.now();
+  refreshPrismaPrimaryCache();
+  return fallbackDb;
 }
 
 function addBookingNotification(db, booking, type, message) {
@@ -1547,6 +2082,187 @@ function buildColorfulEmailShell({ title, subtitle, bodyHtml, accent = '#8f2aa8'
   `;
 }
 
+function buildInvoicePdfBuffer({
+  invoiceTitle,
+  invoiceNumber,
+  customerName,
+  details = [],
+  totals = []
+}) {
+  return new Promise((resolve, reject) => {
+    try {
+      const doc = new PDFDocument({ margin: 50, size: 'A4' });
+      const chunks = [];
+
+      doc.on('data', chunk => chunks.push(chunk));
+      doc.on('end', () => resolve(Buffer.concat(chunks)));
+      doc.on('error', reject);
+
+      doc.fontSize(20).fillColor('#4a0e4e').text('CEO Unisex Salon');
+      doc.moveDown(0.3);
+      doc.fontSize(16).fillColor('#2f2340').text(String(invoiceTitle || 'Invoice'));
+      doc.moveDown(0.8);
+
+      doc.fontSize(11).fillColor('#333333');
+      doc.text(`Invoice Number: ${String(invoiceNumber || 'N/A')}`);
+      doc.text(`Customer: ${String(customerName || 'Customer')}`);
+      doc.text(`Generated: ${new Date().toLocaleString()}`);
+      doc.moveDown(0.8);
+
+      doc.fontSize(12).fillColor('#4a0e4e').text('Details');
+      doc.moveDown(0.4);
+      doc.fontSize(10).fillColor('#111111');
+      details.forEach(item => {
+        if (!item || typeof item !== 'object') return;
+        doc.text(`${String(item.label || '').trim()}: ${String(item.value || '').trim()}`);
+      });
+
+      doc.moveDown(0.8);
+      doc.fontSize(12).fillColor('#4a0e4e').text('Totals');
+      doc.moveDown(0.4);
+      doc.fontSize(10).fillColor('#111111');
+      totals.forEach(item => {
+        if (!item || typeof item !== 'object') return;
+        doc.text(`${String(item.label || '').trim()}: ${String(item.value || '').trim()}`);
+      });
+
+      doc.moveDown(1.2);
+      doc.fontSize(9).fillColor('#666666').text('Thank you for choosing CEO Unisex Salon.');
+      doc.end();
+    } catch (error) {
+      reject(error);
+    }
+  });
+}
+
+function resolveBookingByLookup(db, lookupToken) {
+  const normalizedLookup = String(lookupToken || '').trim();
+  const normalizedCode = normalizedLookup.toUpperCase();
+  return (db.bookings || []).find(b => String(b.id) === normalizedLookup)
+    || (db.bookings || []).find(b => getBookingTrackingCode(b) === normalizedCode)
+    || null;
+}
+
+function resolveProductOrderByLookup(db, lookupToken) {
+  const normalizedLookup = String(lookupToken || '').trim();
+  const normalizedCode = normalizedLookup.toUpperCase();
+  return (db.productOrders || []).find(o => String(o.id) === normalizedLookup)
+    || (db.productOrders || []).find(o => String(o.orderCode || '').trim().toUpperCase() === normalizedCode)
+    || null;
+}
+
+function createInvoiceAccessToken({ resourceType, lookupCode, email }) {
+  const normalizedType = String(resourceType || '').trim().toLowerCase();
+  const normalizedLookupCode = String(lookupCode || '').trim().toUpperCase();
+  const normalizedEmail = normalizeEmail(email);
+
+  return jwt.sign(
+    {
+      typ: 'invoice_access',
+      resourceType: normalizedType,
+      lookupCode: normalizedLookupCode,
+      email: normalizedEmail
+    },
+    INVOICE_ACCESS_TOKEN_SECRET,
+    { expiresIn: INVOICE_ACCESS_TOKEN_TTL_SECONDS }
+  );
+}
+
+function verifyInvoiceAccessToken({ token, resourceType, lookupCode, email }) {
+  try {
+    const decoded = jwt.verify(String(token || '').trim(), INVOICE_ACCESS_TOKEN_SECRET);
+    if (!decoded || typeof decoded !== 'object') return false;
+
+    const tokenType = String(decoded.typ || '').trim().toLowerCase();
+    const tokenResourceType = String(decoded.resourceType || '').trim().toLowerCase();
+    const tokenLookupCode = String(decoded.lookupCode || '').trim().toUpperCase();
+    const tokenEmail = normalizeEmail(decoded.email);
+
+    const expectedType = String(resourceType || '').trim().toLowerCase();
+    const expectedLookupCode = String(lookupCode || '').trim().toUpperCase();
+    const expectedEmail = normalizeEmail(email);
+
+    if (tokenType !== 'invoice_access') return false;
+    if (tokenResourceType !== expectedType) return false;
+    if (tokenLookupCode !== expectedLookupCode) return false;
+    if (tokenEmail !== expectedEmail) return false;
+
+    return true;
+  } catch (error) {
+    return false;
+  }
+}
+
+function buildBookingInvoicePayload(booking) {
+  const bookingId = String(booking && booking.id ? booking.id : '').trim();
+  const invoiceNo = String(booking && booking.invoiceNumber ? booking.invoiceNumber : '').trim()
+    || `INV-SVC-${bookingId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase() || 'N/A'}`;
+  const customerName = String(booking && booking.name ? booking.name : 'Customer').trim();
+  const serviceName = String(booking && booking.serviceName ? booking.serviceName : 'Salon Service').trim();
+  const when = `${String(booking && booking.date ? booking.date : '').trim()}${String(booking && booking.time ? booking.time : '').trim() ? ` at ${String(booking.time).trim()}` : ''}`.trim() || 'N/A';
+  const paymentMethod = String(booking && booking.paymentMethod ? booking.paymentMethod : 'N/A').trim();
+  const paymentPlan = String(booking && booking.paymentPlan ? booking.paymentPlan : 'N/A').trim();
+  const subtotal = Number(booking && booking.price ? booking.price : 0);
+  const dueNow = Number(booking && booking.amountDueNow ? booking.amountDueNow : 0);
+  const remaining = Number(booking && booking.amountRemaining ? booking.amountRemaining : 0);
+  const productsTotal = Number(booking && booking.requestedProductsTotal ? booking.requestedProductsTotal : 0);
+  const total = Number(subtotal + productsTotal || dueNow + remaining || 0);
+  const trackingCode = getBookingTrackingCode(booking || {});
+
+  return {
+    invoiceNo,
+    customerName,
+    details: [
+      { label: 'Booking ID', value: bookingId || 'N/A' },
+      { label: 'Tracking Code', value: trackingCode },
+      { label: 'Service', value: serviceName },
+      { label: 'Scheduled', value: when },
+      { label: 'Payment Method', value: paymentMethod },
+      { label: 'Payment Plan', value: paymentPlan }
+    ],
+    totals: [
+      { label: 'Service Subtotal', value: `₦${subtotal.toLocaleString()}` },
+      { label: 'Products Total', value: `₦${productsTotal.toLocaleString()}` },
+      { label: 'Total', value: `₦${total.toLocaleString()}` },
+      { label: 'Amount Due Now', value: `₦${dueNow.toLocaleString()}` },
+      { label: 'Amount Remaining', value: `₦${remaining.toLocaleString()}` }
+    ]
+  };
+}
+
+function buildProductOrderInvoicePayload(order) {
+  const orderId = String(order && order.id ? order.id : '').trim();
+  const orderCode = String(order && order.orderCode ? order.orderCode : orderId || 'N/A').trim();
+  const invoiceNo = String(order && order.invoiceNumber ? order.invoiceNumber : '').trim()
+    || `INV-PRD-${orderId.replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase() || 'N/A'}`;
+  const customerName = String(order && order.name ? order.name : 'Customer').trim();
+  const paymentMethod = String(order && order.paymentMethod ? order.paymentMethod : 'N/A').trim();
+  const deliverySpeed = String(order && order.deliverySpeed ? order.deliverySpeed : 'standard').toUpperCase();
+  const subtotal = Number(order && order.itemsSubtotal ? order.itemsSubtotal : 0);
+  const deliveryFee = Number(order && order.deliveryFee ? order.deliveryFee : 0);
+  const total = Number(order && order.totalAmount ? order.totalAmount : 0);
+  const amountDueNow = Number(order && order.amountDueNow ? order.amountDueNow : total);
+  const items = Array.isArray(order && order.items) ? order.items : [];
+
+  return {
+    invoiceNo,
+    customerName,
+    details: [
+      { label: 'Order Code', value: orderCode },
+      { label: 'Order ID', value: orderId || 'N/A' },
+      { label: 'Payment Method', value: paymentMethod },
+      { label: 'Delivery Speed', value: deliverySpeed },
+      { label: 'Items', value: items.length ? items.map(item => `${item.name} x ${item.quantity}`).join(', ') : 'No item lines' }
+    ],
+    totals: [
+      { label: 'Subtotal', value: `₦${subtotal.toLocaleString()}` },
+      { label: 'Delivery Fee', value: `₦${deliveryFee.toLocaleString()}` },
+      { label: 'Total', value: `₦${total.toLocaleString()}` },
+      { label: 'Amount Due Now', value: `₦${amountDueNow.toLocaleString()}` }
+    ]
+  };
+}
+
 function isGrokConfigured() {
   return Boolean(String(GROK_API_KEY || '').trim());
 }
@@ -1614,11 +2330,28 @@ function requireAdminAuth(req, res, next) {
 }
 
 function writeDatabase(data) {
-  fs.writeFileSync(dbPath, JSON.stringify(data, null, 2));
+  const normalized = normalizeDatabaseObject(data);
+
+  if (isPrismaPrimaryEnabled()) {
+    prismaPrimaryCache = normalized;
+    prismaPrimaryCacheLoadedAt = Date.now();
+  }
+
+  writeDatabaseFile(normalized);
+  // Keep Prisma mirror in sync (non-blocking) when DATABASE_URL is configured.
+  triggerPrismaMirrorSync(normalized);
 }
 
 // Initialize database on startup
 initializeDatabase();
+// Ensure JSON structure defaults are normalized, then push initial Prisma mirror snapshot.
+const startupDbSnapshot = readDatabaseFromJsonDisk();
+if (isPrismaPrimaryEnabled()) {
+  prismaPrimaryCache = startupDbSnapshot;
+  prismaPrimaryCacheLoadedAt = Date.now();
+  refreshPrismaPrimaryCache();
+}
+triggerPrismaMirrorSync(startupDbSnapshot);
 
 // Routes
 
@@ -1785,6 +2518,7 @@ app.post('/api/product-orders', async (req, res) => {
   );
 
   let adminEmailResult = null;
+  let orderInvoiceEmail = null;
   try {
     if (SEND_ADMIN_NEW_BOOKING_EMAILS && isSmtpConfigured() && Array.isArray(db.admins) && db.admins.length) {
       const recipients = Array.from(new Set(db.admins.map(a => normalizeEmail(a.email)).filter(Boolean)));
@@ -1823,11 +2557,20 @@ app.post('/api/product-orders', async (req, res) => {
     adminEmailResult = { sent: false, error: true, reason: e && e.message ? String(e.message) : 'Failed to notify admins' };
   }
 
+  try {
+    orderInvoiceEmail = await maybeSendProductOrderInvoiceEmail({ order });
+  } catch (e) {
+    orderInvoiceEmail = { sent: false, error: true, reason: e && e.message ? String(e.message) : 'Failed to send invoice email' };
+  }
+
   writeDatabase(db);
 
   return res.status(201).json({
     message: `Product order created successfully. Order ID: ${order.id}`,
-    notifications: { adminEmail: adminEmailResult },
+    notifications: {
+      adminEmail: adminEmailResult,
+      invoiceEmail: orderInvoiceEmail
+    },
     paymentBankDetails: normalizedPaymentMethod === 'Bank Transfer'
       ? {
           bankName: SALON_BANK_NAME,
@@ -1978,6 +2721,128 @@ app.get('/api/product-orders/:id/track', async (req, res) => {
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   return res.json({ order, notifications });
+});
+
+// Issue secure invoice link token (Customer)
+app.post('/api/invoices/access-link', (req, res) => {
+  const resourceType = String(req.body && req.body.resourceType ? req.body.resourceType : '').trim().toLowerCase();
+  const code = String(req.body && req.body.code ? req.body.code : '').trim();
+  const email = normalizeEmail(req.body && req.body.email ? req.body.email : '');
+
+  if (!['booking', 'product'].includes(resourceType)) {
+    return res.status(400).json({ error: 'resourceType must be booking or product' });
+  }
+
+  if (!code || !email) {
+    return res.status(400).json({ error: 'code and email are required' });
+  }
+
+  if (!isValidEmail(email)) {
+    return res.status(400).json({ error: 'Please provide a valid email address' });
+  }
+
+  const db = readDatabase();
+
+  if (resourceType === 'booking') {
+    const booking = resolveBookingByLookup(db, code);
+    if (!booking) {
+      return res.status(404).json({ error: 'Booking not found' });
+    }
+    if (normalizeEmail(booking.email) !== email) {
+      return res.status(401).json({ error: 'Email does not match this booking' });
+    }
+
+    const lookupCode = String(booking.trackingCode || booking.id || code).trim().toUpperCase();
+    const token = createInvoiceAccessToken({
+      resourceType: 'booking',
+      lookupCode,
+      email
+    });
+
+    const pathOnly = `/api/bookings/${encodeURIComponent(lookupCode)}/invoice?token=${encodeURIComponent(token)}`;
+    return res.json({
+      secureInvoiceUrl: `${PUBLIC_BASE_URL}${pathOnly}`,
+      path: pathOnly,
+      expiresInSeconds: INVOICE_ACCESS_TOKEN_TTL_SECONDS
+    });
+  }
+
+  const order = resolveProductOrderByLookup(db, code);
+  if (!order) {
+    return res.status(404).json({ error: 'Product order not found' });
+  }
+  if (normalizeEmail(order.email) !== email) {
+    return res.status(401).json({ error: 'Email does not match this product order' });
+  }
+
+  const lookupCode = String(order.orderCode || order.id || code).trim().toUpperCase();
+  const token = createInvoiceAccessToken({
+    resourceType: 'product',
+    lookupCode,
+    email
+  });
+
+  const pathOnly = `/api/product-orders/${encodeURIComponent(lookupCode)}/invoice?token=${encodeURIComponent(token)}`;
+  return res.json({
+    secureInvoiceUrl: `${PUBLIC_BASE_URL}${pathOnly}`,
+    path: pathOnly,
+    expiresInSeconds: INVOICE_ACCESS_TOKEN_TTL_SECONDS
+  });
+});
+
+// Download product order invoice PDF (Customer)
+app.get('/api/product-orders/:id/invoice', async (req, res) => {
+  const lookupToken = String(req.params.id || '').trim();
+  const email = normalizeEmail(req.query.email);
+  const token = String(req.query.token || '').trim();
+
+  if (!lookupToken || (!email && !token)) {
+    return res.status(400).json({ error: 'Order id/code and either email or token are required' });
+  }
+
+  const db = readDatabase();
+  const order = resolveProductOrderByLookup(db, lookupToken);
+
+  if (!order) {
+    return res.status(404).json({ error: 'Product order not found' });
+  }
+
+  const ownerEmail = normalizeEmail(order.email);
+  const canonicalLookupCode = String(order.orderCode || order.id || lookupToken).trim().toUpperCase();
+  const authorizedByToken = token
+    ? verifyInvoiceAccessToken({
+        token,
+        resourceType: 'product',
+        lookupCode: canonicalLookupCode,
+        email: ownerEmail
+      })
+    : false;
+
+  const authorizedByEmail = email && ownerEmail === email;
+
+  if (!authorizedByToken && !authorizedByEmail) {
+    return res.status(401).json({ error: 'Unauthorized invoice access' });
+  }
+
+  try {
+    const payload = buildProductOrderInvoicePayload(order);
+    const pdfBuffer = await buildInvoicePdfBuffer({
+      invoiceTitle: 'Product Order Invoice',
+      invoiceNumber: payload.invoiceNo,
+      customerName: payload.customerName,
+      details: payload.details,
+      totals: payload.totals
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${payload.invoiceNo}.pdf"`);
+    return res.send(pdfBuffer);
+  } catch (error) {
+    return res.status(500).json({
+      error: 'Failed to generate product invoice PDF',
+      details: error && error.message ? String(error.message) : undefined
+    });
+  }
 });
 
 // Get all products (Admin)
@@ -2370,6 +3235,7 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
 
   let adminBookingEmail = null;
   let trackingCodeEmail = null;
+  let bookingInvoiceEmail = null;
   try {
     adminBookingEmail = await maybeSendAdminNewBookingEmail({ booking, db });
   } catch (error) {
@@ -2390,6 +3256,16 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
       reason: error && error.message ? String(error.message) : 'Failed to send tracking code email'
     };
     // Never block booking creation due to tracking code email errors.
+  }
+
+  try {
+    bookingInvoiceEmail = await maybeSendBookingInvoiceEmail({ booking });
+  } catch (error) {
+    bookingInvoiceEmail = {
+      sent: false,
+      error: true,
+      reason: error && error.message ? String(error.message) : 'Failed to send booking invoice email'
+    };
   }
 
   addBookingNotification(
@@ -2415,7 +3291,8 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
       : null,
     notifications: {
       adminEmail: adminBookingEmail,
-      trackingCodeEmail
+      trackingCodeEmail,
+      invoiceEmail: bookingInvoiceEmail
     },
     booking
   });
@@ -3267,6 +4144,61 @@ app.get('/api/bookings/:id/track', (req, res) => {
     },
     notifications
   });
+});
+
+// Download booking invoice PDF (Customer)
+app.get('/api/bookings/:id/invoice', async (req, res) => {
+  const lookupToken = String(req.params.id || '').trim();
+  const email = normalizeEmail(req.query.email);
+  const token = String(req.query.token || '').trim();
+
+  if (!lookupToken || (!email && !token)) {
+    return res.status(400).json({ error: 'Booking id/code and either email or token are required' });
+  }
+
+  const db = readDatabase();
+  const booking = resolveBookingByLookup(db, lookupToken);
+
+  if (!booking) {
+    return res.status(404).json({ error: 'Booking not found' });
+  }
+
+  const ownerEmail = normalizeEmail(booking.email);
+  const canonicalLookupCode = String(booking.trackingCode || booking.id || lookupToken).trim().toUpperCase();
+  const authorizedByToken = token
+    ? verifyInvoiceAccessToken({
+        token,
+        resourceType: 'booking',
+        lookupCode: canonicalLookupCode,
+        email: ownerEmail
+      })
+    : false;
+
+  const authorizedByEmail = email && ownerEmail === email;
+
+  if (!authorizedByToken && !authorizedByEmail) {
+    return res.status(401).json({ error: 'Unauthorized invoice access' });
+  }
+
+  try {
+    const payload = buildBookingInvoicePayload(booking);
+    const pdfBuffer = await buildInvoicePdfBuffer({
+      invoiceTitle: 'Service Invoice',
+      invoiceNumber: payload.invoiceNo,
+      customerName: payload.customerName,
+      details: payload.details,
+      totals: payload.totals
+    });
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${payload.invoiceNo}.pdf"`);
+    return res.send(pdfBuffer);
+  } catch (error) {
+    return res.status(500).json({
+      error: 'Failed to generate booking invoice PDF',
+      details: error && error.message ? String(error.message) : undefined
+    });
+  }
 });
 
 // Upload bank transfer receipt (Customer)

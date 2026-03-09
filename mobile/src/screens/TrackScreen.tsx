@@ -4,6 +4,7 @@ import {
   Animated,
   Alert,
   Easing,
+  Linking,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -14,8 +15,9 @@ import {
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as DocumentPicker from 'expo-document-picker';
 import * as Clipboard from 'expo-clipboard';
+import { useNavigation } from '@react-navigation/native';
 
-import { apiGet, ApiError } from '../lib/api';
+import { apiGet, apiPostJson, ApiError } from '../lib/api';
 import { buildApiUrl } from '../config';
 import { useThemePrefs } from '../theme';
 import type { ProductOrderTrackResponse, TrackResponse } from '../types';
@@ -140,6 +142,7 @@ function StaggerReveal({
 }
 
 export default function TrackScreen(props: any) {
+  const navigation = useNavigation<any>();
   const { resolvedColorScheme } = useThemePrefs();
   const isDark = resolvedColorScheme === 'dark';
   const palette = getMobilePalette(isDark);
@@ -158,6 +161,13 @@ export default function TrackScreen(props: any) {
   const [orderData, setOrderData] = useState<ProductOrderTrackResponse | null>(null);
   const [bankDetails, setBankDetails] = useState<BankDetails | null>(null);
   const [uploadingReceipt, setUploadingReceipt] = useState(false);
+  const [showBackToTop, setShowBackToTop] = useState(false);
+  const scrollViewRef = useRef<ScrollView>(null);
+  const [sectionOffsets, setSectionOffsets] = useState<Record<'booking' | 'order' | 'results', number>>({
+    booking: 0,
+    order: 0,
+    results: 0
+  });
   const screenEntry = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -528,6 +538,80 @@ export default function TrackScreen(props: any) {
     Alert.alert('Copied', 'Product order code copied to clipboard.');
   }
 
+  async function openInvoiceInBrowser(url: string) {
+    try {
+      const supported = await Linking.canOpenURL(url);
+      if (!supported) {
+        await Clipboard.setStringAsync(url);
+        Alert.alert('Cannot open link', 'Invoice URL copied to clipboard. Open it in your browser.');
+        return;
+      }
+
+      await Linking.openURL(url);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to open invoice URL';
+      Alert.alert('Invoice error', message);
+    }
+  }
+
+  async function downloadBookingInvoice() {
+    const bookingCode = String(data?.booking?.trackingCode || data?.booking?.id || trackingCode || '').trim().toUpperCase();
+    const bookingEmail = normalizeEmailInput(email || '');
+
+    if (!bookingCode || !bookingEmail || !isValidEmailAddress(bookingEmail)) {
+      Alert.alert('Missing details', 'Please track your booking with a valid email before downloading invoice.');
+      return;
+    }
+
+    try {
+      const link = await apiPostJson<{ secureInvoiceUrl: string }>('/api/invoices/access-link', {
+        resourceType: 'booking',
+        code: bookingCode,
+        email: bookingEmail
+      });
+
+      const secureInvoiceUrl = String(link && link.secureInvoiceUrl ? link.secureInvoiceUrl : '').trim();
+      if (!secureInvoiceUrl) {
+        Alert.alert('Invoice error', 'Secure invoice link was not generated.');
+        return;
+      }
+
+      await openInvoiceInBrowser(secureInvoiceUrl);
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : (error instanceof Error ? error.message : 'Unable to fetch secure invoice link');
+      Alert.alert('Invoice error', message);
+    }
+  }
+
+  async function downloadProductInvoice() {
+    const orderLookupCode = String(orderData?.order?.orderCode || orderData?.order?.id || orderCode || '').trim().toUpperCase();
+    const productEmail = normalizeEmailInput(orderEmail || '');
+
+    if (!orderLookupCode || !productEmail || !isValidEmailAddress(productEmail)) {
+      Alert.alert('Missing details', 'Please track your product order with a valid email before downloading invoice.');
+      return;
+    }
+
+    try {
+      const link = await apiPostJson<{ secureInvoiceUrl: string }>('/api/invoices/access-link', {
+        resourceType: 'product',
+        code: orderLookupCode,
+        email: productEmail
+      });
+
+      const secureInvoiceUrl = String(link && link.secureInvoiceUrl ? link.secureInvoiceUrl : '').trim();
+      if (!secureInvoiceUrl) {
+        Alert.alert('Invoice error', 'Secure invoice link was not generated.');
+        return;
+      }
+
+      await openInvoiceInBrowser(secureInvoiceUrl);
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : (error instanceof Error ? error.message : 'Unable to fetch secure invoice link');
+      Alert.alert('Invoice error', message);
+    }
+  }
+
   async function useSavedBookingDetails() {
     const [savedCode, savedEmail] = await Promise.all([
       AsyncStorage.getItem(LAST_TRACKING_CODE_KEY),
@@ -560,21 +644,81 @@ export default function TrackScreen(props: any) {
     Alert.alert('Loaded', 'Saved product order details loaded.');
   }
 
+  function handleScrollPosition(y: number) {
+    const shouldShow = y > 360;
+    setShowBackToTop((prev) => (prev === shouldShow ? prev : shouldShow));
+  }
+
+  function scrollToTop() {
+    scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+  }
+
+  function setSectionOffset(section: 'booking' | 'order' | 'results', y: number) {
+    setSectionOffsets((prev) => ({ ...prev, [section]: y }));
+  }
+
+  function jumpToSection(section: 'booking' | 'order' | 'results') {
+    const y = Number(sectionOffsets[section] || 0);
+    scrollViewRef.current?.scrollTo({ y: Math.max(0, y - 110), animated: true });
+  }
+
   return (
+    <View style={styles.screenWrap}>
     <ScrollView
+      ref={scrollViewRef}
       style={[styles.container, themed.container]}
       contentContainerStyle={styles.contentContainer}
       keyboardShouldPersistTaps="handled"
       showsVerticalScrollIndicator={false}
+      onScroll={(event) => handleScrollPosition(event.nativeEvent.contentOffset.y)}
+      scrollEventThrottle={16}
     >
       <Animated.View style={[styles.heroCard, cardIn(20)]}>
         <Text style={styles.heroKicker}>LIVE UPDATES</Text>
         <Text style={styles.h1}>Track your booking</Text>
         <Text style={styles.sub}>Follow booking and product order status in real time.</Text>
+
+        <View style={styles.quickNavRow}>
+          <MicroPress style={styles.quickNavChip} onPress={() => navigation.navigate('Book')}>
+            <Text style={styles.quickNavChipText}>Go to Book</Text>
+          </MicroPress>
+          <MicroPress style={styles.quickNavChip} onPress={() => navigation.navigate('Contact')}>
+            <Text style={styles.quickNavChipText}>Contact</Text>
+          </MicroPress>
+          <MicroPress style={styles.quickNavChip} onPress={() => navigation.navigate('Settings')}>
+            <Text style={styles.quickNavChipText}>Settings</Text>
+          </MicroPress>
+        </View>
       </Animated.View>
 
       <Animated.View style={[styles.quickActionsCard, themed.card, cardIn(24)]}>
         <Text style={[styles.quickActionsTitle, themed.text]}>Quick actions</Text>
+        <View style={styles.rowWrap}>
+          <MicroPress
+            style={[styles.buttonSmallAlt, themed.buttonAlt]}
+            onPress={() => jumpToSection('booking')}
+            accessibilityLabel="Jump to booking tracker"
+            accessibilityHint="Scrolls to the booking tracker form"
+          >
+            <Text style={[styles.buttonSmallAltText, themed.buttonAltText]}>Booking form</Text>
+          </MicroPress>
+          <MicroPress
+            style={[styles.buttonSmallAlt, themed.buttonAlt]}
+            onPress={() => jumpToSection('order')}
+            accessibilityLabel="Jump to order tracker"
+            accessibilityHint="Scrolls to the product order tracker form"
+          >
+            <Text style={[styles.buttonSmallAltText, themed.buttonAltText]}>Order form</Text>
+          </MicroPress>
+          <MicroPress
+            style={[styles.buttonSmallAlt, themed.buttonAlt]}
+            onPress={() => jumpToSection('results')}
+            accessibilityLabel="Jump to tracking results"
+            accessibilityHint="Scrolls to booking and order status results"
+          >
+            <Text style={[styles.buttonSmallAltText, themed.buttonAltText]}>Results</Text>
+          </MicroPress>
+        </View>
         <View style={styles.rowWrap}>
           <MicroPress
             style={[styles.buttonSmallAlt, themed.buttonAlt]}
@@ -596,6 +740,7 @@ export default function TrackScreen(props: any) {
       </Animated.View>
 
       <Animated.View style={[styles.card, themed.card, cardIn(28)]}>
+        <View onLayout={(event) => setSectionOffset('booking', event.nativeEvent.layout.y)} />
         <Text style={styles.cardTitle}>Booking Tracker</Text>
         <Text style={[styles.label, themed.text]}>Tracking Code</Text>
         <TextInput
@@ -659,6 +804,7 @@ export default function TrackScreen(props: any) {
       </Animated.View>
 
       <Animated.View style={[styles.card, themed.card, cardIn(34)]}>
+        <View onLayout={(event) => setSectionOffset('order', event.nativeEvent.layout.y)} />
         <Text style={styles.cardTitle}>Product Order Tracker</Text>
         <Text style={[styles.h2, themed.text]}>Track your product order</Text>
         <Text style={[styles.label, themed.text]}>Product Order Code</Text>
@@ -726,6 +872,7 @@ export default function TrackScreen(props: any) {
 
       {data ? (
         <Animated.View style={[styles.card, themed.card, cardIn(40)]}>
+          <View onLayout={(event) => setSectionOffset('results', event.nativeEvent.layout.y)} />
           <Text style={[styles.h2, themed.text]}>Booking</Text>
           <View style={styles.statusRow}>
             <Text style={[styles.kvLabel, themed.text]}>Status</Text>
@@ -783,6 +930,14 @@ export default function TrackScreen(props: any) {
               accessibilityHint="Copies your booking tracking code to the clipboard"
             >
               <Text style={[styles.buttonSmallAltText, themed.buttonAltText]}>Copy tracking code</Text>
+            </MicroPress>
+            <MicroPress
+              style={[styles.buttonSmallAlt, themed.buttonAlt]}
+              onPress={downloadBookingInvoice}
+              accessibilityLabel="Download booking invoice PDF"
+              accessibilityHint="Opens your booking invoice PDF in browser"
+            >
+              <Text style={[styles.buttonSmallAltText, themed.buttonAltText]}>Download invoice</Text>
             </MicroPress>
           </View>
           <Text style={[styles.kvValue, themed.text]}>Service: {data.booking.serviceName}</Text>
@@ -895,6 +1050,14 @@ export default function TrackScreen(props: any) {
             >
               <Text style={[styles.buttonSmallAltText, themed.buttonAltText]}>Copy order code</Text>
             </MicroPress>
+            <MicroPress
+              style={[styles.buttonSmallAlt, themed.buttonAlt]}
+              onPress={downloadProductInvoice}
+              accessibilityLabel="Download product order invoice PDF"
+              accessibilityHint="Opens your product order invoice PDF in browser"
+            >
+              <Text style={[styles.buttonSmallAltText, themed.buttonAltText]}>Download invoice</Text>
+            </MicroPress>
           </View>
           <Text style={[styles.kvValue, themed.text]}>Delivery speed: {String(orderData.order.deliverySpeed || 'standard').toUpperCase()}</Text>
           <Text style={[styles.kvValue, themed.text]}>Payment: {orderData.order.paymentStatus} ({orderData.order.paymentMethod})</Text>
@@ -951,10 +1114,40 @@ export default function TrackScreen(props: any) {
         </View>
       ) : null}
     </ScrollView>
+    <View style={styles.floatingQuickNav}>
+      <MicroPress
+        style={[styles.floatingQuickNavBtn, { backgroundColor: palette.card, borderColor: palette.border }]}
+        onPress={() => jumpToSection('booking')}
+      >
+        <Text style={[styles.floatingQuickNavText, { color: palette.text }]}>Booking</Text>
+      </MicroPress>
+      <MicroPress
+        style={[styles.floatingQuickNavBtn, { backgroundColor: palette.card, borderColor: palette.border }]}
+        onPress={() => jumpToSection('order')}
+      >
+        <Text style={[styles.floatingQuickNavText, { color: palette.text }]}>Order</Text>
+      </MicroPress>
+      <MicroPress
+        style={[styles.floatingQuickNavBtn, { backgroundColor: palette.primarySoft, borderColor: palette.border }]}
+        onPress={() => jumpToSection('results')}
+      >
+        <Text style={[styles.floatingQuickNavText, { color: palette.primary }]}>Results</Text>
+      </MicroPress>
+    </View>
+    {showBackToTop ? (
+      <Pressable style={styles.backToTopButton} onPress={scrollToTop}>
+        <Text style={styles.backToTopText}>↑ Top</Text>
+      </Pressable>
+    ) : null}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  screenWrap: {
+    flex: 1,
+    position: 'relative'
+  },
   container: {
     flex: 1,
     backgroundColor: '#f6f8fc'
@@ -988,6 +1181,25 @@ const styles = StyleSheet.create({
   sub: {
     marginTop: MOBILE_SPACE.xs,
     color: '#e9dfff'
+  },
+  quickNavRow: {
+    marginTop: MOBILE_SPACE.md,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: MOBILE_SPACE.sm
+  },
+  quickNavChip: {
+    paddingHorizontal: MOBILE_SPACE.md,
+    paddingVertical: MOBILE_SPACE.xs,
+    borderRadius: MOBILE_SHAPE.chipRadius,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.26)',
+    backgroundColor: 'rgba(255,255,255,0.16)'
+  },
+  quickNavChipText: {
+    color: '#ffffff',
+    fontWeight: '800',
+    fontSize: MOBILE_TYPE.caption
   },
   heroCard: {
     backgroundColor: '#2f1d63',
@@ -1252,5 +1464,50 @@ const styles = StyleSheet.create({
   },
   timelineTextPending: {
     color: '#726b84'
+  },
+  backToTopButton: {
+    position: 'absolute',
+    right: 16,
+    bottom: 18,
+    backgroundColor: '#7c46e8',
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: MOBILE_SHAPE.chipRadius,
+    shadowColor: '#220a4c',
+    shadowOpacity: 0.24,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
+    elevation: 4
+  },
+  backToTopText: {
+    color: '#fff',
+    fontSize: MOBILE_TYPE.caption,
+    fontWeight: '900'
+  },
+  floatingQuickNav: {
+    position: 'absolute',
+    left: 12,
+    right: 78,
+    bottom: 16,
+    flexDirection: 'row',
+    gap: MOBILE_SPACE.sm,
+    alignItems: 'center'
+  },
+  floatingQuickNavBtn: {
+    flex: 1,
+    minHeight: 38,
+    borderRadius: MOBILE_SHAPE.chipRadius,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#1d2538',
+    shadowOpacity: 0.08,
+    shadowOffset: { width: 0, height: 3 },
+    shadowRadius: 8,
+    elevation: 2
+  },
+  floatingQuickNavText: {
+    fontSize: MOBILE_TYPE.caption,
+    fontWeight: '800'
   }
 });

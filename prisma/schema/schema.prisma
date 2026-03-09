@@ -1,0 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model BookingRecord {
+  id           String    @id
+  trackingCode String?
+  email        String?
+  status       String?
+  createdAt    DateTime?
+  updatedAt    DateTime?
+  raw          String
+}
+
+model ProductOrderRecord {
+  id        String    @id
+  orderCode String?
+  email     String?
+  status    String?
+  createdAt DateTime?
+  updatedAt DateTime?
+  raw       String
+}
+
+model MessageRecord {
+  id        String    @id
+  email     String?
+  status    String?
+  createdAt DateTime?
+  raw       String
+}
+
+model AdminRecord {
+  id        String    @id
+  email     String?   @unique
+  name      String?
+  createdAt DateTime?
+  raw       String
+}
+
+model ServiceRecord {
+  id       Int    @id
+  name     String
+  price    Float
+  duration Int?
+  raw      String
+}
+
+model ProductRecord {
+  id        Int       @id
+  name      String
+  category  String?
+  price     Float
+  stock     Int?
+  image     String?
+  updatedAt DateTime?
+  raw       String
+}
+
+model BookingNotificationRecord {
+  id        String    @id
+  bookingId String?
+  email     String?
+  type      String?
+  createdAt DateTime?
+  raw       String
+}
+
+model ProductOrderNotificationRecord {
+  id        String    @id
+  orderId   String?
+  email     String?
+  type      String?
+  createdAt DateTime?
+  raw       String
+}
+
+model AppSetting {
+  id        Int      @id @default(1)
+  raw       String
+  updatedAt DateTime @updatedAt
+}

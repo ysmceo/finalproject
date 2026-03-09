@@ -61,6 +61,26 @@ npm start
    - Customer site: http://localhost:3000
    - Admin Dashboard: http://localhost:3000/admin.html
 
+## Runtime Data Store Modes (JSON vs Prisma)
+
+This project supports a staged migration strategy from `database.json` to Prisma/SQLite.
+
+- `DATABASE_URL` enables Prisma connectivity (example: `file:./dev.db`).
+- `DATA_STORE_MODE=json` → read/write using JSON only (Prisma disabled for runtime reads).
+- `DATA_STORE_MODE=auto` → Prisma-primary read path with safe JSON fallback (recommended).
+- `DATA_STORE_MODE=prisma` → force Prisma-primary read path.
+
+### Recommended production setting
+
+- Set `DATABASE_URL` and use `DATA_STORE_MODE=auto`.
+- Keep JSON file present as fallback safety during rollout.
+
+### Prisma maintenance commands
+
+- `npm run prisma:generate` → regenerate Prisma client.
+- `npm run prisma:push` → sync schema to SQLite database.
+- `npm run prisma:sync-json` → import existing `database.json` records into Prisma.
+
 ## Project Structure
 
 ```
@@ -134,8 +154,8 @@ This is a demo application. For production use:
 
 **CEO SALOON**
 - Address: 123 Beauty Lane, Lagos, Nigeria
-- Phone: +234 (0) 701 SALOON (725 666)
-- Email: info@ceosaloon.com
+- Phone: 07036939125
+- Email: okontaysm@gmail.com
 - Hours: Monday-Friday 9AM-7PM, Saturday 10AM-6PM, Sunday Closed
 
 ## License
@@ -149,7 +169,7 @@ MIT License - feel free to use this project for your own salon business!
 
 ## Support
 
-For issues, questions, or suggestions, please contact [info@ceosaloon.com](mailto:info@ceosaloon.com)
+For issues, questions, or suggestions, please contact [okontaysm@gmail.com](mailto:okontaysm@gmail.com)
 
 ---
 

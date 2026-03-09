@@ -49,6 +49,31 @@ export default function SettingsHomeScreen({ navigation }: Props) {
     <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
       <SettingsSearchBox value={q} onChangeText={setQ} />
 
+      <SettingsSectionTitle>Popular shortcuts</SettingsSectionTitle>
+      <SettingsCard>
+        <SettingsRow
+          icon="color-palette-outline"
+          title="Appearance"
+          onPress={() => navigation.navigate('Appearance')}
+          noTopBorder
+        />
+        <SettingsRow
+          icon="notifications-outline"
+          title="Notifications"
+          onPress={() => navigation.navigate('Notifications')}
+        />
+        <SettingsRow
+          icon="lock-closed-outline"
+          title="Privacy & Security"
+          onPress={() => navigation.navigate('PrivacySecurity')}
+        />
+        <SettingsRow
+          icon="help-circle-outline"
+          title="Help and Support"
+          onPress={() => navigation.navigate('HelpSupport')}
+        />
+      </SettingsCard>
+
       {bySection.map((s) => (
         <View key={s.section}>
           <SettingsSectionTitle>{s.section}</SettingsSectionTitle>

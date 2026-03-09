@@ -96,9 +96,9 @@ function getDefaultHost(): string {
   return 'localhost';
 }
 
-// Local dev default: this repo typically runs the Express server on 3002.
+// Local dev default: this repo typically runs the Express server on 3000.
 // You can override via EXPO_PUBLIC_WEB_BASE_URL / EXPO_PUBLIC_API_BASE_URL.
-const DEFAULT_WEB_BASE_URL = `http://${getDefaultHost()}:3002`;
+const DEFAULT_WEB_BASE_URL = `http://${getDefaultHost()}:3000`;
 
 const rawWebBase = normalizeBaseUrl((process.env.EXPO_PUBLIC_WEB_BASE_URL || '').trim() || DEFAULT_WEB_BASE_URL);
 const rawApiBase = normalizeBaseUrl((process.env.EXPO_PUBLIC_API_BASE_URL || '').trim() || rawWebBase);
@@ -108,6 +108,12 @@ const localhostReplacement = inferredHost || (Platform.OS === 'android' && !isDe
 
 export const WEB_BASE_URL = replaceLocalhostHost(rawWebBase, localhostReplacement);
 export const API_BASE_URL = replaceLocalhostHost(rawApiBase, localhostReplacement) || WEB_BASE_URL;
+export const WEB_BASE_URL_CANDIDATES = dedupeUrls([
+  WEB_BASE_URL,
+  withPort(WEB_BASE_URL, 3000),
+  withPort(WEB_BASE_URL, 3002),
+  withPort(WEB_BASE_URL, 3001)
+]);
 export const API_BASE_URL_CANDIDATES = dedupeUrls([
   API_BASE_URL,
   withPort(API_BASE_URL, 3002),
