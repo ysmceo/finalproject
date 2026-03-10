@@ -2131,19 +2131,34 @@ function getPublicBaseUrlForRequest(req) {
 function buildColorfulEmailShell({ title, subtitle, bodyHtml, accent = '#8f2aa8' }) {
   const safeTitle = escapeHtml(title || 'CEO Unisex Salon');
   const safeSubtitle = escapeHtml(subtitle || 'Professional beauty services');
+  const safeAccent = escapeHtml(String(accent || '#8f2aa8'));
 
   return `
-    <div style="margin:0; padding:24px; background:linear-gradient(135deg,#f4f8ff 0%,#fff8fc 52%,#f8fff9 100%); font-family:'Segoe UI', Arial, sans-serif; line-height:1.6; color:#1f2937;">
-      <div style="max-width:700px; margin:0 auto; border-radius:18px; overflow:hidden; border:1px solid #e5e7eb; background:#ffffff; box-shadow:0 16px 36px rgba(15,23,42,.10);">
-        <div style="padding:20px 24px; background:linear-gradient(135deg,#1f2937 0%,${accent} 58%,#ec4899 100%); color:#ffffff;">
+    <div class="ceo-email-root" style="margin:0; padding:24px; background:linear-gradient(135deg,#f4f8ff 0%,#fff8fc 52%,#f8fff9 100%); font-family:'Segoe UI', Arial, sans-serif; line-height:1.6; color:#1f2937;">
+      <style>
+        @media (prefers-color-scheme: dark) {
+          .ceo-email-root { background:#0b1220 !important; color:#e5e7eb !important; }
+          .ceo-email-card { background:#111827 !important; border-color:#374151 !important; box-shadow:none !important; }
+          .ceo-email-header { background:linear-gradient(135deg,#0f172a 0%, ${safeAccent} 60%, #be185d 100%) !important; }
+          .ceo-email-body { background:#111827 !important; color:#e5e7eb !important; }
+          .ceo-email-footer { background:#0f172a !important; border-top-color:#374151 !important; color:#cbd5e1 !important; }
+          .ceo-email-body p,
+          .ceo-email-body div,
+          .ceo-email-body td,
+          .ceo-email-body strong,
+          .ceo-email-body li { color:inherit !important; }
+        }
+      </style>
+      <div class="ceo-email-card" style="max-width:700px; margin:0 auto; border-radius:18px; overflow:hidden; border:1px solid #e5e7eb; background:#ffffff; box-shadow:0 16px 36px rgba(15,23,42,.10);">
+        <div class="ceo-email-header" style="padding:20px 24px; background:linear-gradient(135deg,#1f2937 0%,${safeAccent} 58%,#ec4899 100%); color:#ffffff;">
           <div style="font-size:12px; letter-spacing:.6px; text-transform:uppercase; opacity:.96; font-weight:600;">CEO Unisex Salon</div>
           <h2 style="margin:8px 0 4px; font-size:24px; line-height:1.25; font-weight:700;">${safeTitle}</h2>
           <div style="font-size:13px; opacity:.94;">${safeSubtitle}</div>
         </div>
-        <div style="padding:24px; background:#ffffff;">
+        <div class="ceo-email-body" style="padding:24px; background:#ffffff; color:#1f2937;">
           ${bodyHtml || ''}
         </div>
-        <div style="padding:12px 24px 18px; font-size:12px; color:#6b7280; border-top:1px solid #f3f4f6; background:#fcfcfd;">
+        <div class="ceo-email-footer" style="padding:12px 24px 18px; font-size:12px; color:#6b7280; border-top:1px solid #f3f4f6; background:#fcfcfd;">
           This is an automated message from CEO Unisex Salon. If you need help, please contact support.
         </div>
       </div>
