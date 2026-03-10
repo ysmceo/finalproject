@@ -238,6 +238,29 @@ export default function TrackScreen(props: any) {
       : { label: '⏳ Pending', bg: '#fff5df', color: '#8a5a00', border: '#f0d2a0' };
   }
 
+  function isBookingPaidForCustomerNotice(paymentStatus: string, paidAmount: unknown) {
+    const normalizedPaymentStatus = String(paymentStatus || '').trim().toLowerCase();
+    const numericPaidAmount = Number(paidAmount || 0);
+    if (numericPaidAmount > 0) return true;
+    return ['paid', 'partial', 'partially_paid', 'partial_paid', 'part_paid'].includes(normalizedPaymentStatus);
+  }
+
+  function getBookingStatusSummary(status: string, paymentStatus: string, paidAmount: unknown) {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (normalized === 'approved' || normalized === 'accepted') {
+      return 'Your booking has been approved. We look forward to serving you.';
+    }
+    if (normalized === 'cancelled' || normalized === 'rejected' || normalized === 'declined') {
+      return isBookingPaidForCustomerNotice(paymentStatus, paidAmount)
+        ? 'Your booking was declined. If payment was made, your refund will be processed to your original payment method within 3 to 7 business days (bank timelines may vary slightly).'
+        : 'Your booking was declined. Please contact the salon to reschedule a new time.';
+    }
+    if (normalized === 'completed') {
+      return 'Your booking has been completed. Thank you for choosing CEO Unisex Salon.';
+    }
+    return 'Your booking is pending review by our admin team.';
+  }
+
   function getProductOrderStatusMeta(status: string) {
     const normalized = String(status || '').trim().toLowerCase();
     if (normalized === 'approved') {
@@ -890,6 +913,9 @@ export default function TrackScreen(props: any) {
               </Text>
             </View>
           </View>
+          <Text style={[styles.kvValue, themed.text]}>
+            {getBookingStatusSummary(data.booking.status, data.booking.paymentStatus, data.booking.paidAmount)}
+          </Text>
           {(() => {
             const bookingSteps = bookingTimeline(data.booking.status, data.booking.paymentStatus);
             const bookingPercent = timelineProgressPercent(bookingSteps);

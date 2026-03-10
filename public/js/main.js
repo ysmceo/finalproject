@@ -1966,7 +1966,14 @@ function normalizeTrackStatus(status) {
   return 'pending';
 }
 
-function getTrackStatusMeta(status) {
+function isBookingPaidForCustomerNotice(paymentStatus, paidAmount) {
+  const normalizedPaymentStatus = String(paymentStatus || '').trim().toLowerCase();
+  const numericPaidAmount = Number(paidAmount || 0);
+  if (numericPaidAmount > 0) return true;
+  return ['paid', 'partial', 'partially_paid', 'partial_paid', 'part_paid'].includes(normalizedPaymentStatus);
+}
+
+function getTrackStatusMeta(status, paymentStatus, paidAmount) {
   const normalized = normalizeTrackStatus(status);
   if (normalized === 'approved') {
     return {
@@ -1977,10 +1984,13 @@ function getTrackStatusMeta(status) {
   }
 
   if (normalized === 'cancelled') {
+    const paidBooking = isBookingPaidForCustomerNotice(paymentStatus, paidAmount);
     return {
       normalized,
       label: '❌ Rejected / Declined',
-      summary: 'Your booking request was rejected or declined by admin.'
+      summary: paidBooking
+        ? 'Your booking request was declined. If payment was made, your refund will be processed to your original payment method within 3 to 7 business days (bank timelines may vary slightly).'
+        : 'Your booking request was declined by admin. You may contact the salon to reschedule another available date.'
     };
   }
 
@@ -2167,7 +2177,7 @@ function renderTrackResult(payload, bookingEmail = '') {
 
   const latestNote = notifications.length ? notifications[notifications.length - 1] : null;
   const latestNoteText = latestNote ? String(latestNote.message || '') : 'No update yet. Please check again later.';
-  const statusMeta = getTrackStatusMeta(booking.status);
+  const statusMeta = getTrackStatusMeta(booking.status, booking.paymentStatus, booking.paidAmount);
   const invoiceLookupCode = String(booking.trackingCode || booking.id || '').trim().toUpperCase();
   const invoiceEmail = String(bookingEmail || booking.email || localStorage.getItem('lastBookingEmail') || '').trim().toLowerCase();
   const invoiceActionHtml = invoiceLookupCode && invoiceEmail

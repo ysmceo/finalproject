@@ -387,6 +387,9 @@ async function maybeSendBookingStatusEmail({ booking, previousStatus, newStatus 
   const serviceName = String(booking.serviceName || '').trim() || 'Salon Service';
   const date = String(booking.date || '').trim();
   const time = String(booking.time || '').trim();
+  const isPaidBooking = isBookingPaidForRefundNotice(booking);
+  const refundStatementText = 'Where payment has already been made, your refund will be processed to the original payment method within 3 to 7 business days. Processing timelines may vary slightly by your bank or card issuer.';
+  const refundStatementHtml = '<p style="margin:12px 0 0; color:#7f1d1d; font-size:13px;">Where payment has already been made, your refund will be processed to the original payment method within <strong>3 to 7 business days</strong>. Processing timelines may vary slightly by your bank or card issuer.</p>';
 
   const subject = next === 'approved'
     ? `CEO Unisex Salon - Appointment Accepted${bookingId ? ` (${bookingId})` : ''}`
@@ -398,7 +401,7 @@ async function maybeSendBookingStatusEmail({ booking, previousStatus, newStatus 
   const safeDateTime = `${date}${time ? ` at ${time}` : ''}`.trim();
 
   const acceptedText = `Hi ${booking.name || 'Customer'},\n\nCEO Unisex Salon has ACCEPTED your appointment.\n\nService: ${serviceName}\nBooking Code: ${bookingCode}\nBooking ID: ${bookingId || 'N/A'}\nScheduled for: ${safeDateTime || 'N/A'}\n\nYour service will be rendered on the due date/time as requested in your booking.\n\nIf you need to reschedule, please reply to this email or contact the salon.\n\nThank you for choosing CEO Unisex Salon.`;
-  const declinedText = `Hi ${booking.name || 'Customer'},\n\nCEO Unisex Salon has DECLINED your appointment.\n\nService: ${serviceName}\nBooking Code: ${bookingCode}\nBooking ID: ${bookingId || 'N/A'}\nScheduled for: ${safeDateTime || 'N/A'}\n\nPlease contact the salon if you believe this was a mistake or to book another date/time.\n\nThank you.`;
+  const declinedText = `Hi ${booking.name || 'Customer'},\n\nCEO Unisex Salon has DECLINED your appointment.\n\nService: ${serviceName}\nBooking Code: ${bookingCode}\nBooking ID: ${bookingId || 'N/A'}\nScheduled for: ${safeDateTime || 'N/A'}\n\n${isPaidBooking ? `${refundStatementText}\n\n` : ''}Please contact the salon if you believe this was a mistake or to book another date/time.\n\nThank you.`;
 
   const html = next === 'approved'
     ? `
@@ -438,6 +441,7 @@ async function maybeSendBookingStatusEmail({ booking, previousStatus, newStatus 
               <div><strong>Booking ID:</strong> ${safeBookingId || 'N/A'}</div>
               <div><strong>Scheduled for:</strong> ${safeDateTime || 'N/A'}</div>
             </div>
+            ${isPaidBooking ? refundStatementHtml : ''}
             <p style="margin:12px 0 0; color:#83616f; font-size:13px;">Please contact the salon to book another time.</p>
           </div>
         </div>
@@ -1116,10 +1120,11 @@ async function maybeSendBookingStatusSms({ booking, previousStatus, newStatus })
   const date = String(booking.date || '').trim();
   const time = String(booking.time || '').trim();
   const when = `${date}${time ? ` ${time}` : ''}`.trim();
+  const isPaidBooking = isBookingPaidForRefundNotice(booking);
 
   const message = next === 'approved'
     ? `CEO Unisex Salon: Appointment ACCEPTED. ${serviceName}. ${when ? `Due: ${when}. ` : ''}Booking Code: ${bookingCode}. ${bookingId ? `Booking ID: ${bookingId}. ` : ''}Service will be rendered on the due date/time as requested.`
-    : `CEO Unisex Salon: Appointment DECLINED. ${serviceName}. ${when ? `Due: ${when}. ` : ''}Booking Code: ${bookingCode}. ${bookingId ? `Booking ID: ${bookingId}. ` : ''}Please contact the salon to reschedule.`;
+    : `CEO Unisex Salon: Appointment DECLINED. ${serviceName}. ${when ? `Due: ${when}. ` : ''}Booking Code: ${bookingCode}. ${bookingId ? `Booking ID: ${bookingId}. ` : ''}${isPaidBooking ? 'A refund will be processed within 3 to 7 business days (timelines may vary by bank). ' : ''}Please contact the salon to reschedule.`;
 
   const smsResult = await sendSmsViaTermii({ to, message });
 
@@ -1193,8 +1198,10 @@ function mergeProductDefaults(existingProducts) {
   return mergedProducts;
 }
 
-// Create uploads directory if it doesn't exist
-const uploadsDir = path.join(__dirname, 'public', 'uploads');
+// Use writable runtime paths on Vercel (/var/task is read-only at runtime).
+const uploadsDir = IS_VERCEL_RUNTIME
+  ? path.join('/tmp', 'uploads')
+  : path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -1246,6 +1253,7 @@ app.use(bodyParser.json({
 }));
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static('public'));
+app.use('/uploads', express.static(uploadsDir));
 app.use('/images', express.static(path.join(__dirname, 'images')));
 app.get('/p1.webp', (req, res) => {
   res.sendFile(path.join(__dirname, 'images', 'p1.webp'));
@@ -1270,7 +1278,10 @@ app.get('/male-stylist.jpg', (req, res) => {
 });
 
 // Database file path
-const dbPath = path.join(__dirname, 'database.json');
+const packagedDbPath = path.join(__dirname, 'database.json');
+const dbPath = IS_VERCEL_RUNTIME
+  ? path.join('/tmp', 'database.json')
+  : packagedDbPath;
 const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
 const DATA_STORE_MODE = String(process.env.DATA_STORE_MODE || 'auto').trim().toLowerCase();
 
@@ -1634,10 +1645,19 @@ async function triggerPrismaMirrorSync(dbSnapshot) {
 
 // Initialize database
 function initializeDatabase() {
-  if (!fs.existsSync(dbPath)) {
-    const initialData = normalizeDatabaseObject(buildBaseDatabaseShape());
-    fs.writeFileSync(dbPath, JSON.stringify(initialData, null, 2));
+  if (fs.existsSync(dbPath)) {
+    return;
   }
+
+  if (IS_VERCEL_RUNTIME && fs.existsSync(packagedDbPath)) {
+    const packagedRaw = fs.readFileSync(packagedDbPath, 'utf8');
+    const packagedDb = normalizeDatabaseObject(JSON.parse(packagedRaw));
+    fs.writeFileSync(dbPath, JSON.stringify(packagedDb, null, 2));
+    return;
+  }
+
+  const initialData = normalizeDatabaseObject(buildBaseDatabaseShape());
+  fs.writeFileSync(dbPath, JSON.stringify(initialData, null, 2));
 }
 
 function writeDatabaseFile(data) {
@@ -1886,6 +1906,17 @@ function buildBankTransferReference(bookingId) {
 function buildBookingStatusCode(bookingId) {
   const shortId = String(bookingId || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
   return `BOOK-${shortId || 'UNKNOWN'}`;
+}
+
+function isBookingPaidForRefundNotice(booking) {
+  const paymentStatus = String(booking && booking.paymentStatus ? booking.paymentStatus : '').trim().toLowerCase();
+  const paidAmount = Number(booking && booking.paidAmount ? booking.paidAmount : 0);
+
+  if (paidAmount > 0) {
+    return true;
+  }
+
+  return ['paid', 'partially_paid', 'partial_paid', 'part_paid'].includes(paymentStatus);
 }
 
 function getBookingTrackingCode(booking) {
@@ -4714,11 +4745,14 @@ app.put('/api/admin/bookings/:id', requireAdminAuth, async (req, res) => {
   }
 
   if (statusChanged && normalizedStatus === 'cancelled') {
+    const refundNotice = isBookingPaidForRefundNotice(booking)
+      ? ' Where payment has already been made, your refund will be processed within 3 to 7 business days (timelines may vary slightly by bank or card issuer).'
+      : '';
     addBookingNotification(
       db,
       booking,
       'cancelled',
-      '❌ Your booking was cancelled. Please contact the salon if you believe this was a mistake.'
+      `❌ Your booking was cancelled.${refundNotice} Please contact the salon if you believe this was a mistake.`
     );
   }
 
