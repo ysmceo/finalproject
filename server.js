@@ -1252,7 +1252,7 @@ app.use(bodyParser.json({
   }
 }));
 app.use(bodyParser.urlencoded({ extended: true }));
-app.use(express.static('public'));
+app.use(express.static(path.join(__dirname, 'public')));
 app.use('/uploads', express.static(uploadsDir));
 app.use('/images', express.static(path.join(__dirname, 'images')));
 app.get('/p1.webp', (req, res) => {
