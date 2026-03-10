@@ -300,18 +300,6 @@ async function maybeSendPaymentReceiptEmail({ booking, provider, paidAmount, ref
     email: toEmail
   });
   const secureInvoiceUrl = `${String(PUBLIC_BASE_URL || '').replace(/\/+$/, '')}/api/bookings/${encodeURIComponent(trackingCode)}/invoice?token=${encodeURIComponent(secureInvoiceToken)}`;
-  const bookingInvoiceDetailsTableHtml = buildEmailInfoTable([
-    { label: 'Invoice No', value: invoiceNo },
-    { label: 'Booking ID', value: bookingId || 'N/A' },
-    { label: 'Tracking Code', value: trackingCode },
-    { label: 'Service', value: serviceName },
-    { label: 'Scheduled', value: when },
-    { label: 'Payment Method', value: paymentMethod },
-    { label: 'Payment Plan', value: paymentPlan },
-    { label: 'Total', valueHtml: `<strong>₦${total.toLocaleString()}</strong>` },
-    { label: 'Amount Remaining', value: `₦${remaining.toLocaleString()}` }
-  ]);
-  const openBookingInvoiceButtonHtml = buildEmailActionButton({ href: secureInvoiceUrl, label: 'Open secure online invoice', bg: '#1d4ed8' });
   const receiptDetailsTableHtml = buildEmailInfoTable([
     { label: 'Booking ID', value: bookingId },
     { label: 'Service', value: serviceName },
@@ -862,6 +850,18 @@ async function maybeSendBookingInvoiceEmail({ booking }) {
     email: toEmail
   });
   const secureInvoiceUrl = `${String(PUBLIC_BASE_URL || '').replace(/\/+$/, '')}/api/bookings/${encodeURIComponent(trackingCode)}/invoice?token=${encodeURIComponent(secureInvoiceToken)}`;
+  const bookingInvoiceDetailsTableHtml = buildEmailInfoTable([
+    { label: 'Invoice No', value: invoiceNo },
+    { label: 'Booking ID', value: bookingId || 'N/A' },
+    { label: 'Tracking Code', value: trackingCode },
+    { label: 'Service', value: serviceName },
+    { label: 'Scheduled', value: when },
+    { label: 'Payment Method', value: paymentMethod },
+    { label: 'Payment Plan', value: paymentPlan },
+    { label: 'Total', valueHtml: `<strong>₦${total.toLocaleString()}</strong>` },
+    { label: 'Amount Remaining', value: `₦${remaining.toLocaleString()}` }
+  ]);
+  const openBookingInvoiceButtonHtml = buildEmailActionButton({ href: secureInvoiceUrl, label: 'Open secure online invoice', bg: '#1d4ed8' });
 
   const subject = `Service Invoice - ${invoiceNo}`;
   const text = `Hi ${customerName},\n\nHere is your service invoice from CEO Unisex Salon.\n\nInvoice No: ${invoiceNo}\nBooking ID: ${bookingId || 'N/A'}\nTracking Code: ${trackingCode}\nService: ${serviceName}\nScheduled: ${when}\nPayment Method: ${paymentMethod}\nPayment Plan: ${paymentPlan}\nService Subtotal: ₦${subtotal.toLocaleString()}\nProducts Total: ₦${productsTotal.toLocaleString()}\nTotal: ₦${total.toLocaleString()}\nAmount Due Now: ₦${dueNow.toLocaleString()}\nAmount Remaining: ₦${remaining.toLocaleString()}\nOnline Invoice: ${secureInvoiceUrl}\n\nThank you for choosing CEO Unisex Salon.`;
