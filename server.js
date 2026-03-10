@@ -293,25 +293,54 @@ async function maybeSendPaymentReceiptEmail({ booking, provider, paidAmount, ref
 
   const safeRef = String(reference || '').trim();
   const safeReceiptUrl = String(receiptUrl || '').trim();
+  const trackingCode = getBookingTrackingCode(booking);
+  const secureInvoiceToken = createInvoiceAccessToken({
+    resourceType: 'booking',
+    lookupCode: trackingCode,
+    email: toEmail
+  });
+  const secureInvoiceUrl = `${String(PUBLIC_BASE_URL || '').replace(/\/+$/, '')}/api/bookings/${encodeURIComponent(trackingCode)}/invoice?token=${encodeURIComponent(secureInvoiceToken)}`;
+  const bookingInvoiceDetailsTableHtml = buildEmailInfoTable([
+    { label: 'Invoice No', value: invoiceNo },
+    { label: 'Booking ID', value: bookingId || 'N/A' },
+    { label: 'Tracking Code', value: trackingCode },
+    { label: 'Service', value: serviceName },
+    { label: 'Scheduled', value: when },
+    { label: 'Payment Method', value: paymentMethod },
+    { label: 'Payment Plan', value: paymentPlan },
+    { label: 'Total', valueHtml: `<strong>₦${total.toLocaleString()}</strong>` },
+    { label: 'Amount Remaining', value: `₦${remaining.toLocaleString()}` }
+  ]);
+  const openBookingInvoiceButtonHtml = buildEmailActionButton({ href: secureInvoiceUrl, label: 'Open secure online invoice', bg: '#1d4ed8' });
+  const receiptDetailsTableHtml = buildEmailInfoTable([
+    { label: 'Booking ID', value: bookingId },
+    { label: 'Service', value: serviceName },
+    { label: 'Provider', value: providerLabel },
+    { label: 'Reference', value: safeRef || 'N/A' }
+  ]);
+  const receiptButtonHtml = safeReceiptUrl
+    ? buildEmailActionButton({ href: safeReceiptUrl, label: 'View payment receipt', bg: '#0f766e' })
+    : '';
+  const invoiceButtonHtml = buildEmailActionButton({ href: secureInvoiceUrl, label: 'View invoice PDF', bg: '#1d4ed8' });
 
-  const text = `Hi ${booking.name || 'Customer'},\n\nWe received your payment for your booking.\n\nBooking ID: ${bookingId}\nService: ${serviceName}\nAmount paid: ${amountText}\nProvider: ${providerLabel}\nReference: ${safeRef || 'N/A'}\nReceipt: ${safeReceiptUrl || 'N/A'}\n\nThank you for choosing CEO Unisex Salon.`;
+  const text = `Hi ${booking.name || 'Customer'},\n\nWe received your payment for your booking.\n\nBooking ID: ${bookingId}\nService: ${serviceName}\nAmount paid: ${amountText}\nProvider: ${providerLabel}\nReference: ${safeRef || 'N/A'}\nReceipt: ${safeReceiptUrl || 'N/A'}\nInvoice: ${secureInvoiceUrl}\n\nThank you for choosing CEO Unisex Salon.`;
 
   const html = buildColorfulEmailShell({
     title: 'Payment Receipt',
     subtitle: `${providerLabel} payment confirmed`,
     accent: '#1e9d53',
     bodyHtml: `
-      <p style="margin:0 0 10px;">Hi <strong>${escapeHtml(String(booking.name || 'Customer'))}</strong>,</p>
-      <p style="margin:0 0 14px; color:#4c3f63;">Your payment has been received successfully 🎉</p>
-      <div style="padding:14px; border:1px solid #d9f0e2; border-radius:12px; background:linear-gradient(180deg,#f6fff9 0%,#ffffff 100%);">
-        <div><strong>Booking ID:</strong> ${escapeHtml(bookingId)}</div>
-        <div><strong>Service:</strong> ${escapeHtml(serviceName)}</div>
-        <div><strong>Amount Paid:</strong> ${escapeHtml(amountText)}</div>
-        <div><strong>Provider:</strong> ${escapeHtml(providerLabel)}</div>
-        <div><strong>Reference:</strong> ${safeRef ? escapeHtml(safeRef) : 'N/A'}</div>
-        <div><strong>Receipt:</strong> ${safeReceiptUrl ? `<a href="${safeReceiptUrl}" target="_blank" rel="noopener">View receipt</a>` : 'N/A'}</div>
+      <p style="margin:0 0 10px; font-size:15px;">Hi <strong>${escapeHtml(String(booking.name || 'Customer'))}</strong>,</p>
+      <p style="margin:0 0 16px; color:#374151; font-size:14px;">Your payment has been confirmed. Your receipt details are below.</p>
+      <div style="padding:16px; border:1px solid #bbf7d0; border-radius:12px; background:#f0fdf4; margin-bottom:14px;">
+        <div style="font-size:13px; color:#14532d; text-transform:uppercase; letter-spacing:.4px; font-weight:700; margin-bottom:4px;">Amount Paid</div>
+        <div style="font-size:24px; font-weight:800; color:#166534;">${escapeHtml(amountText)}</div>
       </div>
-      <p style="margin:12px 0 0; color:#6a5c80; font-size:13px;">Thank you for choosing CEO Unisex Salon.</p>
+      ${receiptDetailsTableHtml}
+      <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+        ${receiptButtonHtml}
+        ${invoiceButtonHtml}
+      </div>
     `
   });
 
@@ -827,9 +856,15 @@ async function maybeSendBookingInvoiceEmail({ booking }) {
   const productsTotal = Number(booking.requestedProductsTotal || 0);
   const total = Number(subtotal + productsTotal || dueNow + remaining || 0);
   const trackingCode = getBookingTrackingCode(booking);
+  const secureInvoiceToken = createInvoiceAccessToken({
+    resourceType: 'booking',
+    lookupCode: trackingCode,
+    email: toEmail
+  });
+  const secureInvoiceUrl = `${String(PUBLIC_BASE_URL || '').replace(/\/+$/, '')}/api/bookings/${encodeURIComponent(trackingCode)}/invoice?token=${encodeURIComponent(secureInvoiceToken)}`;
 
   const subject = `Service Invoice - ${invoiceNo}`;
-  const text = `Hi ${customerName},\n\nHere is your service invoice from CEO Unisex Salon.\n\nInvoice No: ${invoiceNo}\nBooking ID: ${bookingId || 'N/A'}\nTracking Code: ${trackingCode}\nService: ${serviceName}\nScheduled: ${when}\nPayment Method: ${paymentMethod}\nPayment Plan: ${paymentPlan}\nService Subtotal: ₦${subtotal.toLocaleString()}\nProducts Total: ₦${productsTotal.toLocaleString()}\nTotal: ₦${total.toLocaleString()}\nAmount Due Now: ₦${dueNow.toLocaleString()}\nAmount Remaining: ₦${remaining.toLocaleString()}\n\nThank you for choosing CEO Unisex Salon.`;
+  const text = `Hi ${customerName},\n\nHere is your service invoice from CEO Unisex Salon.\n\nInvoice No: ${invoiceNo}\nBooking ID: ${bookingId || 'N/A'}\nTracking Code: ${trackingCode}\nService: ${serviceName}\nScheduled: ${when}\nPayment Method: ${paymentMethod}\nPayment Plan: ${paymentPlan}\nService Subtotal: ₦${subtotal.toLocaleString()}\nProducts Total: ₦${productsTotal.toLocaleString()}\nTotal: ₦${total.toLocaleString()}\nAmount Due Now: ₦${dueNow.toLocaleString()}\nAmount Remaining: ₦${remaining.toLocaleString()}\nOnline Invoice: ${secureInvoiceUrl}\n\nThank you for choosing CEO Unisex Salon.`;
 
   const pdfBuffer = await buildInvoicePdfBuffer({
     invoiceTitle: 'Service Invoice',
@@ -857,22 +892,15 @@ async function maybeSendBookingInvoiceEmail({ booking }) {
     subtitle: 'Your booking invoice is ready',
     accent: '#2b6ef2',
     bodyHtml: `
-      <p style="margin:0 0 10px;">Hi <strong>${escapeHtml(customerName)}</strong>,</p>
-      <p style="margin:0 0 14px; color:#4c3f63;">Thank you for your booking. Your invoice details are below.</p>
-      <div style="padding:14px; border:1px solid #d9e6ff; border-radius:12px; background:linear-gradient(180deg,#f6f9ff 0%,#ffffff 100%);">
-        <div><strong>Invoice No:</strong> ${escapeHtml(invoiceNo)}</div>
-        <div><strong>Booking ID:</strong> ${escapeHtml(bookingId || 'N/A')}</div>
-        <div><strong>Tracking Code:</strong> ${escapeHtml(trackingCode)}</div>
-        <div><strong>Service:</strong> ${escapeHtml(serviceName)}</div>
-        <div><strong>Scheduled:</strong> ${escapeHtml(when)}</div>
-        <div><strong>Payment Method:</strong> ${escapeHtml(paymentMethod)}</div>
-        <div><strong>Payment Plan:</strong> ${escapeHtml(paymentPlan)}</div>
-        <hr style="border:none; border-top:1px solid #d9e6ff; margin:10px 0;">
-        <div><strong>Service Subtotal:</strong> ₦${subtotal.toLocaleString()}</div>
-        <div><strong>Products Total:</strong> ₦${productsTotal.toLocaleString()}</div>
-        <div><strong>Total:</strong> ₦${total.toLocaleString()}</div>
-        <div><strong>Amount Due Now:</strong> ₦${dueNow.toLocaleString()}</div>
-        <div><strong>Amount Remaining:</strong> ₦${remaining.toLocaleString()}</div>
+      <p style="margin:0 0 10px; font-size:15px;">Hi <strong>${escapeHtml(customerName)}</strong>,</p>
+      <p style="margin:0 0 16px; color:#374151; font-size:14px;">Your service invoice is ready. We've attached a PDF copy and included a quick summary below.</p>
+      <div style="padding:14px; border:1px solid #dbeafe; border-radius:12px; background:#eff6ff; margin-bottom:14px;">
+        <div style="font-size:13px; color:#1e40af; text-transform:uppercase; letter-spacing:.4px; font-weight:700;">Amount Due Now</div>
+        <div style="font-size:24px; font-weight:800; color:#1d4ed8;">₦${dueNow.toLocaleString()}</div>
+      </div>
+      ${bookingInvoiceDetailsTableHtml}
+      <div style="margin-top:16px;">
+        ${openBookingInvoiceButtonHtml}
       </div>
     `
   });
@@ -928,12 +956,29 @@ async function maybeSendProductOrderInvoiceEmail({ order }) {
   const total = Number(order.totalAmount || 0);
   const amountDueNow = Number(order.amountDueNow || total);
   const items = Array.isArray(order.items) ? order.items : [];
+  const secureInvoiceToken = createInvoiceAccessToken({
+    resourceType: 'product',
+    lookupCode: orderCode.toUpperCase(),
+    email: toEmail
+  });
+  const secureInvoiceUrl = `${String(PUBLIC_BASE_URL || '').replace(/\/+$/, '')}/api/product-orders/${encodeURIComponent(orderCode.toUpperCase())}/invoice?token=${encodeURIComponent(secureInvoiceToken)}`;
+  const productInvoiceDetailsTableHtml = buildEmailInfoTable([
+    { label: 'Invoice No', value: invoiceNo },
+    { label: 'Order Code', value: orderCode },
+    { label: 'Order ID', value: orderId || 'N/A' },
+    { label: 'Payment Method', value: paymentMethod },
+    { label: 'Delivery Speed', value: deliverySpeed },
+    { label: 'Subtotal', value: `₦${subtotal.toLocaleString()}` },
+    { label: 'Delivery Fee', value: `₦${deliveryFee.toLocaleString()}` },
+    { label: 'Amount Due Now', valueHtml: `<strong>₦${amountDueNow.toLocaleString()}</strong>` }
+  ]);
+  const openProductInvoiceButtonHtml = buildEmailActionButton({ href: secureInvoiceUrl, label: 'Open secure online invoice', bg: '#7c3aed' });
   const itemsText = items.length
     ? items.map(item => `${item.name} × ${item.quantity} — ₦${Number(item.lineTotal || 0).toLocaleString()}`).join('\n')
     : 'No item lines';
 
   const subject = `Product Order Invoice - ${invoiceNo}`;
-  const text = `Hi ${customerName},\n\nHere is your product order invoice from CEO Unisex Salon.\n\nInvoice No: ${invoiceNo}\nOrder Code: ${orderCode}\nOrder ID: ${orderId || 'N/A'}\nPayment Method: ${paymentMethod}\nDelivery Speed: ${deliverySpeed}\n\nItems:\n${itemsText}\n\nSubtotal: ₦${subtotal.toLocaleString()}\nDelivery Fee: ₦${deliveryFee.toLocaleString()}\nTotal: ₦${total.toLocaleString()}\nAmount Due Now: ₦${amountDueNow.toLocaleString()}\n\nThank you for shopping with CEO Unisex Salon.`;
+  const text = `Hi ${customerName},\n\nHere is your product order invoice from CEO Unisex Salon.\n\nInvoice No: ${invoiceNo}\nOrder Code: ${orderCode}\nOrder ID: ${orderId || 'N/A'}\nPayment Method: ${paymentMethod}\nDelivery Speed: ${deliverySpeed}\n\nItems:\n${itemsText}\n\nSubtotal: ₦${subtotal.toLocaleString()}\nDelivery Fee: ₦${deliveryFee.toLocaleString()}\nTotal: ₦${total.toLocaleString()}\nAmount Due Now: ₦${amountDueNow.toLocaleString()}\nOnline Invoice: ${secureInvoiceUrl}\n\nThank you for shopping with CEO Unisex Salon.`;
 
   const pdfBuffer = await buildInvoicePdfBuffer({
     invoiceTitle: 'Product Order Invoice',
@@ -963,20 +1008,16 @@ async function maybeSendProductOrderInvoiceEmail({ order }) {
     subtitle: 'Your order invoice is ready',
     accent: '#8f2aa8',
     bodyHtml: `
-      <p style="margin:0 0 10px;">Hi <strong>${escapeHtml(customerName)}</strong>,</p>
-      <p style="margin:0 0 14px; color:#4c3f63;">Thank you for your order. Please find your invoice details below.</p>
-      <div style="padding:14px; border:1px solid #eadff7; border-radius:12px; background:linear-gradient(180deg,#fbf7ff 0%,#ffffff 100%);">
-        <div><strong>Invoice No:</strong> ${escapeHtml(invoiceNo)}</div>
-        <div><strong>Order Code:</strong> ${escapeHtml(orderCode)}</div>
-        <div><strong>Order ID:</strong> ${escapeHtml(orderId || 'N/A')}</div>
-        <div><strong>Payment Method:</strong> ${escapeHtml(paymentMethod)}</div>
-        <div><strong>Delivery Speed:</strong> ${escapeHtml(deliverySpeed)}</div>
-        <div style="margin-top:8px;"><strong>Items:</strong>${itemsHtml}</div>
-        <hr style="border:none; border-top:1px solid #eadff7; margin:10px 0;">
-        <div><strong>Subtotal:</strong> ₦${subtotal.toLocaleString()}</div>
-        <div><strong>Delivery Fee:</strong> ₦${deliveryFee.toLocaleString()}</div>
-        <div><strong>Total:</strong> ₦${total.toLocaleString()}</div>
-        <div><strong>Amount Due Now:</strong> ₦${amountDueNow.toLocaleString()}</div>
+      <p style="margin:0 0 10px; font-size:15px;">Hi <strong>${escapeHtml(customerName)}</strong>,</p>
+      <p style="margin:0 0 16px; color:#374151; font-size:14px;">Your product order invoice is ready. A PDF is attached for easy download.</p>
+      <div style="padding:14px; border:1px solid #ddd6fe; border-radius:12px; background:#f5f3ff; margin-bottom:14px;">
+        <div style="font-size:13px; color:#5b21b6; text-transform:uppercase; letter-spacing:.4px; font-weight:700;">Order Total</div>
+        <div style="font-size:24px; font-weight:800; color:#6d28d9;">₦${total.toLocaleString()}</div>
+      </div>
+      ${productInvoiceDetailsTableHtml}
+      <div style="margin-top:10px;"><strong style="color:#374151;">Items:</strong>${itemsHtml}</div>
+      <div style="margin-top:16px;">
+        ${openProductInvoiceButtonHtml}
       </div>
     `
   });
@@ -2064,24 +2105,71 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;');
 }
 
+function getPublicBaseUrlForRequest(req) {
+  const explicitBase = String(PUBLIC_BASE_URL || '').trim();
+  const explicitIsLocalhost = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i.test(explicitBase);
+  if (hasExplicitPublicBaseUrl && explicitBase && !explicitIsLocalhost) {
+    return explicitBase.replace(/\/+$/, '');
+  }
+
+  const forwardedProto = String(req && req.headers && req.headers['x-forwarded-proto'] ? req.headers['x-forwarded-proto'] : '')
+    .split(',')[0]
+    .trim();
+  const forwardedHost = String(req && req.headers && req.headers['x-forwarded-host'] ? req.headers['x-forwarded-host'] : '')
+    .split(',')[0]
+    .trim();
+  const host = forwardedHost || String(req && req.headers && req.headers.host ? req.headers.host : '').trim();
+  const protocol = forwardedProto || String(req && req.protocol ? req.protocol : '').trim() || 'http';
+
+  if (host) {
+    return `${protocol}://${host}`;
+  }
+
+  return `http://localhost:${ACTIVE_PORT}`;
+}
+
 function buildColorfulEmailShell({ title, subtitle, bodyHtml, accent = '#8f2aa8' }) {
   const safeTitle = escapeHtml(title || 'CEO Unisex Salon');
   const safeSubtitle = escapeHtml(subtitle || 'Professional beauty services');
 
   return `
-    <div style="margin:0; padding:24px; background:linear-gradient(135deg,#f8efff 0%,#fff5fb 45%,#f7fbff 100%); font-family:'Segoe UI', Arial, sans-serif; line-height:1.55; color:#2f2340;">
-      <div style="max-width:680px; margin:0 auto; border-radius:18px; overflow:hidden; border:1px solid #ead6ff; background:#ffffff; box-shadow:0 14px 30px rgba(74,14,78,.12);">
-        <div style="padding:20px 24px; background:linear-gradient(135deg,#4a0e4e 0%,${accent} 55%,#ff5fa2 100%); color:#fff;">
-          <div style="font-size:12px; letter-spacing:.5px; text-transform:uppercase; opacity:.95;">CEO Unisex Salon</div>
-          <h2 style="margin:8px 0 4px; font-size:24px; line-height:1.25;">${safeTitle}</h2>
-          <div style="font-size:13px; opacity:.92;">${safeSubtitle}</div>
+    <div style="margin:0; padding:24px; background:linear-gradient(135deg,#f4f8ff 0%,#fff8fc 52%,#f8fff9 100%); font-family:'Segoe UI', Arial, sans-serif; line-height:1.6; color:#1f2937;">
+      <div style="max-width:700px; margin:0 auto; border-radius:18px; overflow:hidden; border:1px solid #e5e7eb; background:#ffffff; box-shadow:0 16px 36px rgba(15,23,42,.10);">
+        <div style="padding:20px 24px; background:linear-gradient(135deg,#1f2937 0%,${accent} 58%,#ec4899 100%); color:#ffffff;">
+          <div style="font-size:12px; letter-spacing:.6px; text-transform:uppercase; opacity:.96; font-weight:600;">CEO Unisex Salon</div>
+          <h2 style="margin:8px 0 4px; font-size:24px; line-height:1.25; font-weight:700;">${safeTitle}</h2>
+          <div style="font-size:13px; opacity:.94;">${safeSubtitle}</div>
         </div>
-        <div style="padding:22px 24px;">
+        <div style="padding:24px; background:#ffffff;">
           ${bodyHtml || ''}
+        </div>
+        <div style="padding:12px 24px 18px; font-size:12px; color:#6b7280; border-top:1px solid #f3f4f6; background:#fcfcfd;">
+          This is an automated message from CEO Unisex Salon. If you need help, please contact support.
         </div>
       </div>
     </div>
   `;
+}
+
+function buildEmailInfoTable(rows = []) {
+  const safeRows = Array.isArray(rows) ? rows.filter(Boolean) : [];
+  const rowHtml = safeRows.map((row) => {
+    const label = escapeHtml(String(row.label || '').trim());
+    const value = row.valueHtml != null
+      ? String(row.valueHtml)
+      : escapeHtml(String(row.value || '').trim());
+
+    return `<tr><td style="padding:10px 12px; background:#f9fafb; width:42%; font-weight:600; color:#374151;">${label}</td><td style="padding:10px 12px; color:#111827;">${value}</td></tr>`;
+  }).join('');
+
+  return `<table role="presentation" cellpadding="0" cellspacing="0" style="width:100%; border-collapse:collapse; border:1px solid #e5e7eb; border-radius:10px; overflow:hidden;">${rowHtml}</table>`;
+}
+
+function buildEmailActionButton({ href, label, bg = '#1d4ed8' }) {
+  const safeHref = escapeHtml(String(href || '').trim());
+  const safeLabel = escapeHtml(String(label || 'Open').trim());
+  const safeBg = escapeHtml(String(bg || '#1d4ed8').trim());
+  return `<a href="${safeHref}" target="_blank" rel="noopener" style="display:inline-block; padding:10px 14px; background:${safeBg}; color:#fff; text-decoration:none; border-radius:8px; font-weight:600;">${safeLabel}</a>`;
 }
 
 function buildInvoicePdfBuffer({
@@ -2100,36 +2188,61 @@ function buildInvoicePdfBuffer({
       doc.on('end', () => resolve(Buffer.concat(chunks)));
       doc.on('error', reject);
 
-      doc.fontSize(20).fillColor('#4a0e4e').text('CEO Unisex Salon');
-      doc.moveDown(0.3);
-      doc.fontSize(16).fillColor('#2f2340').text(String(invoiceTitle || 'Invoice'));
-      doc.moveDown(0.8);
+      const left = doc.page.margins.left;
+      const right = doc.page.width - doc.page.margins.right;
+      const contentWidth = right - left;
 
-      doc.fontSize(11).fillColor('#333333');
-      doc.text(`Invoice Number: ${String(invoiceNumber || 'N/A')}`);
-      doc.text(`Customer: ${String(customerName || 'Customer')}`);
-      doc.text(`Generated: ${new Date().toLocaleString()}`);
-      doc.moveDown(0.8);
+      doc.roundedRect(left, 44, contentWidth, 78, 10).fillAndStroke('#f8fafc', '#e5e7eb');
+      doc.fillColor('#1f2937').fontSize(20).text('CEO Unisex Salon', left + 16, 60, { width: contentWidth - 32 });
+      doc.fillColor('#374151').fontSize(14).text(String(invoiceTitle || 'Invoice'), left + 16, 86, { width: contentWidth - 32 });
 
-      doc.fontSize(12).fillColor('#4a0e4e').text('Details');
-      doc.moveDown(0.4);
-      doc.fontSize(10).fillColor('#111111');
-      details.forEach(item => {
+      doc.fillColor('#111827').fontSize(10);
+      doc.text(`Invoice Number: ${String(invoiceNumber || 'N/A')}`, left, 142);
+      doc.text(`Customer: ${String(customerName || 'Customer')}`, left, 158);
+      doc.text(`Generated: ${new Date().toLocaleString()}`, left, 174);
+
+      let y = 206;
+      doc.fillColor('#4b5563').fontSize(11).text('DETAILS', left, y);
+      y += 16;
+
+      details.forEach((item) => {
         if (!item || typeof item !== 'object') return;
-        doc.text(`${String(item.label || '').trim()}: ${String(item.value || '').trim()}`);
+        const label = `${String(item.label || '').trim()}:`;
+        const value = String(item.value || '').trim();
+        doc.fillColor('#111827').fontSize(10).text(label, left, y, { continued: true });
+        doc.fillColor('#374151').fontSize(10).text(` ${value}`);
+        y += 14;
       });
 
-      doc.moveDown(0.8);
-      doc.fontSize(12).fillColor('#4a0e4e').text('Totals');
-      doc.moveDown(0.4);
-      doc.fontSize(10).fillColor('#111111');
-      totals.forEach(item => {
+      y += 10;
+      doc.fillColor('#4b5563').fontSize(11).text('TOTALS', left, y);
+      y += 14;
+      doc.moveTo(left, y).lineTo(right, y).strokeColor('#e5e7eb').lineWidth(1).stroke();
+      y += 8;
+
+      const totalKeyRegex = /^(total|amount due now)$/i;
+      totals.forEach((item) => {
         if (!item || typeof item !== 'object') return;
-        doc.text(`${String(item.label || '').trim()}: ${String(item.value || '').trim()}`);
+        const label = String(item.label || '').trim();
+        const value = String(item.value || '').trim();
+        const isKeyTotal = totalKeyRegex.test(label);
+
+        doc.fillColor(isKeyTotal ? '#111827' : '#374151').fontSize(isKeyTotal ? 11 : 10).text(label, left, y, {
+          width: Math.floor(contentWidth * 0.6)
+        });
+        doc.fillColor(isKeyTotal ? '#0f766e' : '#111827').fontSize(isKeyTotal ? 11 : 10).text(value, left + Math.floor(contentWidth * 0.6), y, {
+          width: Math.floor(contentWidth * 0.4),
+          align: 'right'
+        });
+        y += 14;
       });
 
-      doc.moveDown(1.2);
-      doc.fontSize(9).fillColor('#666666').text('Thank you for choosing CEO Unisex Salon.');
+      y += 10;
+      doc.roundedRect(left, y, contentWidth, 34, 8).fillAndStroke('#f0fdf4', '#bbf7d0');
+      doc.fillColor('#166534').fontSize(10).text('Thank you for choosing CEO Unisex Salon.', left + 12, y + 11, {
+        width: contentWidth - 24
+      });
+
       doc.end();
     } catch (error) {
       reject(error);
@@ -2744,6 +2857,7 @@ app.post('/api/invoices/access-link', (req, res) => {
   }
 
   const db = readDatabase();
+  const runtimeBaseUrl = getPublicBaseUrlForRequest(req);
 
   if (resourceType === 'booking') {
     const booking = resolveBookingByLookup(db, code);
@@ -2763,7 +2877,7 @@ app.post('/api/invoices/access-link', (req, res) => {
 
     const pathOnly = `/api/bookings/${encodeURIComponent(lookupCode)}/invoice?token=${encodeURIComponent(token)}`;
     return res.json({
-      secureInvoiceUrl: `${PUBLIC_BASE_URL}${pathOnly}`,
+      secureInvoiceUrl: `${runtimeBaseUrl}${pathOnly}`,
       path: pathOnly,
       expiresInSeconds: INVOICE_ACCESS_TOKEN_TTL_SECONDS
     });
@@ -2786,7 +2900,7 @@ app.post('/api/invoices/access-link', (req, res) => {
 
   const pathOnly = `/api/product-orders/${encodeURIComponent(lookupCode)}/invoice?token=${encodeURIComponent(token)}`;
   return res.json({
-    secureInvoiceUrl: `${PUBLIC_BASE_URL}${pathOnly}`,
+    secureInvoiceUrl: `${runtimeBaseUrl}${pathOnly}`,
     path: pathOnly,
     expiresInSeconds: INVOICE_ACCESS_TOKEN_TTL_SECONDS
   });
