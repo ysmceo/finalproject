@@ -1,0 +1,60 @@
+<form id="contactForm" class="contact-form">
+          <div class="form-group">
+            <label for="contactName"><span data-i18n="contact_name">Full Name</span> *</label>
+            <input type="text" id="contactName" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="contactEmail"><span data-i18n="contact_email">Email Address</span> *</label>
+            <input type="email" id="contactEmail" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="contactSubject"><span data-i18n="contact_subject">Subject</span> *</label>
+            <input type="text" id="contactSubject" required>
+          </div>
+
+          <div class="form-group">
+            <label for="customerCarePriority">Support Priority</label>
+            <select id="customerCarePriority">
+              <option value="normal" selected>Normal (within 24 hours)</option>
+              <option value="priority">Priority (within 4-8 hours)</option>
+              <option value="urgent">Urgent (same day attention)</option>
+            </select>
+            <small class="form-help-text-tight">Choose urgency so our customer care team can route your request faster.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="preferredContactChannel">Preferred Reply Channel</label>
+            <select id="preferredContactChannel">
+              <option value="email" selected>Email</option>
+              <option value="phone">Phone Call</option>
+              <option value="whatsapp">WhatsApp</option>
+            </select>
+          </div>
+          
+          <div class="form-group">
+            <label for="contactMessageText"><span data-i18n="contact_message">Message</span> *</label>
+            <textarea id="contactMessageText" rows="5" required></textarea>
+          </div>
+
+          <div class="form-group">
+            <label for="reportType" data-i18n="contact_reporttype">Report Type (Optional)</label>
+            <select id="reportType">
+              <option value="" data-i18n="contact_general">General Message</option>
+              <option value="service_feedback" data-i18n="contact_feedback">Service Feedback Report</option>
+              <option value="complaint" data-i18n="contact_complaint">Complaint Report</option>
+              <option value="suggestion" data-i18n="contact_suggestion">Suggestion Report</option>
+              <option value="experience" data-i18n="contact_experience">Experience Report</option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label for="reportFile" data-i18n="contact_file">📎 Attach Report Evidence/Images (Optional)</label>
+            <input type="file" id="reportFile" accept="image/*,.pdf,.doc,.docx" class="compact-file-input">
+            <small class="form-help-text-tight" data-i18n="contact_file_help">You can upload images, PDF, or documents as proof/evidence for your report.</small>
+            <div id="reportFilePreview" class="preview-space-top"></div>
+          </div>
+
+          <button type="submit" class="submit-btn" data-i18n="contact_submit">Send Message</button>
+        </form>

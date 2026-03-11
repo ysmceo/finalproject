@@ -8,34 +8,35 @@ Your professional salon booking website "CEO SALOON" is now ready to use.
 
 ```
 finalproject/
-├── server.js                     # Express server with all API endpoints
-├── package.json                  # Node.js dependencies
-├── database.json                 # Data storage (bookings, messages, services)
-├── start.bat                     # Quick start batch file (Windows)
-├── README.md                     # Full documentation
-├── QUICKSTART.md                 # Quick start guide
-│
-└── public/                       # Frontend files
-    ├── index.html               # Main customer website
-    ├── admin.html               # Admin dashboard
-    ├── css/
-    │   ├── style.css            # Main website styling
-    │   └── admin.css            # Admin dashboard styling
-    └── js/
-        ├── main.js              # Customer website functionality
-        └── admin.js             # Admin dashboard functionality
+├── backend/
+│   ├── server.js                 # Express server with all API endpoints
+│   ├── package.json              # Node.js dependencies
+│   ├── database.json             # Data storage (bookings, messages, services)
+│   └── start.bat                 # Quick start batch file (Windows)
+├── frontend/
+│   ├── public/                   # Frontend files (served by backend)
+│   │   ├── index.html            # Main customer website
+│   │   ├── admin.html            # Admin dashboard
+│   │   ├── css/
+│   │   │   ├── style.css         # Main website styling
+│   │   │   └── admin.css         # Admin dashboard styling
+│   │   └── js/
+│   │       ├── main.js           # Customer website functionality
+│   │       └── admin.js          # Admin dashboard functionality
+│   └── images/                   # Marketing images
+└── mobile/                        # Expo React Native app
 ```
 
 ## 🚀 Quick Start
 
 ### Method 1: Batch File (Easiest)
-1. Double-click `start.bat` in the project folder
+1. Double-click `backend/start.bat` in the project folder
 2. Server starts automatically
 3. Visit `http://localhost:3000` in your browser
 
 ### Method 2: Command Line
 ```bash
-cd c:\Users\Dell\Desktop\finalproject
+cd "c:\Users\Dell\Desktop\finalproject - Copy\backend"
 npm start
 ```
 
@@ -200,7 +201,7 @@ View message details:
 
 ## 📊 Database Storage
 
-All data is stored locally in `database.json`:
+All data is stored locally in `backend/database.json`:
 
 ### Bookings Data
 ```json
@@ -325,19 +326,19 @@ Change CSS variables in `style.css` & `admin.css`:
 ## ❓ FAQ
 
 **Q: How do I change the port number?**
-A: Edit `server.js`: `const PORT = 3000;` to your desired port
+A: Edit `backend/server.js`: `const PORT = 3000;` to your desired port
 
 **Q: Where is my data stored?**
-A: In `database.json` file in the project root
+A: In `backend/database.json`
 
 **Q: Can I reset all data?**
-A: Delete `database.json` and restart server
+A: Delete `backend/database.json` and restart server
 
 **Q: How do customers get notified about booking status?**
 A: You would need to add email service (like NodeMailer)
 
 **Q: Can I backup my data?**
-A: Copy `database.json` to a safe location
+A: Copy `backend/database.json` to a safe location
 
 **Q: How do I stop the server?**
 A: Press Ctrl+C in the terminal
@@ -366,3 +367,4 @@ For questions or help:
 **CEO SALOON is ready to revolutionize your salon business! 🎉💇‍♀️✨**
 
 Transform Your Look with Excellence!
+

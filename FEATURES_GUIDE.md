@@ -91,7 +91,7 @@
 - **admin.js** - Added admin clock, weather, and dark mode functionality
 
 #### Backend
-- **server.js** - Added weather API endpoint
+- **backend/server.js** - Added weather API endpoint
 
 ### Key Functions
 
@@ -230,3 +230,4 @@ Modify the `updateTimeAndDate()` function to customize format:
 ---
 
 **All new features are production-ready and fully tested!** ✅
+

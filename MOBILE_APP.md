@@ -16,8 +16,8 @@ This repo includes a hybrid mobile app in the `mobile/` folder.
 
 ## Run it (development)
 
-1. Start the web server (from repo root):
-   - `node server.js`
+1. Start the backend server (from `backend/`):
+   - `npm start`
 
 2. Start the mobile app (from `mobile/`):
    - `npm start`

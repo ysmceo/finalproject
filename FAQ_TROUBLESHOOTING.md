@@ -232,11 +232,11 @@ const dateString = now.toLocaleDateString('en-US', {
 6. Contact admin at okontaysm@gmail.com
 
 ### Files to Check
-- `main.js` - Website time/weather/dark mode
-- `admin.js` - Admin dashboard features
-- `style.css` - Website styling
-- `admin.css` - Admin styling
-- `server.js` - Backend API
+- `frontend/public/js/main.js` - Website time/weather/dark mode
+- `frontend/public/js/admin.js` - Admin dashboard features
+- `frontend/public/css/style.css` - Website styling
+- `frontend/public/css/admin.css` - Admin styling
+- `backend/server.js` - Backend API
 
 ---
 

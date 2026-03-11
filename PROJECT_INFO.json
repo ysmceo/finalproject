@@ -119,10 +119,10 @@
   
   "project_files": {
     "root": [
-      "server.js (Express backend)",
-      "package.json (Dependencies)",
-      "database.json (Data storage)",
-      "start.bat (Windows launcher)",
+      "backend/server.js (Express backend)",
+      "backend/package.json (Dependencies)",
+      "backend/database.json (Data storage)",
+      "backend/start.bat (Windows launcher)",
       "README.md (Full documentation)",
       "QUICKSTART.md (Quick start guide)",
       "SETUP_GUIDE.md (Complete setup)",
@@ -237,3 +237,4 @@
     "Review/ratings system"
   ]
 }
+

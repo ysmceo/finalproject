@@ -1,0 +1,46 @@
+<form id="adminLoginForm">
+          <div class="form-group">
+            <label for="loginEmail"><span data-i18n="admin_email">Email Address</span> *</label>
+            <input type="email" id="loginEmail" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="loginPassword"><span data-i18n="admin_password">Password</span> *</label>
+            <input type="password" id="loginPassword" required>
+          </div>
+
+          <div class="form-group">
+            <label for="loginSecretPasscode">Admin Secret Passcode *</label>
+            <input type="password" id="loginSecretPasscode" required>
+            <small>Enter this passcode to login directly, or request an OTP that will be sent to your admin email.</small>
+          </div>
+
+          <div class="form-group">
+            <button type="button" class="submit-btn secondary-action-btn" id="requestAccessCodeBtn">Send One-Time Access Code (Email OTP)</button>
+            <label for="loginAccessCode">One-Time Access Code (Optional)</label>
+            <input type="text" id="loginAccessCode" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit code (optional)">
+          </div>
+
+          <div class="form-group">
+            <button type="button" class="admin-compact-toggle" id="showForgotPasswordBtn" aria-expanded="false">
+              <span id="forgotToggleLabel">Forgot password? Tap to reset</span>
+              <span id="forgotToggleIcon" aria-hidden="true">▾</span>
+            </button>
+            <small class="admin-auth-help">Keep this hidden unless you need to reset your password.</small>
+          </div>
+
+          <div class="form-group is-initially-hidden" id="forgotPasswordPanel">
+            <button type="button" class="submit-btn secondary-action-btn" id="requestPasswordResetCodeBtn">Send Password Reset OTP</button>
+            <label for="resetAccessCode">Reset OTP Code *</label>
+            <input type="text" id="resetAccessCode" inputmode="numeric" maxlength="6" placeholder="Enter 6-digit OTP code">
+
+            <label for="resetNewPassword" class="form-label-spaced">New Password *</label>
+            <input type="password" id="resetNewPassword" placeholder="Enter new password (min 6 chars)">
+
+            <button type="button" class="submit-btn secondary-action-btn" id="resetPasswordBtn">Reset Password</button>
+          </div>
+
+          <small class="admin-auth-help">Tip: Use password + secret passcode for fastest login. OTP is optional.</small>
+          
+          <button type="submit" class="submit-btn" data-i18n="admin_login_btn">Login</button>
+        </form>

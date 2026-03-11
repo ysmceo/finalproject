@@ -85,7 +85,7 @@
    - localStorage for persistence
 
 ### Backend
-1. **server.js**
+1. **backend/server.js**
    - Added `/api/weather` endpoint
    - Weather API proxy route (optional)
 
@@ -304,3 +304,4 @@ All features are:
 
 **Implementation Date**: February 10, 2026
 **Status**: Complete and Tested ✨
+

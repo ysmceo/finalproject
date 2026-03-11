@@ -107,13 +107,13 @@ finalproject/
 │   ├── CHANGELOG.md
 │   └── DOCUMENTATION_INDEX.md
 ├── JSON Files
-│   ├── package.json
-│   ├── database.json
+│   ├── backend/package.json
+│   ├── backend/database.json
 │   └── PROJECT_INFO.json
 └── Code Files
-    ├── server.js
-    ├── start.bat
-    └── public/
+    ├── backend/server.js
+    ├── backend/start.bat
+    └── frontend/public/
 ```
 
 ### Key URLs
@@ -129,8 +129,8 @@ API Services:     http://localhost:3000/api/services
 ## ✅ New-user checklist
 
 - [ ] Read `QUICKSTART.md`
-- [ ] Run `npm install`
-- [ ] Run `npm start`
+- [ ] Run `cd backend && npm install`
+- [ ] Run `npm start` (from `backend/`)
 - [ ] Open `http://localhost:3000`
 - [ ] Verify core UI elements and admin page access
 
@@ -160,3 +160,4 @@ API Services:     http://localhost:3000/api/services
 **Last updated:** March 5, 2026  
 **Documentation version:** 1.1  
 **Status:** Complete ✨
+

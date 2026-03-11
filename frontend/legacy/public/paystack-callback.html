@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Payment Verification - CEO UNISEX SALON</title>
+  <style>
+    body { font-family: Segoe UI, Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: #faf7ff; color: #333; }
+    .wrap { max-width: 720px; margin: 60px auto; padding: 0 16px; }
+    .card { background: #fff; border-radius: 14px; padding: 24px; box-shadow: 0 12px 30px rgba(74,14,78,0.12); border: 1px solid rgba(255,20,147,0.15); }
+    h1 { margin: 0 0 10px; color: #4a0e4e; }
+    .status { font-weight: 700; margin-top: 12px; }
+    .ok { color: #0f6b2f; }
+    .bad { color: #a1182b; }
+    .muted { color: #666; }
+    .details { margin-top: 10px; }
+    a.btn { display: inline-block; margin-top: 16px; padding: 12px 18px; background: linear-gradient(135deg,#4a0e4e,#ff1493); color: #fff; text-decoration: none; border-radius: 10px; font-weight: 700; }
+    code { background: #f3f3f3; padding: 2px 6px; border-radius: 6px; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="card">
+      <h1>Verifying your payment…</h1>
+      <p class="muted">Please wait. Do not close this page.</p>
+      <div id="result" class="status"></div>
+      <div id="details" class="muted details"></div>
+      <a class="btn" href="/">Back to Website</a>
+    </div>
+  </div>
+
+  <script>
+    async function run() {
+      const params = new URLSearchParams(window.location.search);
+      const reference = params.get('reference');
+      const resultEl = document.getElementById('result');
+      const detailsEl = document.getElementById('details');
+
+      if (!reference) {
+        resultEl.textContent = 'Missing payment reference.';
+        resultEl.className = 'status bad';
+        return;
+      }
+
+      try {
+        const bookingRes = await fetch(`/api/payments/paystack/verify/${encodeURIComponent(reference)}`);
+        const bookingData = await bookingRes.json().catch(() => ({}));
+
+        if (bookingRes.ok) {
+          if (bookingData.paid) {
+            resultEl.textContent = '✅ PAID — Payment verified successfully!';
+            resultEl.className = 'status ok';
+            try {
+              localStorage.setItem('lastPaymentStatus', 'paid');
+              if (bookingData.booking && bookingData.booking.id) {
+                localStorage.setItem('lastPaymentBookingId', bookingData.booking.id);
+              }
+            } catch (e) {
+              // ignore
+            }
+          } else {
+            resultEl.textContent = '❌ NOT PAID — Payment not successful.';
+            resultEl.className = 'status bad';
+            try {
+              localStorage.setItem('lastPaymentStatus', 'failed');
+              if (bookingData.booking && bookingData.booking.id) {
+                localStorage.setItem('lastPaymentBookingId', bookingData.booking.id);
+              }
+            } catch (e) {
+              // ignore
+            }
+          }
+
+          if (bookingData.booking && bookingData.booking.id) {
+            detailsEl.innerHTML = `Booking ID: <code>${bookingData.booking.id}</code> | Payment Status: <code>${bookingData.booking.paymentStatus}</code>`;
+          }
+
+          setTimeout(() => {
+            window.location.href = '/#booking';
+          }, 1800);
+          return;
+        }
+
+        const productRes = await fetch(`/api/product-orders/payments/paystack/verify/${encodeURIComponent(reference)}`);
+        const productData = await productRes.json().catch(() => ({}));
+
+        if (!productRes.ok) {
+          resultEl.textContent = 'Payment verification failed.';
+          resultEl.className = 'status bad';
+          detailsEl.textContent = productData && productData.error
+            ? productData.error
+            : (bookingData && bookingData.error ? bookingData.error : 'Unknown error');
+          return;
+        }
+
+        if (productData.paid) {
+          resultEl.textContent = '✅ PAID — Product payment verified successfully!';
+          resultEl.className = 'status ok';
+          try {
+            localStorage.setItem('lastProductPaymentStatus', 'paid');
+            if (productData.order && productData.order.id) {
+              localStorage.setItem('lastProductPaymentOrderId', productData.order.id);
+              localStorage.setItem('lastProductOrderId', productData.order.id);
+            }
+          } catch (e) {
+            // ignore
+          }
+        } else {
+          resultEl.textContent = '❌ NOT PAID — Product payment not successful.';
+          resultEl.className = 'status bad';
+          try {
+            localStorage.setItem('lastProductPaymentStatus', 'failed');
+            if (productData.order && productData.order.id) {
+              localStorage.setItem('lastProductPaymentOrderId', productData.order.id);
+              localStorage.setItem('lastProductOrderId', productData.order.id);
+            }
+          } catch (e) {
+            // ignore
+          }
+        }
+
+        if (productData.order && productData.order.id) {
+          detailsEl.innerHTML = `Order ID: <code>${productData.order.id}</code> | Payment Status: <code>${productData.order.paymentStatus}</code>`;
+        }
+
+        setTimeout(() => {
+          window.location.href = '/#order-products';
+        }, 1800);
+      } catch (e) {
+        resultEl.textContent = 'Payment verification error.';
+        resultEl.className = 'status bad';
+      }
+    }
+
+    run();
+  </script>
+</body>
+</html>

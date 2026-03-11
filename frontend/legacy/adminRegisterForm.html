@@ -1,0 +1,24 @@
+<form id="adminRegisterForm">
+          <div class="form-group">
+            <label for="registerName"><span data-i18n="admin_name">Full Name</span> *</label>
+            <input type="text" id="registerName" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="registerEmail"><span data-i18n="admin_email">Email Address</span> *</label>
+            <input type="email" id="registerEmail" required>
+          </div>
+          
+          <div class="form-group">
+            <label for="registerPassword"><span data-i18n="admin_password">Password</span> *</label>
+            <input type="password" id="registerPassword" required>
+          </div>
+
+          <div class="form-group">
+            <label for="registerSecretPasscode">Admin Secret Passcode *</label>
+            <input type="password" id="registerSecretPasscode" required>
+            <small>Required for one-time initial admin registration.</small>
+          </div>
+          
+          <button type="submit" class="submit-btn" data-i18n="admin_register_btn">Register</button>
+        </form>

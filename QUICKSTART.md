@@ -3,26 +3,35 @@
 ## How to Run the Application
 
 ### Option 1: Using Batch File (Windows)
-1. Double-click `start.bat` in the project folder
-2. The server will start automatically
-3. Open your browser and visit: `http://localhost:3000`
+1. Double-click `backend/start.bat` to start the backend
+2. In a new terminal, run the React dev server:
+   ```
+   cd "c:\Users\Dell\Desktop\finalproject - Copy\frontend"
+   npm run dev
+   ```
+3. Open your browser and visit: `http://localhost:5173`
 
 ### Option 2: Using Command Line
 1. Open Command Prompt or PowerShell
 2. Navigate to the project folder:
    ```
-   cd c:\Users\Dell\Desktop\finalproject
+   cd "c:\Users\Dell\Desktop\finalproject - Copy\backend"
    ```
 3. Start the server:
    ```
    npm start
    ```
-4. Open your browser and visit: `http://localhost:3000`
+4. Start the React dev server:
+   ```
+   cd "c:\Users\Dell\Desktop\finalproject - Copy\frontend"
+   npm run dev
+   ```
+5. Open your browser and visit: `http://localhost:5173`
 
 ## Access the Application
 
 ### Customer Website
-- **URL**: http://localhost:3000
+- **URL (dev)**: http://localhost:5173
 - **Features**:
   - View all services with Naira pricing
   - Book appointments online
@@ -30,7 +39,7 @@
   - Send messages and contact inquiries
 
 ### Admin Dashboard
-- **URL**: http://localhost:3000/admin.html
+- **URL (dev)**: http://localhost:5173/admin
 - **Features**:
   - View all booking requests
   - Accept or decline bookings
@@ -100,9 +109,9 @@ To test the booking system:
 ## Troubleshooting
 
 ### Port Already in Use
-If port 3000 is already in use, modify `server.js`:
+If port 3000 is already in use, modify `backend/server.js`:
 - Change `const PORT = 3000;` to `const PORT = 3001;` (or any available port)
-- Update URLs in `public/js/main.js` and `public/js/admin.js`
+- Update URLs in `frontend/public/js/main.js` and `frontend/public/js/admin.js`
 
 ### CORS Errors
 The application has CORS enabled for all origins. If you experience CORS issues:
@@ -111,7 +120,7 @@ The application has CORS enabled for all origins. If you experience CORS issues:
 - Clear browser cache
 
 ### Data Not Persisting
-Data is stored in `database.json`. Delete this file to reset all bookings and messages.
+Data is stored in `backend/database.json`. Delete this file to reset all bookings and messages.
 
 ## Features Overview
 

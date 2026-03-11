@@ -8,7 +8,7 @@ import { getMobilePalette, MOBILE_SHAPE, MOBILE_SPACE, MOBILE_TYPE } from '../ui
 type HomeWebScreenRouteParams = {
   /**
    * Optional website path/hash to open from WEB_BASE_URL.
-   * Examples: '#booking', '#track-booking', '/admin.html'
+   * Examples: '#booking', '#track-booking', '/admin'
    */
   initialPath?: string;
 };

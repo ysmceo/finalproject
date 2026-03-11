@@ -1,0 +1,66 @@
+@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@400;600;700&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 234 18% 16%;
+  --card: 0 0% 100%;
+  --card-foreground: 234 18% 16%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 234 18% 16%;
+  --primary: 334 84% 54%;
+  --primary-foreground: 0 0% 100%;
+  --secondary: 266 33% 22%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 240 22% 96%;
+  --muted-foreground: 234 10% 40%;
+  --accent: 43 96% 56%;
+  --accent-foreground: 240 15% 15%;
+  --destructive: 0 84% 60%;
+  --destructive-foreground: 0 0% 100%;
+  --border: 240 10% 90%;
+  --input: 240 10% 90%;
+  --ring: 334 84% 54%;
+  --radius: 0.9rem;
+}
+
+.dark {
+  --background: 235 20% 10%;
+  --foreground: 0 0% 96%;
+  --card: 235 20% 12%;
+  --card-foreground: 0 0% 96%;
+  --popover: 235 20% 12%;
+  --popover-foreground: 0 0% 96%;
+  --primary: 334 84% 64%;
+  --primary-foreground: 235 20% 10%;
+  --secondary: 266 30% 28%;
+  --secondary-foreground: 0 0% 100%;
+  --muted: 240 12% 20%;
+  --muted-foreground: 240 8% 70%;
+  --accent: 43 96% 56%;
+  --accent-foreground: 0 0% 12%;
+  --destructive: 0 62% 50%;
+  --destructive-foreground: 0 0% 98%;
+  --border: 240 10% 24%;
+  --input: 240 10% 24%;
+  --ring: 334 84% 64%;
+}
+
+* {
+  @apply border-border;
+}
+
+body {
+  @apply bg-background text-foreground font-sans antialiased;
+}
+
+h1,
+h2,
+h3,
+h4,
+h5 {
+  @apply font-display;
+}

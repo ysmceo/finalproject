@@ -45,21 +45,35 @@ All prices are in Nigerian Naira (₦):
 
 ### Setup
 
-1. Install dependencies:
+1. Install backend dependencies:
 ```bash
+cd backend
 npm install
 ```
 
-2. Start the server:
+2. Start the backend server:
 ```bash
 npm start
 ```
 
-3. The server will run on `http://localhost:3000`
+3. Install frontend dependencies and run the React dev server:
+```bash
+cd ../frontend
+npm install
+npm run dev
+```
 
 4. Access the website:
-   - Customer site: http://localhost:3000
-   - Admin Dashboard: http://localhost:3000/admin.html
+   - Customer site (dev): http://localhost:5173
+   - Admin Dashboard (dev): http://localhost:5173/admin
+
+5. Production build (served by backend at `http://localhost:3000`):
+```bash
+cd frontend
+npm run build
+```
+
+6. Mobile app (Expo) lives in `mobile/` (see `MOBILE_APP.md` for details).
 
 ## Runtime Data Store Modes (JSON vs Prisma)
 
@@ -85,7 +99,8 @@ This project supports a staged migration strategy from `database.json` to Prisma
 
 This repository is prepared for Vercel serverless deployment using:
 
-- `api/index.js` (serverless entrypoint)
+- `backend/api/index.js` (serverless entrypoint)
+- `frontend/public` (static assets)
 - `vercel.json` (route config)
 
 ### Important production notes
@@ -122,18 +137,22 @@ Set payment/email variables as needed (`PAYSTACK_*`, `STRIPE_*`, `MONNIFY_*`, `S
 
 ```
 finalproject/
-├── server.js                  # Express server with API endpoints
-├── package.json              # Dependencies
-├── database.json             # Stores bookings, messages, services
-└── public/
-    ├── index.html           # Customer website
-    ├── admin.html           # Admin dashboard
-    ├── css/
-    │   ├── style.css        # Main website styles
-    │   └── admin.css        # Admin dashboard styles
-    └── js/
-        ├── main.js          # Customer website functionality
-        └── admin.js         # Admin dashboard functionality
+├── backend/
+│   ├── server.js                 # Express server with API endpoints
+│   ├── package.json              # Backend dependencies
+│   ├── database.json             # Stores bookings, messages, services
+│   ├── prisma/                   # Prisma schema & migrations
+│   └── scripts/                  # Maintenance scripts
+├── frontend/
+│   ├── src/                      # React + Tailwind + shadcn/ui
+│   │   ├── pages/                # / and /admin routes
+│   │   ├── components/           # Forms + UI building blocks
+│   │   └── legacy/               # HTML/JS fragments used by React
+│   ├── public/                   # Static assets (images, uploads, callbacks)
+│   ├── legacy/                   # Archived static site assets
+│   └── dist/                     # Production build output
+└── mobile/
+    └── ...                       # Expo React Native app
 ```
 
 ## API Endpoints
@@ -163,10 +182,10 @@ finalproject/
 - **File System** - JSON-based data persistence
 
 ### Frontend
-- **HTML5** - Markup
-- **CSS3** - Styling with gradients and animations
-- **Vanilla JavaScript** - No dependencies, pure JS
-- **Fetch API** - HTTP requests
+- **React** - Component-driven UI
+- **Tailwind CSS** - Utility-first styling
+- **shadcn/ui** - Clean form components
+- **Legacy JS** - Feature logic preserved via React integration
 
 ## Security Notes
 
@@ -181,11 +200,11 @@ This is a demo application. For production use:
 
 ## Color Scheme
 
-- **Primary**: #ff1493 (Deep Pink)
-- **Secondary**: #4a0e4e (Deep Purple)
-- **Accent**: #ffd700 (Gold)
-- **Success**: #28a745 (Green)
-- **Danger**: #dc3545 (Red)
+- **Primary (Brand)**: #e21a73
+- **Secondary (Ink)**: #4f2d7d
+- **Accent (Gold)**: #f8ba2f
+- **Success**: #10b981
+- **Danger**: #ef4444
 
 ## Contact Information
 

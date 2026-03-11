@@ -1,0 +1,12 @@
+<form id="productForm" class="product-form">
+            <div class="product-form-grid">
+              <input type="text" id="productName" placeholder="Product Name" required>
+              <input type="text" id="productCategory" placeholder="Category" required>
+              <input type="number" id="productPrice" placeholder="Price (₦)" min="0" required>
+              <input type="number" id="productStock" placeholder="Stock" min="0" required>
+              <label for="productImage" class="sr-only">Product Image</label>
+              <input type="file" id="productImage" accept="image/*">
+            </div>
+            <button type="submit" class="btn btn-accept">Add Product</button>
+            <div id="productFormMessage" class="message"></div>
+          </form>

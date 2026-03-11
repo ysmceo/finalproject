@@ -28,3 +28,9 @@ Thumbs.db
 
 # local Prisma SQLite files
 prisma/**/*.db
+
+# frontend build output
+frontend/dist/
+
+# temp scaffold
+frontend-tmp/
