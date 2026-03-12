@@ -708,8 +708,8 @@ export default function TrackScreen(props: any) {
           <MicroPress style={styles.quickNavChip} onPress={() => navigation.navigate('Contact')}>
             <Text style={styles.quickNavChipText}>Contact</Text>
           </MicroPress>
-          <MicroPress style={styles.quickNavChip} onPress={() => navigation.navigate('Settings')}>
-            <Text style={styles.quickNavChipText}>Settings</Text>
+          <MicroPress style={styles.quickNavChip} onPress={() => navigation.navigate('More')}>
+            <Text style={styles.quickNavChipText}>More</Text>
           </MicroPress>
         </View>
       </Animated.View>
@@ -1140,29 +1140,29 @@ export default function TrackScreen(props: any) {
         </View>
       ) : null}
     </ScrollView>
-    <View style={styles.floatingQuickNav}>
+    <View style={[styles.floatingQuickNav, showBackToTop && styles.floatingQuickNavRaised]}>
       <MicroPress
         style={[styles.floatingQuickNavBtn, { backgroundColor: palette.card, borderColor: palette.border }]}
         onPress={() => jumpToSection('booking')}
       >
-        <Text style={[styles.floatingQuickNavText, { color: palette.text }]}>Booking</Text>
+        <Text numberOfLines={1} style={[styles.floatingQuickNavText, { color: palette.text }]}>Booking</Text>
       </MicroPress>
       <MicroPress
         style={[styles.floatingQuickNavBtn, { backgroundColor: palette.card, borderColor: palette.border }]}
         onPress={() => jumpToSection('order')}
       >
-        <Text style={[styles.floatingQuickNavText, { color: palette.text }]}>Order</Text>
+        <Text numberOfLines={1} style={[styles.floatingQuickNavText, { color: palette.text }]}>Order</Text>
       </MicroPress>
       <MicroPress
         style={[styles.floatingQuickNavBtn, { backgroundColor: palette.primarySoft, borderColor: palette.border }]}
         onPress={() => jumpToSection('results')}
       >
-        <Text style={[styles.floatingQuickNavText, { color: palette.primary }]}>Results</Text>
+        <Text numberOfLines={1} style={[styles.floatingQuickNavText, { color: palette.primary }]}>Results</Text>
       </MicroPress>
     </View>
     {showBackToTop ? (
-      <Pressable style={styles.backToTopButton} onPress={scrollToTop}>
-        <Text style={styles.backToTopText}>↑ Top</Text>
+      <Pressable style={[styles.backToTopButton, { backgroundColor: palette.primary }]} onPress={scrollToTop}>
+        <Text style={styles.backToTopText}>Top</Text>
       </Pressable>
     ) : null}
     </View>
@@ -1513,17 +1513,22 @@ const styles = StyleSheet.create({
   floatingQuickNav: {
     position: 'absolute',
     left: 12,
-    right: 78,
+    right: 12,
     bottom: 16,
     flexDirection: 'row',
     gap: MOBILE_SPACE.sm,
     alignItems: 'center'
   },
+  floatingQuickNavRaised: {
+    bottom: 72
+  },
   floatingQuickNavBtn: {
     flex: 1,
-    minHeight: 38,
+    minWidth: 0,
+    minHeight: 42,
     borderRadius: MOBILE_SHAPE.chipRadius,
     borderWidth: 1,
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#1d2538',
@@ -1533,7 +1538,8 @@ const styles = StyleSheet.create({
     elevation: 2
   },
   floatingQuickNavText: {
-    fontSize: MOBILE_TYPE.caption,
-    fontWeight: '800'
+    fontSize: MOBILE_TYPE.micro,
+    fontWeight: '800',
+    textAlign: 'center'
   }
 });

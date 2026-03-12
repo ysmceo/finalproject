@@ -1,6 +1,11 @@
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import './styles/forms.css'
-import App from './App.jsx'
+import { createRoot } from "react-dom/client";
 
-createRoot(document.getElementById('root')).render(<App />)
+import App from "./App.jsx";
+import { ThemeProvider } from "@/components/theme/theme-provider";
+import "./index.css";
+
+createRoot(document.getElementById("root")).render(
+  <ThemeProvider>
+    <App />
+  </ThemeProvider>
+);

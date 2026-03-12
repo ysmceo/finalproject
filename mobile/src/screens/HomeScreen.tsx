@@ -32,7 +32,7 @@ const WEATHER_LON = 3.3792;
 type WeatherData = {
   temperature: number;
   weatherCode: number;
-  icon: string;
+  iconName: keyof typeof Ionicons.glyphMap;
   loading: boolean;
   error?: string;
 };
@@ -47,6 +47,18 @@ function getWeatherIcon(code: number): string {
   if (code >= 85 && code <= 86) return '🌨️';
   if (code >= 95) return '⛈️';
   return '☁️';
+}
+
+function getWeatherIconName(code: number): keyof typeof Ionicons.glyphMap {
+  if (code === 0) return 'sunny-outline';
+  if (code >= 1 && code <= 3) return 'partly-sunny-outline';
+  if (code >= 45 && code <= 48) return 'cloud-outline';
+  if (code >= 51 && code <= 67) return 'rainy-outline';
+  if (code >= 71 && code <= 77) return 'snow-outline';
+  if (code >= 80 && code <= 82) return 'rainy-outline';
+  if (code >= 85 && code <= 86) return 'thunderstorm-outline';
+  if (code >= 95) return 'thunderstorm-outline';
+  return 'cloud-outline';
 }
 
 function formatTime(): string {
@@ -71,7 +83,12 @@ export default function HomeScreen() {
 
   const [currentTime, setCurrentTime] = useState(formatTime());
   const [currentDate, setCurrentDate] = useState(formatDate());
-  const [weather, setWeather] = useState<WeatherData>({ temperature: 0, weatherCode: 0, icon: '☁️', loading: true });
+  const [weather, setWeather] = useState<WeatherData>({
+    temperature: 0,
+    weatherCode: 0,
+    iconName: 'cloud-outline',
+    loading: true
+  });
   const [services, setServices] = useState<Service[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [loadingServices, setLoadingServices] = useState(true);
@@ -112,7 +129,7 @@ export default function HomeScreen() {
         setWeather({
           temperature: current?.temperature ?? 0,
           weatherCode: current?.weathercode ?? 0,
-          icon: getWeatherIcon(current?.weathercode ?? 0),
+          iconName: getWeatherIconName(current?.weathercode ?? 0),
           loading: false
         });
       } catch (error) {
@@ -120,7 +137,7 @@ export default function HomeScreen() {
         setWeather({
           temperature: 0,
           weatherCode: 0,
-          icon: '☁️',
+          iconName: 'cloud-outline',
           loading: false,
           error: 'Unable to load weather'
         });
@@ -179,15 +196,35 @@ export default function HomeScreen() {
     primary: { color: palette.primary },
     primaryBg: { backgroundColor: palette.primary },
     primarySoft: { backgroundColor: palette.primarySoft },
-    heroCard: { backgroundColor: isDark ? '#283247' : '#384a72', borderColor: isDark ? '#516287' : '#5a6f99' },
-    heroSubtle: { color: isDark ? '#d2ddf1' : '#e7eefb' }
+    heroCard: { backgroundColor: isDark ? '#172744' : '#eff5ff', borderColor: isDark ? '#314b7e' : '#cfdcf6' },
+    heroKicker: { color: isDark ? '#dbe6ff' : palette.warm },
+    heroTitle: { color: isDark ? '#ffffff' : '#16233b' },
+    heroSubtle: { color: isDark ? '#d2ddf1' : '#5e718c' },
+    infoCard: {
+      backgroundColor: isDark ? 'rgba(11, 18, 32, 0.22)' : 'rgba(255,255,255,0.84)',
+      borderColor: isDark ? 'rgba(255,255,255,0.12)' : '#dae4f5'
+    },
+    clockLabel: { color: isDark ? '#f8e9b3' : palette.warm },
+    clockTime: { color: isDark ? '#ffffff' : '#13233c' },
+    clockDate: { color: isDark ? '#d8e3fb' : '#5d708c' },
+    weatherCard: {
+      backgroundColor: isDark ? 'rgba(255,255,255,0.1)' : '#e9f0ff',
+      borderColor: isDark ? 'rgba(255,255,255,0.16)' : '#cad8f2'
+    },
+    weatherCaption: { color: isDark ? '#f8e9b3' : palette.primary },
+    weatherText: { color: isDark ? '#ffffff' : '#1a2a44' },
+    featureChip: {
+      backgroundColor: isDark ? 'rgba(255,255,255,0.14)' : '#ffffff',
+      borderColor: isDark ? 'rgba(255,255,255,0.22)' : '#d7e2f5'
+    },
+    featureChipText: { color: isDark ? '#ffffff' : '#274268' }
   };
 
   const quickActions = [
-    { key: 'book', label: 'Book Now', icon: 'calendar', color: '#4f5fa8', screen: 'Book' },
-    { key: 'track', label: 'Track', icon: 'search', color: '#8a6a4b', screen: 'Track' },
-    { key: 'gallery', label: 'Gallery', icon: 'images', color: '#3e7cb8', screen: 'Gallery' },
-    { key: 'team', label: 'Team', icon: 'people', color: '#2f8b6c', screen: 'Team' }
+    { key: 'book', label: 'Book Now', icon: 'calendar', color: palette.primary, screen: 'Book' },
+    { key: 'track', label: 'Track', icon: 'search', color: palette.warm, screen: 'Track' },
+    { key: 'gallery', label: 'Gallery', icon: 'images', color: palette.secondary, screen: 'Gallery' },
+    { key: 'team', label: 'Team', icon: 'people', color: palette.success, screen: 'Team' }
   ];
 
   const handleQuickAction = (screen: string) => {
@@ -224,25 +261,30 @@ export default function HomeScreen() {
         <View style={styles.heroGlowOne} />
         <View style={styles.heroGlowTwo} />
         <View style={styles.heroHeader}>
-          <Text style={styles.heroKicker}>CEO UNISEX SALON</Text>
-          <Text style={styles.heroTitle}>Where Beauty Meets Excellence</Text>
-          <Text style={[styles.heroTagline, themed.heroSubtle]}>Luxury grooming • Trusted professionals • Modern care</Text>
+          <Text style={[styles.heroKicker, themed.heroKicker]}>CEO UNISEX SALON</Text>
+          <Text style={[styles.heroTitle, themed.heroTitle]}>Where Beauty Meets Excellence</Text>
+          <Text style={[styles.heroTagline, themed.heroSubtle]}>Luxury grooming, trusted professionals, modern care</Text>
         </View>
         
         {/* Clock & Weather */}
-        <View style={[styles.infoCard, themed.cardMuted]}>
+        <View style={[styles.infoCard, themed.infoCard]}>
           <View style={styles.clockSection}>
-            <Text style={styles.clockLabel}>Current time</Text>
-            <Text style={styles.clockTime}>{currentTime}</Text>
-            <Text style={styles.clockDate}>{currentDate}</Text>
+            <Text style={[styles.clockLabel, themed.clockLabel]}>Current time</Text>
+            <Text style={[styles.clockTime, themed.clockTime]}>{currentTime}</Text>
+            <Text style={[styles.clockDate, themed.clockDate]}>{currentDate}</Text>
           </View>
-          <View style={styles.weatherSection}>
-            <Text style={styles.weatherCaption}>Weather</Text>
-            <Text style={styles.weatherIcon}>{weather.loading ? '⏳' : weather.icon}</Text>
-            <Text style={styles.weatherTemp}>
-              {weather.loading ? '...' : weather.error ? '--°C' : `${Number(weather.temperature || 0).toFixed(1)}°C`}
+          <View style={[styles.weatherSection, themed.weatherCard]}>
+            <Text style={[styles.weatherCaption, themed.weatherCaption]}>Weather</Text>
+            <Ionicons
+              name={weather.loading ? 'time-outline' : weather.iconName}
+              size={28}
+              color={isDark ? '#ffffff' : palette.primary}
+              style={styles.weatherIcon}
+            />
+            <Text style={[styles.weatherTemp, themed.weatherText]}>
+              {weather.loading ? '...' : weather.error ? '-- C' : `${Number(weather.temperature || 0).toFixed(1)} C`}
             </Text>
-            <Text style={styles.weatherLabel}>Lagos</Text>
+            <Text style={[styles.weatherLabel, themed.weatherText]}>Lagos</Text>
           </View>
         </View>
 
@@ -271,14 +313,14 @@ export default function HomeScreen() {
         </TouchableOpacity>
 
         <View style={styles.featureChipsRow}>
-          <View style={[styles.featureChip, { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
-            <Text style={styles.featureChipText}>Premium Care</Text>
+          <View style={[styles.featureChip, themed.featureChip]}>
+            <Text style={[styles.featureChipText, themed.featureChipText]}>Premium Care</Text>
           </View>
-          <View style={[styles.featureChip, { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
-            <Text style={styles.featureChipText}>Pro Stylists</Text>
+          <View style={[styles.featureChip, themed.featureChip]}>
+            <Text style={[styles.featureChipText, themed.featureChipText]}>Pro Stylists</Text>
           </View>
-          <View style={[styles.featureChip, { backgroundColor: 'rgba(255,255,255,0.14)' }]}>
-            <Text style={styles.featureChipText}>Hygienic Tools</Text>
+          <View style={[styles.featureChip, themed.featureChip]}>
+            <Text style={[styles.featureChipText, themed.featureChipText]}>Hygienic Tools</Text>
           </View>
         </View>
       </Animated.View>
@@ -522,6 +564,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    gap: MOBILE_SPACE.md,
     borderRadius: MOBILE_SHAPE.controlRadius,
     padding: MOBILE_SPACE.lg,
     marginBottom: MOBILE_SPACE.lg,
@@ -529,7 +572,8 @@ const styles = StyleSheet.create({
     borderColor: 'rgba(255,255,255,0.18)'
   },
   clockSection: {
-    flex: 1
+    flex: 1,
+    paddingRight: MOBILE_SPACE.sm
   },
   clockLabel: {
     fontSize: MOBILE_TYPE.micro,
@@ -584,7 +628,7 @@ const styles = StyleSheet.create({
   },
   quickActions: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    flexWrap: 'wrap',
     gap: MOBILE_SPACE.sm
   },
   featureChipsRow: {
@@ -597,8 +641,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: MOBILE_SPACE.md,
     paddingVertical: MOBILE_SPACE.xs,
     borderRadius: MOBILE_SHAPE.chipRadius,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.24)'
+    borderWidth: 1
   },
   featureChipText: {
     color: '#fff',
@@ -606,10 +649,11 @@ const styles = StyleSheet.create({
     fontWeight: '800'
   },
   quickActionBtn: {
-    flex: 1,
+    width: '48%',
     flexDirection: 'column',
     alignItems: 'center',
     justifyContent: 'center',
+    minHeight: 72,
     paddingVertical: MOBILE_SPACE.md,
     borderRadius: MOBILE_SHAPE.controlRadius,
     gap: 4,
@@ -624,7 +668,8 @@ const styles = StyleSheet.create({
   quickActionText: {
     color: '#fff',
     fontSize: MOBILE_TYPE.micro,
-    fontWeight: '800'
+    fontWeight: '800',
+    textAlign: 'center'
   },
   whatsAppCta: {
     marginTop: MOBILE_SPACE.md,

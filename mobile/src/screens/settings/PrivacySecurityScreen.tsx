@@ -3,11 +3,15 @@ import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { SettingsCard, SettingsPill, SettingsSectionTitle } from './ui';
+import { useThemePrefs } from '../../theme';
+import { getMobilePalette } from '../../ui/polish';
 
 const LAST_BOOKING_ID_KEY = 'ceosalon:lastBookingId';
 const LAST_BOOKING_EMAIL_KEY = 'ceosalon:lastBookingEmail';
 
 export default function PrivacySecurityScreen() {
+  const { resolvedColorScheme } = useThemePrefs();
+  const palette = getMobilePalette(resolvedColorScheme === 'dark');
   const [hasSaved, setHasSaved] = useState(false);
 
   useEffect(() => {
@@ -36,14 +40,14 @@ export default function PrivacySecurityScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: palette.bg }]}>
       <SettingsSectionTitle>Privacy</SettingsSectionTitle>
       <SettingsCard>
         <View style={styles.pad}>
-          <Text style={styles.text}>
+          <Text style={[styles.text, { color: palette.text }]}>
             This app may store your last Booking ID and Email on-device to make tracking easier.
           </Text>
-          <Text style={[styles.text, { marginTop: 8, color: '#6b7280' }]}>
+          <Text style={[styles.text, { marginTop: 8, color: palette.textMuted }]}>
             No payment card details are stored in the app.
           </Text>
 

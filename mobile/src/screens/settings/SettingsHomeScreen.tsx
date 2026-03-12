@@ -4,6 +4,8 @@ import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import type { SettingsStackParamList } from '../SettingsNavigator';
 import { SettingsCard, SettingsRow, SettingsSearchBox, SettingsSectionTitle } from './ui';
+import { useThemePrefs } from '../../theme';
+import { getMobilePalette } from '../../ui/polish';
 
 type Props = NativeStackScreenProps<SettingsStackParamList, 'SettingsHome'>;
 
@@ -16,6 +18,8 @@ type Item = {
 };
 
 export default function SettingsHomeScreen({ navigation }: Props) {
+  const { resolvedColorScheme } = useThemePrefs();
+  const palette = getMobilePalette(resolvedColorScheme === 'dark');
   const [q, setQ] = useState('');
 
   const items = useMemo<Item[]>(() => {
@@ -46,7 +50,10 @@ export default function SettingsHomeScreen({ navigation }: Props) {
   }, [filtered]);
 
   return (
-    <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+    <ScrollView
+      contentContainerStyle={[styles.container, { backgroundColor: palette.bg }]}
+      keyboardShouldPersistTaps="handled"
+    >
       <SettingsSearchBox value={q} onChangeText={setQ} />
 
       <SettingsSectionTitle>Popular shortcuts</SettingsSectionTitle>

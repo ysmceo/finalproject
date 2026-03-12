@@ -1,66 +1,299 @@
-@import url("https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=Playfair+Display:wght@400;600;700&display=swap");
-
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import url("https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@500;600;700&family=Manrope:wght@400;500;600;700;800&display=swap");
+@import "tailwindcss";
+@config "../tailwind.config.cjs";
 
 :root {
-  --background: 0 0% 100%;
-  --foreground: 234 18% 16%;
-  --card: 0 0% 100%;
-  --card-foreground: 234 18% 16%;
-  --popover: 0 0% 100%;
-  --popover-foreground: 234 18% 16%;
-  --primary: 334 84% 54%;
-  --primary-foreground: 0 0% 100%;
-  --secondary: 266 33% 22%;
-  --secondary-foreground: 0 0% 100%;
-  --muted: 240 22% 96%;
-  --muted-foreground: 234 10% 40%;
-  --accent: 43 96% 56%;
-  --accent-foreground: 240 15% 15%;
-  --destructive: 0 84% 60%;
-  --destructive-foreground: 0 0% 100%;
-  --border: 240 10% 90%;
-  --input: 240 10% 90%;
-  --ring: 334 84% 54%;
-  --radius: 0.9rem;
+  color-scheme: light;
+  --canvas: 36 60% 96%;
+  --panel: 34 88% 98%;
+  --panel-strong: 35 58% 86%;
+  --line: 33 43% 78%;
+  --ink: 215 28% 20%;
+  --ink-soft: 32 16% 35%;
+  --night: 220 31% 17%;
+  --brand: 26 62% 47%;
+  --brand-deep: 21 72% 33%;
+  --brand-soft: 36 83% 78%;
+  --pine: 156 41% 30%;
+  --pine-soft: 152 33% 91%;
+  --success: 160 52% 36%;
+  --warning: 32 88% 46%;
+  --info: 198 78% 44%;
+  --danger: 358 75% 59%;
+  --on-brand: 0 0% 100%;
+  --on-night: 0 0% 100%;
+  --on-success: 0 0% 100%;
+  --on-warning: 0 0% 100%;
+  --on-info: 0 0% 100%;
+  --on-danger: 0 0% 100%;
+  --glow-primary: 30 95% 62%;
+  --glow-secondary: 197 88% 70%;
+  --glow-tertiary: 336 92% 72%;
 }
 
-.dark {
-  --background: 235 20% 10%;
-  --foreground: 0 0% 96%;
-  --card: 235 20% 12%;
-  --card-foreground: 0 0% 96%;
-  --popover: 235 20% 12%;
-  --popover-foreground: 0 0% 96%;
-  --primary: 334 84% 64%;
-  --primary-foreground: 235 20% 10%;
-  --secondary: 266 30% 28%;
-  --secondary-foreground: 0 0% 100%;
-  --muted: 240 12% 20%;
-  --muted-foreground: 240 8% 70%;
-  --accent: 43 96% 56%;
-  --accent-foreground: 0 0% 12%;
-  --destructive: 0 62% 50%;
-  --destructive-foreground: 0 0% 98%;
-  --border: 240 10% 24%;
-  --input: 240 10% 24%;
-  --ring: 334 84% 64%;
+html.dark {
+  color-scheme: dark;
+  --canvas: 226 40% 8%;
+  --panel: 226 30% 12%;
+  --panel-strong: 227 23% 18%;
+  --line: 223 20% 26%;
+  --ink: 38 43% 96%;
+  --ink-soft: 218 18% 74%;
+  --night: 224 42% 10%;
+  --brand: 34 100% 62%;
+  --brand-deep: 25 92% 54%;
+  --brand-soft: 35 100% 82%;
+  --pine: 171 73% 58%;
+  --pine-soft: 171 31% 18%;
+  --success: 162 73% 58%;
+  --warning: 35 100% 67%;
+  --info: 194 100% 69%;
+  --danger: 354 78% 61%;
+  --on-brand: 224 42% 10%;
+  --on-night: 0 0% 100%;
+  --on-success: 224 42% 10%;
+  --on-warning: 224 42% 10%;
+  --on-info: 224 42% 10%;
+  --on-danger: 0 0% 100%;
+  --glow-primary: 33 100% 61%;
+  --glow-secondary: 196 100% 67%;
+  --glow-tertiary: 332 96% 67%;
 }
 
 * {
-  @apply border-border;
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
-  @apply bg-background text-foreground font-sans antialiased;
+  margin: 0;
+  min-height: 100vh;
+  background-color: hsl(var(--canvas));
+  background-image:
+    radial-gradient(circle at 14% 14%, hsl(var(--glow-primary) / 0.15), transparent 26%),
+    radial-gradient(circle at 86% 10%, hsl(var(--glow-secondary) / 0.12), transparent 23%),
+    radial-gradient(circle at 50% 78%, hsl(var(--glow-tertiary) / 0.09), transparent 30%),
+    linear-gradient(180deg, hsl(var(--canvas)), hsl(var(--panel)));
+  color: hsl(var(--ink));
+  font-family: "Manrope", sans-serif;
+  transition:
+    background-color 260ms ease,
+    background-image 320ms ease,
+    color 260ms ease;
 }
 
-h1,
-h2,
-h3,
-h4,
-h5 {
-  @apply font-display;
+html.dark body {
+  background-image:
+    radial-gradient(circle at 12% 15%, hsl(var(--glow-primary) / 0.24), transparent 24%),
+    radial-gradient(circle at 85% 12%, hsl(var(--glow-secondary) / 0.18), transparent 22%),
+    radial-gradient(circle at 50% 82%, hsl(var(--glow-tertiary) / 0.16), transparent 28%),
+    linear-gradient(180deg, hsl(226 40% 8%), hsl(231 39% 7%));
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+#root {
+  min-height: 100vh;
+  position: relative;
+  isolation: isolate;
+}
+
+#root::before {
+  content: "";
+  position: fixed;
+  inset: -18% -10%;
+  z-index: -1;
+  pointer-events: none;
+  opacity: 0.7;
+  filter: blur(96px);
+  background:
+    radial-gradient(circle at 18% 20%, hsl(var(--glow-primary) / 0.14), transparent 24%),
+    radial-gradient(circle at 80% 18%, hsl(var(--glow-secondary) / 0.12), transparent 22%),
+    radial-gradient(circle at 52% 84%, hsl(var(--glow-tertiary) / 0.12), transparent 28%);
+  transition: opacity 280ms ease;
+}
+
+html.dark #root::before {
+  opacity: 1;
+}
+
+::selection {
+  background: hsl(var(--brand) / 0.28);
+  color: hsl(var(--ink));
+}
+
+.theme-toggle {
+  position: relative;
+  display: inline-flex;
+  height: 2.55rem;
+  width: 4.75rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.4rem;
+  padding: 0.35rem 0.45rem;
+  border: 1px solid hsl(var(--line) / 0.85);
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, hsl(var(--panel-strong) / 0.96), hsl(var(--panel) / 0.96));
+  color: hsl(var(--ink));
+  box-shadow:
+    0 0 0 1px hsl(var(--glow-secondary) / 0.06),
+    0 16px 40px hsl(var(--glow-primary) / 0.14);
+  transition:
+    transform 180ms ease,
+    border-color 220ms ease,
+    box-shadow 220ms ease,
+    background 220ms ease;
+}
+
+.theme-toggle:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 1px hsl(var(--glow-secondary) / 0.14),
+    0 18px 46px hsl(var(--glow-primary) / 0.18);
+}
+
+.theme-toggle:focus-visible {
+  outline: none;
+  box-shadow:
+    0 0 0 4px hsl(var(--brand) / 0.18),
+    0 18px 46px hsl(var(--glow-primary) / 0.18);
+}
+
+.theme-toggle__thumb {
+  position: absolute;
+  left: 0.28rem;
+  top: 0.28rem;
+  height: 1.95rem;
+  width: 1.95rem;
+  border-radius: 999px;
+  background:
+    linear-gradient(135deg, hsl(var(--brand-soft)), hsl(var(--brand)));
+  box-shadow:
+    0 0 0 1px hsl(var(--brand-soft) / 0.28),
+    0 10px 22px hsl(var(--brand) / 0.3);
+  transition:
+    transform 220ms ease,
+    background 220ms ease,
+    box-shadow 220ms ease;
+}
+
+html.dark .theme-toggle__thumb {
+  transform: translateX(2.15rem);
+  background:
+    linear-gradient(135deg, hsl(var(--glow-secondary)), hsl(var(--brand)));
+  box-shadow:
+    0 0 0 1px hsl(var(--glow-secondary) / 0.28),
+    0 12px 26px hsl(var(--glow-secondary) / 0.28);
+}
+
+.theme-toggle__icon {
+  position: relative;
+  z-index: 1;
+  transition:
+    color 180ms ease,
+    opacity 180ms ease,
+    transform 180ms ease;
+}
+
+.theme-toggle__icon--sun {
+  color: hsl(var(--brand-deep));
+  opacity: 1;
+}
+
+.theme-toggle__icon--moon {
+  color: hsl(var(--ink-soft));
+  opacity: 0.58;
+}
+
+html.dark .theme-toggle__icon--sun {
+  color: hsl(var(--ink-soft));
+  opacity: 0.58;
+  transform: rotate(-12deg);
+}
+
+html.dark .theme-toggle__icon--moon {
+  color: hsl(var(--glow-secondary));
+  opacity: 1;
+  transform: rotate(12deg);
+}
+
+.route-rail {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.route-rail::-webkit-scrollbar {
+  display: none;
+}
+
+@keyframes mobile-nav-slide {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.mobile-nav-panel {
+  animation: mobile-nav-slide 180ms ease;
+}
+
+@keyframes slideshow-fade {
+  0%,
+  100% {
+    opacity: 0;
+    transform: scale(1.08);
+  }
+
+  8%,
+  30% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  38% {
+    opacity: 0;
+    transform: scale(1.02);
+  }
+}
+
+.slideshow-layer {
+  position: absolute;
+  inset: 0;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: cover;
+  opacity: 0;
+  animation: slideshow-fade 18s ease-in-out infinite;
+  will-change: opacity, transform;
+}
+
+.slideshow-layer--0 {
+  animation-delay: 0s;
+}
+
+.slideshow-layer--1 {
+  animation-delay: 6s;
+}
+
+.slideshow-layer--2 {
+  animation-delay: 12s;
 }

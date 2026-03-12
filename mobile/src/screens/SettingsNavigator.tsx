@@ -8,6 +8,8 @@ import AppearanceScreen from './settings/AppearanceScreen';
 import PrivacySecurityScreen from './settings/PrivacySecurityScreen';
 import HelpSupportScreen from './settings/HelpSupportScreen';
 import AboutScreen from './settings/AboutScreen';
+import { useThemePrefs } from '../theme';
+import { getMobilePalette } from '../ui/polish';
 
 export type SettingsStackParamList = {
   SettingsHome: undefined;
@@ -22,8 +24,19 @@ export type SettingsStackParamList = {
 const Stack = createNativeStackNavigator<SettingsStackParamList>();
 
 export default function SettingsNavigator() {
+  const { resolvedColorScheme } = useThemePrefs();
+  const palette = getMobilePalette(resolvedColorScheme === 'dark');
+
   return (
-    <Stack.Navigator>
+    <Stack.Navigator
+      screenOptions={{
+        contentStyle: { backgroundColor: palette.bg },
+        headerStyle: { backgroundColor: palette.card },
+        headerTintColor: palette.text,
+        headerTitleStyle: { color: palette.text, fontWeight: '900' },
+        headerShadowVisible: false
+      }}
+    >
       <Stack.Screen name="SettingsHome" component={SettingsHomeScreen} options={{ title: 'Settings' }} />
       <Stack.Screen name="Account" component={AccountScreen} options={{ title: 'Account' }} />
       <Stack.Screen name="Notifications" component={NotificationsScreen} options={{ title: 'Notifications' }} />

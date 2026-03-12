@@ -1,0 +1,30 @@
+services:
+  - type: web
+    name: ceo-unisex-salon-backend
+    env: node
+    plan: starter
+    autoDeploy: true
+    buildCommand: cd backend && npm install && npm run prisma:generate
+    startCommand: cd backend && npm start
+    healthCheckPath: /api/health
+    disk:
+      name: salon-uploads
+      mountPath: /var/data
+      sizeGB: 1
+    envVars:
+      - key: NODE_VERSION
+        value: 22
+      - key: DATA_STORE_MODE
+        value: mongo
+      - key: MONGODB_DB_NAME
+        value: ceo_unisex_salon
+      - key: MONGODB_STATE_COLLECTION
+        value: app_state
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
+      - key: PUBLIC_BASE_URL
+        sync: false
+      - key: MONGODB_URI
+        sync: false
+      - key: ADMIN_SECRET_PASSCODE
+        sync: false

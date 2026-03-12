@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
+  Alert,
   Animated,
   Easing,
   Linking,
@@ -12,13 +13,12 @@ import {
   View
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { useNavigation } from '@react-navigation/native';
 
+import { ApiError, apiPostJson } from '../lib/api';
+import { triggerLightHaptic, triggerSuccessHaptic, triggerWarningHaptic } from '../lib/haptics';
 import { useThemePrefs } from '../theme';
 import { getMobilePalette, MOBILE_MOTION, MOBILE_SHAPE, MOBILE_SPACE, MOBILE_TYPE } from '../ui/polish';
-import { triggerLightHaptic, triggerSuccessHaptic, triggerWarningHaptic } from '../lib/haptics';
 
-// Contact information
 const CONTACT_INFO = {
   phone: '07036939125',
   whatsapp: '07036939125',
@@ -38,13 +38,20 @@ const CONTACT_INFO = {
 };
 
 const CUSTOMER_CARE_STANDARDS = [
-  { level: 'Normal', eta: 'Within 24 hours' },
-  { level: 'Priority', eta: 'Within 4-8 hours' },
+  { level: 'General', eta: 'Within 24 hours' },
+  { level: 'Priority', eta: 'Within 4 to 8 hours' },
   { level: 'Urgent', eta: 'Same day handling' }
 ];
 
+type MessageResponse = {
+  message: string;
+  data: {
+    id: string;
+    subject: string;
+  };
+};
+
 export default function ContactScreen() {
-  const navigation = useNavigation<any>();
   const { resolvedColorScheme } = useThemePrefs();
   const isDark = resolvedColorScheme === 'dark';
   const palette = getMobilePalette(isDark);
@@ -53,6 +60,7 @@ export default function ContactScreen() {
     name: '',
     email: '',
     phone: '',
+    subject: '',
     message: ''
   });
   const [sending, setSending] = useState(false);
@@ -60,7 +68,6 @@ export default function ContactScreen() {
   const [ticketRef, setTicketRef] = useState('');
   const [showBackToTop, setShowBackToTop] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
-
   const screenEntry = useMemo(() => new Animated.Value(0), []);
 
   useEffect(() => {
@@ -91,17 +98,22 @@ export default function ContactScreen() {
     cardElevated: { backgroundColor: palette.cardElevated, borderColor: palette.border },
     text: { color: palette.text },
     textMuted: { color: palette.textMuted },
-    primary: { color: palette.primary },
-    primarySoft: { backgroundColor: palette.primarySoft },
     input: { backgroundColor: palette.inputBg, borderColor: palette.border, color: palette.text },
-    hero: { backgroundColor: isDark ? '#283247' : '#384a72', borderColor: isDark ? '#516287' : '#5a6f99' }
+    hero: { backgroundColor: isDark ? '#172744' : '#2d477f', borderColor: isDark ? '#314b7e' : '#4b67a4' },
+    heroSubtle: { color: '#d9e5ff' },
+    successSoft: { backgroundColor: isDark ? '#143428' : '#e9f7ef', borderColor: isDark ? '#266946' : '#b7e2cb' }
   };
 
-  const generateSupportTicketRef = () => {
-    const now = new Date();
-    const datePart = `${now.getFullYear()}${String(now.getMonth() + 1).padStart(2, '0')}${String(now.getDate()).padStart(2, '0')}`;
-    const randomPart = Math.random().toString(36).slice(2, 8).toUpperCase();
-    return `CSR-${datePart}-${randomPart}`;
+  const canSend = Boolean(
+    formData.name.trim() &&
+      formData.email.trim() &&
+      formData.subject.trim() &&
+      formData.message.trim()
+  );
+
+  const updateField = (key: keyof typeof formData, value: string) => {
+    setSent(false);
+    setFormData((prev) => ({ ...prev, [key]: value }));
   };
 
   const handleCall = () => {
@@ -132,24 +144,40 @@ export default function ContactScreen() {
     Linking.openURL(CONTACT_INFO.website);
   };
 
-  const handleSendMessage = () => {
-    if (!formData.name.trim() || !formData.email.trim() || !formData.message.trim()) {
+  const handleSendMessage = async () => {
+    if (!canSend) {
       triggerWarningHaptic();
+      Alert.alert('Missing details', 'Enter your name, email, subject, and message.');
       return;
     }
 
-    triggerLightHaptic();
     setSending(true);
-    const newTicketRef = generateSupportTicketRef();
-    // In production, this would send to an API
-    setTimeout(() => {
+    triggerLightHaptic();
+
+    try {
+      const messageBody = formData.phone.trim()
+        ? `Phone: ${formData.phone.trim()}\n\n${formData.message.trim()}`
+        : formData.message.trim();
+
+      const response = await apiPostJson<MessageResponse>('/api/messages', {
+        name: formData.name.trim(),
+        email: formData.email.trim(),
+        subject: formData.subject.trim(),
+        message: messageBody,
+        reportType: 'general_message'
+      });
+
       setSending(false);
       setSent(true);
-      setTicketRef(newTicketRef);
+      setTicketRef(String(response?.data?.id || '').slice(0, 8).toUpperCase());
       triggerSuccessHaptic();
-      setFormData({ name: '', email: '', phone: '', message: '' });
-      setTimeout(() => setSent(false), 3000);
-    }, 1500);
+      setFormData({ name: '', email: '', phone: '', subject: '', message: '' });
+    } catch (error) {
+      setSending(false);
+      const message =
+        error instanceof ApiError ? error.message : error instanceof Error ? error.message : 'Failed to send message';
+      Alert.alert('Message not sent', message);
+    }
   };
 
   const handleScrollPosition = (y: number) => {
@@ -164,190 +192,133 @@ export default function ContactScreen() {
 
   return (
     <View style={styles.screenWrap}>
-    <ScrollView 
-      ref={scrollViewRef}
-      style={[styles.container, themed.container]} 
-      contentContainerStyle={styles.contentContainer}
-      showsVerticalScrollIndicator={false}
-      onScroll={(event) => handleScrollPosition(event.nativeEvent.contentOffset.y)}
-      scrollEventThrottle={16}
-    >
-      {/* Header */}
-      <Animated.View style={[styles.header, themed.hero, cardIn(10)]}>
-        <View style={styles.headerGlowOne} />
-        <View style={styles.headerGlowTwo} />
-        <Text style={styles.headerTitle}>Contact Us</Text>
-        <Text style={styles.headerSubtitle}>Get in touch with us</Text>
-      </Animated.View>
+      <ScrollView
+        ref={scrollViewRef}
+        style={[styles.container, themed.container]}
+        contentContainerStyle={styles.contentContainer}
+        showsVerticalScrollIndicator={false}
+        onScroll={(event) => handleScrollPosition(event.nativeEvent.contentOffset.y)}
+        scrollEventThrottle={16}
+      >
+        <Animated.View style={[styles.header, themed.hero, cardIn(10)]}>
+          <View style={styles.headerGlowOne} />
+          <View style={styles.headerGlowTwo} />
+          <Text style={styles.headerKicker}>CONTACT</Text>
+          <Text style={styles.headerTitle}>Reach the salon team in the way that fits your schedule.</Text>
+          <Text style={[styles.headerSubtitle, themed.heroSubtle]}>
+            Call, WhatsApp, email, or send a structured message that saves directly to the backend.
+          </Text>
+        </Animated.View>
 
-      <Animated.View style={cardIn(12)}>
-        <TouchableOpacity activeOpacity={0.9} style={styles.whatsAppCta} onPress={handleWhatsApp}>
-          <Ionicons name="logo-whatsapp" size={22} color="#fff" />
-          <Text style={styles.whatsAppCtaText}>Start WhatsApp Chat</Text>
-        </TouchableOpacity>
-      </Animated.View>
-
-      {/* Quick Contact Cards */}
-      <Animated.View style={[styles.section, cardIn(15)]}>
-        <View style={styles.quickContactGrid}>
-          <TouchableOpacity activeOpacity={0.88} style={[styles.quickContactCard, themed.card]} onPress={handleCall}>
-            <View style={[styles.quickContactIcon, { backgroundColor: '#edf4ef' }]}>
-              <Ionicons name="call" size={24} color="#2e6a4a" />
-            </View>
-            <Text style={[styles.quickContactLabel, themed.textMuted]}>Call</Text>
-            <Text style={[styles.quickContactValue, themed.text]}>{CONTACT_INFO.phone}</Text>
+        <Animated.View style={cardIn(14)}>
+          <TouchableOpacity activeOpacity={0.9} style={[styles.primaryCta, { backgroundColor: palette.success }]} onPress={handleWhatsApp}>
+            <Ionicons name="logo-whatsapp" size={20} color="#fff" />
+            <Text style={styles.primaryCtaText}>Start WhatsApp chat</Text>
           </TouchableOpacity>
+        </Animated.View>
 
-          <TouchableOpacity activeOpacity={0.88} style={[styles.quickContactCard, themed.card]} onPress={handleWhatsApp}>
-            <View style={[styles.quickContactIcon, { backgroundColor: '#edf4ef' }]}>
-              <Ionicons name="logo-whatsapp" size={24} color={palette.success} />
-            </View>
-            <Text style={[styles.quickContactLabel, themed.textMuted]}>WhatsApp</Text>
-            <Text style={[styles.quickContactValue, themed.text]}>Chat</Text>
-          </TouchableOpacity>
+        <Animated.View style={[styles.section, cardIn(18)]}>
+          <View style={styles.quickContactGrid}>
+            <TouchableOpacity activeOpacity={0.9} style={[styles.quickCard, themed.card]} onPress={handleCall}>
+              <View style={[styles.quickIcon, { backgroundColor: isDark ? '#1a3140' : '#edf4fb' }]}>
+                <Ionicons name="call-outline" size={22} color={palette.secondary} />
+              </View>
+              <Text style={[styles.quickLabel, themed.textMuted]}>Call</Text>
+              <Text style={[styles.quickValue, themed.text]}>{CONTACT_INFO.phone}</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity activeOpacity={0.88} style={[styles.quickContactCard, themed.card]} onPress={handleEmail}>
-            <View style={[styles.quickContactIcon, { backgroundColor: '#eef1f8' }]}>
-              <Ionicons name="mail" size={24} color={palette.primary} />
-            </View>
-            <Text style={[styles.quickContactLabel, themed.textMuted]}>Email</Text>
-            <Text style={[styles.quickContactValue, themed.text]} numberOfLines={1}>{CONTACT_INFO.email}</Text>
-          </TouchableOpacity>
+            <TouchableOpacity activeOpacity={0.9} style={[styles.quickCard, themed.card]} onPress={handleWhatsApp}>
+              <View style={[styles.quickIcon, { backgroundColor: isDark ? '#143428' : '#e9f7ef' }]}>
+                <Ionicons name="logo-whatsapp" size={22} color={palette.success} />
+              </View>
+              <Text style={[styles.quickLabel, themed.textMuted]}>WhatsApp</Text>
+              <Text style={[styles.quickValue, themed.text]}>Priority support</Text>
+            </TouchableOpacity>
 
-          <TouchableOpacity activeOpacity={0.88} style={[styles.quickContactCard, themed.card]} onPress={handleOpenMap}>
-            <View style={[styles.quickContactIcon, { backgroundColor: '#f5f0eb' }]}>
-              <Ionicons name="location" size={24} color={palette.warm} />
-            </View>
-            <Text style={[styles.quickContactLabel, themed.textMuted]}>Location</Text>
-            <Text style={[styles.quickContactValue, themed.text]} numberOfLines={1}>{CONTACT_INFO.address}</Text>
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
+            <TouchableOpacity activeOpacity={0.9} style={[styles.quickCard, themed.card]} onPress={handleEmail}>
+              <View style={[styles.quickIcon, { backgroundColor: isDark ? '#1c2742' : '#edf0ff' }]}>
+                <Ionicons name="mail-outline" size={22} color={palette.primary} />
+              </View>
+              <Text style={[styles.quickLabel, themed.textMuted]}>Email</Text>
+              <Text style={[styles.quickValue, themed.text]} numberOfLines={1}>
+                {CONTACT_INFO.email}
+              </Text>
+            </TouchableOpacity>
 
-      {/* Business Hours */}
-      <Animated.View style={[styles.section, themed.cardElevated, cardIn(20)]}>
-        <View style={styles.sectionHeader}>
-          <Ionicons name="time" size={20} color={palette.primary} />
-          <Text style={[styles.sectionTitle, themed.text]}>Business Hours</Text>
-        </View>
-        <View style={styles.hoursList}>
+            <TouchableOpacity activeOpacity={0.9} style={[styles.quickCard, themed.card]} onPress={handleOpenMap}>
+              <View style={[styles.quickIcon, { backgroundColor: isDark ? '#3a2817' : '#fcf1e5' }]}>
+                <Ionicons name="location-outline" size={22} color={palette.warm} />
+              </View>
+              <Text style={[styles.quickLabel, themed.textMuted]}>Location</Text>
+              <Text style={[styles.quickValue, themed.text]} numberOfLines={1}>
+                {CONTACT_INFO.address}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
+
+        <Animated.View style={[styles.section, themed.cardElevated, cardIn(22)]}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="time-outline" size={18} color={palette.primary} />
+            <Text style={[styles.sectionTitle, themed.text]}>Business Hours</Text>
+          </View>
           {CONTACT_INFO.hours.map((item, index) => (
-            <View key={index} style={[styles.hoursRow, index !== CONTACT_INFO.hours.length - 1 && styles.hoursRowBorder]}>
+            <View
+              key={item.day}
+              style={[styles.hoursRow, index !== CONTACT_INFO.hours.length - 1 ? { borderBottomWidth: 1, borderBottomColor: palette.border } : null]}
+            >
               <Text style={[styles.hoursDay, themed.text]}>{item.day}</Text>
               <Text style={[styles.hoursTime, themed.textMuted]}>{item.time}</Text>
             </View>
           ))}
-        </View>
-      </Animated.View>
+        </Animated.View>
 
-      {/* Social Media */}
-      <Animated.View style={[styles.section, themed.cardElevated, cardIn(25)]}>
-        <View style={styles.sectionHeader}>
-          <Ionicons name="share-social" size={20} color={palette.primary} />
-          <Text style={[styles.sectionTitle, themed.text]}>Follow Us</Text>
-        </View>
-        <View style={styles.socialRow}>
-          <TouchableOpacity 
-            style={[styles.socialButton, themed.cardMuted]} 
-            activeOpacity={0.88}
-            onPress={() => {
-              triggerLightHaptic();
-              Linking.openURL(`https://instagram.com/${CONTACT_INFO.social.instagram.replace('@', '')}`);
-            }}
-          >
-            <Ionicons name="logo-instagram" size={24} color="#8f5c77" />
-            <Text style={[styles.socialText, themed.text]}>{CONTACT_INFO.social.instagram}</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.socialButton, themed.cardMuted]} 
-            activeOpacity={0.88}
-            onPress={() => {
-              triggerLightHaptic();
-              Linking.openURL(`https://facebook.com/${CONTACT_INFO.social.facebook.replace(/ /g, '')}`);
-            }}
-          >
-            <Ionicons name="logo-facebook" size={24} color="#4a6e99" />
-            <Text style={[styles.socialText, themed.text]}>{CONTACT_INFO.social.facebook}</Text>
-          </TouchableOpacity>
-          
-          <TouchableOpacity 
-            style={[styles.socialButton, themed.cardMuted]} 
-            activeOpacity={0.88}
-            onPress={() => {
-              triggerLightHaptic();
-              Linking.openURL(`https://twitter.com/${CONTACT_INFO.social.twitter.replace('@', '')}`);
-            }}
-          >
-            <Ionicons name="logo-twitter" size={24} color="#5f85a8" />
-            <Text style={[styles.socialText, themed.text]}>{CONTACT_INFO.social.twitter}</Text>
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
-
-      {/* Customer Care Desk */}
-      <Animated.View style={[styles.section, themed.cardElevated, cardIn(28)]}>
-        <View style={styles.sectionHeader}>
-          <Ionicons name="headset" size={20} color={palette.primary} />
-          <Text style={[styles.sectionTitle, themed.text]}>Customer Care Desk</Text>
-        </View>
-
-        <Text style={[styles.careIntro, themed.textMuted]}>
-          Professional support for bookings, payments, complaints, and follow-up care.
-        </Text>
-
-        <View style={styles.careSlaWrap}>
-          {CUSTOMER_CARE_STANDARDS.map((item) => (
-            <View key={item.level} style={[styles.careSlaChip, themed.cardMuted]}>
-              <Text style={[styles.careSlaLevel, themed.text]}>{item.level}</Text>
-              <Text style={[styles.careSlaEta, themed.textMuted]}>{item.eta}</Text>
-            </View>
-          ))}
-        </View>
-
-        <View style={styles.careActionsRow}>
-          <TouchableOpacity activeOpacity={0.88} style={[styles.careActionBtn, styles.careActionBtnPrimary]} onPress={handleWhatsApp}>
-            <Ionicons name="logo-whatsapp" size={16} color="#fff" />
-            <Text style={styles.careActionTextPrimary}>Priority WhatsApp</Text>
-          </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.88} style={[styles.careActionBtn, themed.cardMuted]} onPress={handleCall}>
-            <Ionicons name="call-outline" size={16} color={palette.primary} />
-            <Text style={[styles.careActionTextMuted, themed.text]}>Request Callback</Text>
-          </TouchableOpacity>
-          <TouchableOpacity activeOpacity={0.88} style={[styles.careActionBtn, themed.cardMuted]} onPress={handleEmail}>
-            <Ionicons name="mail-outline" size={16} color={palette.primary} />
-            <Text style={[styles.careActionTextMuted, themed.text]}>Email Support</Text>
-          </TouchableOpacity>
-        </View>
-      </Animated.View>
-
-      {/* Send Message Form */}
-      <Animated.View style={[styles.section, themed.cardElevated, cardIn(30)]}>
-        <View style={styles.sectionHeader}>
-          <Ionicons name="chatbubbles" size={20} color={palette.primary} />
-          <Text style={[styles.sectionTitle, themed.text]}>Send Us a Message</Text>
-        </View>
-
-        {sent ? (
-          <View style={[styles.successMessage, { backgroundColor: '#edf4ef' }]}>
-            <View style={styles.successInner}>
-              <View style={styles.successRow}>
-                <Ionicons name="checkmark-circle" size={24} color="#2e6a4a" />
-                <Text style={[styles.successText, { color: '#2e6a4a' }]}>Message sent successfully!</Text>
-              </View>
-              {!!ticketRef ? (
-                <Text style={styles.ticketRefText}>Support Ticket: {ticketRef}</Text>
-              ) : null}
-            </View>
+        <Animated.View style={[styles.section, themed.cardElevated, cardIn(26)]}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="headset-outline" size={18} color={palette.primary} />
+            <Text style={[styles.sectionTitle, themed.text]}>Customer Care</Text>
           </View>
-        ) : (
+
+          <Text style={[styles.careIntro, themed.textMuted]}>
+            Use the message form for booking questions, product issues, payment clarifications, or follow-up support.
+          </Text>
+
+          <View style={styles.careSlaWrap}>
+            {CUSTOMER_CARE_STANDARDS.map((item) => (
+              <View key={item.level} style={[styles.careChip, themed.cardMuted]}>
+                <Text style={[styles.careChipTitle, themed.text]}>{item.level}</Text>
+                <Text style={[styles.careChipMeta, themed.textMuted]}>{item.eta}</Text>
+              </View>
+            ))}
+          </View>
+        </Animated.View>
+
+        <Animated.View style={[styles.section, themed.cardElevated, cardIn(30)]}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="chatbubbles-outline" size={18} color={palette.primary} />
+            <Text style={[styles.sectionTitle, themed.text]}>Send a Message</Text>
+          </View>
+
+          {sent ? (
+            <View style={[styles.successBox, themed.successSoft]}>
+              <View style={styles.successRow}>
+                <Ionicons name="checkmark-circle" size={22} color={palette.success} />
+                <Text style={[styles.successTitle, { color: palette.success }]}>Message saved successfully</Text>
+              </View>
+              <Text style={[styles.successText, themed.text]}>
+                Your message is now stored in the backend and available to the admin team.
+              </Text>
+              {ticketRef ? <Text style={[styles.successMeta, themed.textMuted]}>Reference: {ticketRef}</Text> : null}
+            </View>
+          ) : null}
+
           <View style={styles.form}>
             <Text style={[styles.inputLabel, themed.text]}>Name *</Text>
             <TextInput
               style={[styles.input, themed.input]}
               value={formData.name}
-              onChangeText={(text) => setFormData({ ...formData, name: text })}
-              placeholder="Your name"
+              onChangeText={(text) => updateField('name', text)}
+              placeholder="Your full name"
               placeholderTextColor={palette.textMuted}
             />
 
@@ -355,7 +326,7 @@ export default function ContactScreen() {
             <TextInput
               style={[styles.input, themed.input]}
               value={formData.email}
-              onChangeText={(text) => setFormData({ ...formData, email: text })}
+              onChangeText={(text) => updateField('email', text)}
               placeholder="your@email.com"
               placeholderTextColor={palette.textMuted}
               keyboardType="email-address"
@@ -366,58 +337,106 @@ export default function ContactScreen() {
             <TextInput
               style={[styles.input, themed.input]}
               value={formData.phone}
-              onChangeText={(text) => setFormData({ ...formData, phone: text })}
-              placeholder="Your phone number"
+              onChangeText={(text) => updateField('phone', text)}
+              placeholder="Optional phone number"
               placeholderTextColor={palette.textMuted}
               keyboardType="phone-pad"
+            />
+
+            <Text style={[styles.inputLabel, themed.text]}>Subject *</Text>
+            <TextInput
+              style={[styles.input, themed.input]}
+              value={formData.subject}
+              onChangeText={(text) => updateField('subject', text)}
+              placeholder="What do you need help with?"
+              placeholderTextColor={palette.textMuted}
             />
 
             <Text style={[styles.inputLabel, themed.text]}>Message *</Text>
             <TextInput
               style={[styles.input, themed.input, styles.textArea]}
               value={formData.message}
-              onChangeText={(text) => setFormData({ ...formData, message: text })}
-              placeholder="How can we help you?"
+              onChangeText={(text) => updateField('message', text)}
+              placeholder="Describe your request clearly"
               placeholderTextColor={palette.textMuted}
               multiline
-              numberOfLines={4}
+              numberOfLines={5}
               textAlignVertical="top"
             />
 
             <TouchableOpacity
               style={[
-                styles.submitButton, 
+                styles.submitButton,
                 { backgroundColor: palette.primary },
-                (!formData.name.trim() || !formData.email.trim() || !formData.message.trim() || sending) && styles.submitButtonDisabled
+                (!canSend || sending) && styles.submitButtonDisabled
               ]}
-              activeOpacity={0.86}
+              activeOpacity={0.88}
               onPress={handleSendMessage}
-              disabled={!formData.name.trim() || !formData.email.trim() || !formData.message.trim() || sending}
+              disabled={!canSend || sending}
             >
-              <Text style={styles.submitButtonText}>
-                {sending ? 'Sending...' : 'Send Message'}
-              </Text>
+              <Text style={styles.submitButtonText}>{sending ? 'Sending...' : 'Send message'}</Text>
             </TouchableOpacity>
           </View>
-        )}
-      </Animated.View>
+        </Animated.View>
 
-      {/* Website Link */}
-      <Animated.View style={[styles.section, cardIn(35)]}>
-        <TouchableOpacity activeOpacity={0.88} style={[styles.websiteButton, themed.card]} onPress={handleOpenWebsite}>
-          <Ionicons name="globe" size={24} color={palette.primary} />
-          <Text style={[styles.websiteText, themed.text]}>Visit our website</Text>
-          <Ionicons name="arrow-forward" size={20} color={palette.textMuted} />
-        </TouchableOpacity>
-      </Animated.View>
+        <Animated.View style={[styles.section, themed.cardElevated, cardIn(34)]}>
+          <View style={styles.sectionHeader}>
+            <Ionicons name="share-social-outline" size={18} color={palette.primary} />
+            <Text style={[styles.sectionTitle, themed.text]}>Follow the Brand</Text>
+          </View>
+          <View style={styles.socialGrid}>
+            <TouchableOpacity
+              style={[styles.socialButton, themed.cardMuted]}
+              activeOpacity={0.88}
+              onPress={() => {
+                triggerLightHaptic();
+                Linking.openURL(`https://instagram.com/${CONTACT_INFO.social.instagram.replace('@', '')}`);
+              }}
+            >
+              <Ionicons name="logo-instagram" size={20} color="#d5547c" />
+              <Text style={[styles.socialText, themed.text]}>{CONTACT_INFO.social.instagram}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.socialButton, themed.cardMuted]}
+              activeOpacity={0.88}
+              onPress={() => {
+                triggerLightHaptic();
+                Linking.openURL(`https://facebook.com/${CONTACT_INFO.social.facebook.replace(/ /g, '')}`);
+              }}
+            >
+              <Ionicons name="logo-facebook" size={20} color="#2f6fda" />
+              <Text style={[styles.socialText, themed.text]}>{CONTACT_INFO.social.facebook}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[styles.socialButton, themed.cardMuted]}
+              activeOpacity={0.88}
+              onPress={() => {
+                triggerLightHaptic();
+                Linking.openURL(`https://twitter.com/${CONTACT_INFO.social.twitter.replace('@', '')}`);
+              }}
+            >
+              <Ionicons name="logo-twitter" size={20} color="#4ba3da" />
+              <Text style={[styles.socialText, themed.text]}>{CONTACT_INFO.social.twitter}</Text>
+            </TouchableOpacity>
+          </View>
+        </Animated.View>
 
-      <View style={styles.bottomSpacer} />
-    </ScrollView>
-    {showBackToTop ? (
-      <Pressable style={styles.backToTopButton} onPress={scrollToTop}>
-        <Text style={styles.backToTopText}>↑ Top</Text>
-      </Pressable>
-    ) : null}
+        <Animated.View style={[styles.section, cardIn(38)]}>
+          <TouchableOpacity activeOpacity={0.88} style={[styles.websiteButton, themed.card]} onPress={handleOpenWebsite}>
+            <Ionicons name="globe-outline" size={22} color={palette.primary} />
+            <Text style={[styles.websiteText, themed.text]}>Visit our website</Text>
+            <Ionicons name="arrow-forward" size={18} color={palette.textMuted} />
+          </TouchableOpacity>
+        </Animated.View>
+
+        <View style={styles.bottomSpacer} />
+      </ScrollView>
+
+      {showBackToTop ? (
+        <Pressable style={[styles.backToTopButton, { backgroundColor: palette.primary }]} onPress={scrollToTop}>
+          <Text style={styles.backToTopText}>Top</Text>
+        </Pressable>
+      ) : null}
     </View>
   );
 }
@@ -428,8 +447,7 @@ const styles = StyleSheet.create({
     position: 'relative'
   },
   container: {
-    flex: 1,
-    backgroundColor: '#f7f6ff'
+    flex: 1
   },
   contentContainer: {
     padding: MOBILE_SPACE.lg
@@ -460,19 +478,26 @@ const styles = StyleSheet.create({
     left: -58,
     backgroundColor: 'rgba(176,198,236,0.14)'
   },
+  headerKicker: {
+    fontSize: MOBILE_TYPE.caption,
+    fontWeight: '800',
+    color: '#d9e5ff',
+    letterSpacing: 1,
+    marginBottom: 6
+  },
   headerTitle: {
     fontSize: MOBILE_TYPE.title,
     fontWeight: '900',
-    color: '#ffffff'
+    color: '#ffffff',
+    lineHeight: 30
   },
   headerSubtitle: {
     fontSize: MOBILE_TYPE.body,
-    color: '#efe8ff',
-    marginTop: 2
+    marginTop: 6,
+    lineHeight: 20
   },
-  whatsAppCta: {
+  primaryCta: {
     marginBottom: MOBILE_SPACE.lg,
-    backgroundColor: '#248f5a',
     borderRadius: MOBILE_SHAPE.controlRadius,
     paddingVertical: MOBILE_SPACE.md,
     paddingHorizontal: MOBILE_SPACE.lg,
@@ -480,29 +505,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: MOBILE_SPACE.sm,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.26)',
-    shadowColor: '#1d5a3b',
-    shadowOpacity: 0.24,
-    shadowOffset: { width: 0, height: 5 },
-    shadowRadius: 10,
+    shadowColor: '#0c1a12',
+    shadowOpacity: 0.2,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
     elevation: 3
   },
-  whatsAppCtaText: {
+  primaryCtaText: {
     color: '#fff',
     fontSize: MOBILE_TYPE.body,
     fontWeight: '900'
   },
   section: {
-    marginBottom: MOBILE_SPACE.lg,
-    borderRadius: MOBILE_SHAPE.cardRadius,
-    padding: MOBILE_SPACE.lg,
-    borderWidth: 1,
-    shadowColor: '#160a2a',
-    shadowOpacity: 0.11,
-    shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 18,
-    elevation: 4
+    marginBottom: MOBILE_SPACE.lg
   },
   sectionHeader: {
     flexDirection: 'row',
@@ -519,78 +534,47 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: MOBILE_SPACE.md
   },
-  quickContactCard: {
+  quickCard: {
     width: '47%',
     borderRadius: MOBILE_SHAPE.controlRadius,
     padding: MOBILE_SPACE.lg,
     alignItems: 'center',
     borderWidth: 1,
-    shadowColor: '#1a0f33',
+    shadowColor: '#0a1222',
     shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
     elevation: 2
   },
-  quickContactIcon: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
+  quickIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: MOBILE_SPACE.sm
   },
-  quickContactLabel: {
+  quickLabel: {
     fontSize: MOBILE_TYPE.caption,
-    fontWeight: '600'
+    fontWeight: '700'
   },
-  quickContactValue: {
+  quickValue: {
+    marginTop: 4,
     fontSize: MOBILE_TYPE.body,
     fontWeight: '700',
-    marginTop: 2,
     textAlign: 'center'
-  },
-  hoursList: {
-    marginTop: MOBILE_SPACE.sm
   },
   hoursRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     paddingVertical: MOBILE_SPACE.md
   },
-  hoursRowBorder: {
-    borderBottomWidth: 1,
-    borderBottomColor: '#e6dcff'
-  },
   hoursDay: {
     fontSize: MOBILE_TYPE.body,
-    fontWeight: '600'
+    fontWeight: '700'
   },
   hoursTime: {
     fontSize: MOBILE_TYPE.body
-  },
-  socialRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: MOBILE_SPACE.md
-  },
-  socialButton: {
-    flex: 1,
-    minWidth: '30%',
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: MOBILE_SPACE.sm,
-    padding: MOBILE_SPACE.md,
-    borderRadius: MOBILE_SHAPE.controlRadius,
-    borderWidth: 1,
-    shadowColor: '#1a0f33',
-    shadowOpacity: 0.07,
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 8,
-    elevation: 1
-  },
-  socialText: {
-    fontSize: MOBILE_TYPE.caption,
-    fontWeight: '600'
   },
   careIntro: {
     fontSize: MOBILE_TYPE.body,
@@ -602,7 +586,7 @@ const styles = StyleSheet.create({
     flexWrap: 'wrap',
     gap: MOBILE_SPACE.sm
   },
-  careSlaChip: {
+  careChip: {
     flex: 1,
     minWidth: '30%',
     borderRadius: MOBILE_SHAPE.controlRadius,
@@ -610,45 +594,38 @@ const styles = StyleSheet.create({
     paddingVertical: MOBILE_SPACE.sm,
     paddingHorizontal: MOBILE_SPACE.md
   },
-  careSlaLevel: {
+  careChipTitle: {
     fontSize: MOBILE_TYPE.caption,
     fontWeight: '800'
   },
-  careSlaEta: {
+  careChipMeta: {
     fontSize: MOBILE_TYPE.caption,
     marginTop: 2
   },
-  careActionsRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: MOBILE_SPACE.md,
-    marginTop: MOBILE_SPACE.md
-  },
-  careActionBtn: {
-    flexGrow: 1,
-    minWidth: '30%',
+  successBox: {
     borderRadius: MOBILE_SHAPE.controlRadius,
     borderWidth: 1,
-    borderColor: '#d9def1',
-    paddingVertical: MOBILE_SPACE.md,
-    paddingHorizontal: MOBILE_SPACE.md,
+    padding: MOBILE_SPACE.lg,
+    marginBottom: MOBILE_SPACE.md
+  },
+  successRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'center',
-    gap: 6
+    gap: MOBILE_SPACE.sm
   },
-  careActionBtnPrimary: {
-    backgroundColor: '#248f5a',
-    borderColor: '#1f7148'
+  successTitle: {
+    fontSize: MOBILE_TYPE.body,
+    fontWeight: '800'
   },
-  careActionTextPrimary: {
-    color: '#fff',
-    fontWeight: '800',
-    fontSize: MOBILE_TYPE.caption
+  successText: {
+    marginTop: 8,
+    fontSize: MOBILE_TYPE.caption,
+    lineHeight: 18
   },
-  careActionTextMuted: {
-    fontWeight: '700',
-    fontSize: MOBILE_TYPE.caption
+  successMeta: {
+    marginTop: 8,
+    fontSize: MOBILE_TYPE.caption,
+    fontWeight: '800'
   },
   form: {
     marginTop: MOBILE_SPACE.sm
@@ -667,7 +644,7 @@ const styles = StyleSheet.create({
     fontSize: MOBILE_TYPE.body
   },
   textArea: {
-    height: 100,
+    minHeight: 112,
     paddingTop: MOBILE_SPACE.md
   },
   submitButton: {
@@ -675,10 +652,10 @@ const styles = StyleSheet.create({
     paddingVertical: MOBILE_SPACE.lg,
     borderRadius: MOBILE_SHAPE.controlRadius,
     alignItems: 'center',
-    shadowColor: '#3d1d7a',
-    shadowOpacity: 0.2,
-    shadowOffset: { width: 0, height: 5 },
-    shadowRadius: 10,
+    shadowColor: '#15244a',
+    shadowOpacity: 0.22,
+    shadowOffset: { width: 0, height: 6 },
+    shadowRadius: 12,
     elevation: 3
   },
   submitButtonDisabled: {
@@ -689,29 +666,20 @@ const styles = StyleSheet.create({
     fontSize: MOBILE_TYPE.body,
     fontWeight: '800'
   },
-  successMessage: {
-    padding: MOBILE_SPACE.lg,
-    borderRadius: MOBILE_SHAPE.controlRadius
-  },
-  successInner: {
-    width: '100%'
-  },
-  successRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
+  socialGrid: {
     gap: MOBILE_SPACE.sm
   },
-  successText: {
+  socialButton: {
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    borderWidth: 1,
+    padding: MOBILE_SPACE.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: MOBILE_SPACE.sm
+  },
+  socialText: {
     fontSize: MOBILE_TYPE.body,
     fontWeight: '700'
-  },
-  ticketRefText: {
-    marginTop: MOBILE_SPACE.sm,
-    textAlign: 'center',
-    fontSize: MOBILE_TYPE.caption,
-    fontWeight: '800',
-    color: '#2e6a4a'
   },
   websiteButton: {
     flexDirection: 'row',
@@ -719,12 +687,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     padding: MOBILE_SPACE.lg,
     borderWidth: 1,
-    borderRadius: MOBILE_SHAPE.controlRadius,
-    shadowColor: '#1a0f33',
-    shadowOpacity: 0.08,
-    shadowOffset: { width: 0, height: 4 },
-    shadowRadius: 10,
-    elevation: 2
+    borderRadius: MOBILE_SHAPE.controlRadius
   },
   websiteText: {
     flex: 1,
@@ -739,12 +702,11 @@ const styles = StyleSheet.create({
     position: 'absolute',
     right: 16,
     bottom: 18,
-    backgroundColor: '#7c46e8',
     paddingHorizontal: 14,
     paddingVertical: 10,
     borderRadius: MOBILE_SHAPE.chipRadius,
-    shadowColor: '#2a0b57',
-    shadowOpacity: 0.24,
+    shadowColor: '#0b1120',
+    shadowOpacity: 0.22,
     shadowOffset: { width: 0, height: 6 },
     shadowRadius: 12,
     elevation: 4
@@ -755,4 +717,3 @@ const styles = StyleSheet.create({
     fontSize: MOBILE_TYPE.caption
   }
 });
-

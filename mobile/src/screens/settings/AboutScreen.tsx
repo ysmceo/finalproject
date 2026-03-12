@@ -5,8 +5,12 @@ import Constants from 'expo-constants';
 
 import { API_BASE_URL, WEB_BASE_URL, buildApiUrl } from '../../config';
 import { SettingsCard, SettingsPill, SettingsRow, SettingsSectionTitle } from './ui';
+import { useThemePrefs } from '../../theme';
+import { getMobilePalette } from '../../ui/polish';
 
 export default function AboutScreen() {
+  const { resolvedColorScheme } = useThemePrefs();
+  const palette = getMobilePalette(resolvedColorScheme === 'dark');
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState<string>('');
 
@@ -49,7 +53,7 @@ export default function AboutScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: palette.bg }]}>
       <SettingsSectionTitle>App</SettingsSectionTitle>
       <SettingsCard>
         <SettingsRow icon="apps-outline" title="Name" subtitle={appInfo.name} noTopBorder />
@@ -68,7 +72,7 @@ export default function AboutScreen() {
           <SettingsPill label="Copy API" onPress={() => copy(API_BASE_URL, 'API_BASE_URL')} variant="ghost" />
           <SettingsPill label={testing ? 'Testing…' : 'Test API'} onPress={testApi} />
         </View>
-        {status ? <Text style={styles.status}>{status}</Text> : null}
+        {status ? <Text style={[styles.status, { color: palette.text }]}>{status}</Text> : null}
         <View style={styles.pillsBottom}>
           <SettingsPill label="Open Website" onPress={() => open(WEB_BASE_URL)} variant="ghost" />
           <SettingsPill label="Open Admin" onPress={() => open(`${WEB_BASE_URL.replace(/\/+$/, '')}/admin`)} variant="ghost" />
@@ -78,18 +82,18 @@ export default function AboutScreen() {
       <SettingsSectionTitle>Build</SettingsSectionTitle>
       <SettingsCard>
         <View style={styles.pad}>
-          <Text style={styles.text}>API test endpoint: {buildApiUrl('/api/services')}</Text>
-          <Text style={[styles.text, { marginTop: 8, color: '#6b7280' }]}>If you’re on a phone and nothing loads, it’s usually the base URL or firewall.</Text>
+          <Text style={[styles.text, { color: palette.text }]}>API test endpoint: {buildApiUrl('/api/services')}</Text>
+          <Text style={[styles.text, { marginTop: 8, color: palette.textMuted }]}>If you’re on a phone and nothing loads, it’s usually the base URL or firewall.</Text>
         </View>
       </SettingsCard>
 
       <SettingsSectionTitle>Trust & Support</SettingsSectionTitle>
       <SettingsCard>
         <View style={styles.pad}>
-          <Text style={styles.badgeTitle}>Professional profile</Text>
-          <Text style={styles.text}>✅ Real-time booking & order tracking</Text>
-          <Text style={styles.text}>✅ WhatsApp and call support available</Text>
-          <Text style={styles.text}>✅ Mature, secure payment-ready experience</Text>
+          <Text style={[styles.badgeTitle, { color: palette.text }]}>Professional profile</Text>
+          <Text style={[styles.text, { color: palette.text }]}>✅ Real-time booking and order tracking</Text>
+          <Text style={[styles.text, { color: palette.text }]}>✅ WhatsApp and call support available</Text>
+          <Text style={[styles.text, { color: palette.text }]}>✅ Mature, secure payment-ready experience</Text>
         </View>
         <View style={styles.pillsBottom}>
           <SettingsPill label="Call Salon" onPress={() => open('tel:07036939125')} variant="ghost" />

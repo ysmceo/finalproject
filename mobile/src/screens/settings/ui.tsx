@@ -1,14 +1,23 @@
 import React from 'react';
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+
 import { triggerLightHaptic } from '../../lib/haptics';
+import { useThemePrefs } from '../../theme';
+import { getMobilePalette } from '../../ui/polish';
 
 export function SettingsCard({ children }: { children: React.ReactNode }) {
-  return <View style={styles.card}>{children}</View>;
+  const { resolvedColorScheme } = useThemePrefs();
+  const palette = getMobilePalette(resolvedColorScheme === 'dark');
+
+  return <View style={[styles.card, { backgroundColor: palette.card, borderColor: palette.border }]}>{children}</View>;
 }
 
 export function SettingsSectionTitle({ children }: { children: React.ReactNode }) {
-  return <Text style={styles.sectionTitle}>{children}</Text>;
+  const { resolvedColorScheme } = useThemePrefs();
+  const palette = getMobilePalette(resolvedColorScheme === 'dark');
+
+  return <Text style={[styles.sectionTitle, { color: palette.warm }]}>{children}</Text>;
 }
 
 export function SettingsSearchBox({
@@ -20,15 +29,18 @@ export function SettingsSearchBox({
   onChangeText: (v: string) => void;
   placeholder?: string;
 }) {
+  const { resolvedColorScheme } = useThemePrefs();
+  const palette = getMobilePalette(resolvedColorScheme === 'dark');
+
   return (
-    <View style={styles.searchWrap}>
-      <Ionicons name="search-outline" size={18} color="#6b7280" />
+    <View style={[styles.searchWrap, { backgroundColor: palette.card, borderColor: palette.border }]}>
+      <Ionicons name="search-outline" size={18} color={palette.textMuted} />
       <TextInput
         value={value}
         onChangeText={onChangeText}
-        placeholder={placeholder || 'Search for a setting…'}
-        placeholderTextColor="#9ca3af"
-        style={styles.searchInput}
+        placeholder={placeholder || 'Search settings'}
+        placeholderTextColor={palette.textMuted}
+        style={[styles.searchInput, { color: palette.text }]}
         autoCapitalize="none"
         autoCorrect={false}
       />
@@ -51,18 +63,24 @@ export function SettingsRow({
   right?: React.ReactNode;
   noTopBorder?: boolean;
 }) {
-  const baseStyle = [styles.row, noTopBorder && styles.rowNoTopBorder];
+  const { resolvedColorScheme } = useThemePrefs();
+  const palette = getMobilePalette(resolvedColorScheme === 'dark');
+  const baseStyle = [
+    styles.row,
+    { borderTopColor: palette.border },
+    noTopBorder && styles.rowNoTopBorder
+  ];
 
   const content = (
     <>
-      <View style={styles.iconBubble}>
-        <Ionicons name={icon} size={18} color="#5a31b3" />
+      <View style={[styles.iconBubble, { backgroundColor: palette.primarySoft }]}>
+        <Ionicons name={icon} size={18} color={palette.primary} />
       </View>
       <View style={{ flex: 1 }}>
-        <Text style={styles.rowTitle}>{title}</Text>
-        {subtitle ? <Text style={styles.rowSub}>{subtitle}</Text> : null}
+        <Text style={[styles.rowTitle, { color: palette.text }]}>{title}</Text>
+        {subtitle ? <Text style={[styles.rowSub, { color: palette.textMuted }]}>{subtitle}</Text> : null}
       </View>
-      {right ? right : onPress ? <Ionicons name="chevron-forward" size={18} color="#ad9ad2" /> : null}
+      {right ? right : onPress ? <Ionicons name="chevron-forward" size={18} color={palette.textMuted} /> : null}
     </>
   );
 
@@ -73,7 +91,11 @@ export function SettingsRow({
           triggerLightHaptic();
           onPress();
         }}
-        style={({ pressed }) => [baseStyle, pressed && styles.rowPressed, pressed && styles.tapScale]}
+        style={({ pressed }) => [
+          baseStyle,
+          pressed && { backgroundColor: palette.cardMuted },
+          pressed && styles.tapScale
+        ]}
       >
         {content}
       </Pressable>
@@ -92,26 +114,54 @@ export function SettingsPill({
   onPress: () => void;
   variant?: 'primary' | 'ghost' | 'danger';
 }) {
+  const { resolvedColorScheme } = useThemePrefs();
+  const palette = getMobilePalette(resolvedColorScheme === 'dark');
   const v = variant || 'primary';
+
+  const colorMap = {
+    primary: {
+      backgroundColor: palette.primary,
+      borderColor: palette.primary,
+      color: '#ffffff'
+    },
+    ghost: {
+      backgroundColor: palette.card,
+      borderColor: palette.border,
+      color: palette.text
+    },
+    danger: {
+      backgroundColor: resolvedColorScheme === 'dark' ? '#301820' : '#fff2f2',
+      borderColor: resolvedColorScheme === 'dark' ? '#5b2e3a' : '#f5c7c7',
+      color: palette.danger
+    }
+  } as const;
+
+  const current = colorMap[v];
+
   return (
     <Pressable
       onPress={() => {
         triggerLightHaptic();
         onPress();
       }}
-      style={({ pressed }) => [styles.pill, styles[`pill_${v}` as const], pressed && styles.pillPressed, pressed && styles.tapScale]}
+      style={({ pressed }) => [
+        styles.pill,
+        {
+          backgroundColor: current.backgroundColor,
+          borderColor: current.borderColor
+        },
+        pressed && styles.pillPressed
+      ]}
     >
-      <Text style={[styles.pillText, styles[`pillText_${v}` as const]]}>{label}</Text>
+      <Text style={[styles.pillText, { color: current.color }]}>{label}</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: '#fff',
     borderRadius: 16,
     borderWidth: 1,
-    borderColor: '#ece7f6',
     overflow: 'hidden',
     shadowColor: '#1f1238',
     shadowOpacity: 0.08,
@@ -123,7 +173,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '800',
     letterSpacing: 0.5,
-    color: '#8b5a11',
     marginTop: 14,
     marginBottom: 8,
     textTransform: 'uppercase'
@@ -135,14 +184,11 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 10,
     borderRadius: 12,
-    backgroundColor: '#ffffff',
-    borderWidth: 1,
-    borderColor: '#e4dbf5'
+    borderWidth: 1
   },
   searchInput: {
     flex: 1,
-    fontSize: 14,
-    color: '#2f2745'
+    fontSize: 14
   },
   row: {
     flexDirection: 'row',
@@ -150,14 +196,10 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingHorizontal: 12,
     paddingVertical: 14,
-    borderTopWidth: 1,
-    borderTopColor: '#f2edf9'
+    borderTopWidth: 1
   },
   rowNoTopBorder: {
     borderTopWidth: 0
-  },
-  rowPressed: {
-    backgroundColor: '#f7f3ff'
   },
   tapScale: {
     transform: [{ scale: 0.985 }]
@@ -167,18 +209,15 @@ const styles = StyleSheet.create({
     height: 34,
     borderRadius: 10,
     alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: '#f4edff'
+    justifyContent: 'center'
   },
   rowTitle: {
     fontSize: 15,
-    fontWeight: '700',
-    color: '#2f2745'
+    fontWeight: '700'
   },
   rowSub: {
     marginTop: 4,
-    fontSize: 12,
-    color: '#746a90'
+    fontSize: 12
   },
   pill: {
     paddingHorizontal: 12,
@@ -189,28 +228,7 @@ const styles = StyleSheet.create({
   pillPressed: {
     opacity: 0.86
   },
-  pill_primary: {
-    backgroundColor: '#7c46e8',
-    borderColor: '#7c46e8'
-  },
-  pill_ghost: {
-    backgroundColor: '#fff',
-    borderColor: '#d8cfee'
-  },
-  pill_danger: {
-    backgroundColor: '#fef3f2',
-    borderColor: '#fecaca'
-  },
   pillText: {
     fontWeight: '800'
-  },
-  pillText_primary: {
-    color: '#fff'
-  },
-  pillText_ghost: {
-    color: '#4b3f69'
-  },
-  pillText_danger: {
-    color: '#b42318'
   }
 });

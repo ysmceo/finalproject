@@ -698,6 +698,7 @@ export default function BookScreen() {
   const themed = {
     containerBg: { backgroundColor: palette.bg },
     centerBg: { backgroundColor: palette.bg },
+    card: { backgroundColor: palette.card, borderColor: palette.border },
     cardBorder: { borderColor: palette.border },
     label: { color: palette.text },
     bodyText: { color: palette.text },
@@ -705,11 +706,47 @@ export default function BookScreen() {
     input: { backgroundColor: palette.inputBg, borderColor: palette.border, color: palette.text },
     chip: { backgroundColor: palette.primarySoft, borderColor: palette.border },
     chipText: { color: palette.primary },
+    chipActive: { backgroundColor: palette.primary, borderColor: palette.primary },
+    chipActiveText: { color: '#ffffff' },
     picker: { backgroundColor: palette.inputBg, borderColor: palette.border },
     suggestionCard: { backgroundColor: palette.cardMuted, borderColor: palette.border },
     suggestionText: { color: palette.text },
     suggestionMeta: { color: palette.textMuted },
     mapLinkText: { color: palette.primary },
+    heroCard: {
+      backgroundColor: isDark ? '#172744' : '#eef4ff',
+      borderColor: isDark ? '#314b7e' : '#cedbf5'
+    },
+    heroKicker: { color: isDark ? '#f4d98a' : palette.warm },
+    heroTitle: { color: isDark ? '#ffffff' : '#16233b' },
+    heroSub: { color: isDark ? '#dbe6ff' : '#5d6f88' },
+    heroNavChip: {
+      backgroundColor: isDark ? 'rgba(255,255,255,0.12)' : 'rgba(255,255,255,0.9)',
+      borderColor: isDark ? 'rgba(255,255,255,0.2)' : '#d7e2f2'
+    },
+    heroNavChipText: { color: isDark ? '#ffffff' : '#274268' },
+    cardTitle: { color: palette.warm },
+    reachabilityTitle: { color: palette.textMuted },
+    sectionTitle: { color: palette.text },
+    productCard: { backgroundColor: palette.cardMuted, borderColor: palette.border },
+    qtyButton: { backgroundColor: palette.primarySoft, borderColor: palette.border },
+    qtyButtonText: { color: palette.primary },
+    previewBox: { backgroundColor: palette.cardMuted, borderColor: palette.border },
+    previewTitle: { color: palette.primary },
+    previewDue: { color: palette.text },
+    cardInner: {
+      backgroundColor: isDark ? '#18263c' : '#fff7e7',
+      borderColor: isDark ? '#334667' : '#ead8a7'
+    },
+    button: { backgroundColor: palette.primary },
+    buttonSmallAlt: { backgroundColor: palette.cardMuted, borderColor: palette.border },
+    buttonSmallAltText: { color: palette.text },
+    progressChip: { backgroundColor: palette.cardMuted, borderColor: palette.border },
+    progressChipText: { color: palette.primary },
+    selectionBadge: { backgroundColor: palette.primarySoft, borderColor: palette.border },
+    selectionBadgeText: { color: palette.primary },
+    mono: { color: palette.text },
+    errorText: { color: palette.danger },
     skeletonCard: {
       marginTop: 14,
       borderRadius: MOBILE_SHAPE.cardRadius,
@@ -754,28 +791,28 @@ export default function BookScreen() {
       onScroll={(event) => handleScrollPosition(event.nativeEvent.contentOffset.y)}
       scrollEventThrottle={16}
     >
-      <Animated.View style={[styles.heroCard, cardIn(20)]}>
-        <Text style={styles.heroKicker}>CEO UNISEX SALON</Text>
-        <Text style={styles.h1}>Book an Appointment</Text>
-        <Text style={styles.sub}>Fast, beautiful booking with instant tracking and payment options.</Text>
+      <Animated.View style={[styles.heroCard, themed.heroCard, cardIn(20)]}>
+        <Text style={[styles.heroKicker, themed.heroKicker]}>CEO UNISEX SALON</Text>
+        <Text style={[styles.h1, themed.heroTitle]}>Book an Appointment</Text>
+        <Text style={[styles.sub, themed.heroSub]}>Fast, polished booking with instant tracking and payment options.</Text>
 
         <View style={styles.quickNavRow}>
-          <MicroPress style={styles.quickNavChip} onPress={() => navigation.navigate('Track')}>
-            <Text style={styles.quickNavChipText}>Go to Track</Text>
+          <MicroPress style={[styles.quickNavChip, themed.heroNavChip]} onPress={() => navigation.navigate('Track')}>
+            <Text style={[styles.quickNavChipText, themed.heroNavChipText]}>Go to Track</Text>
           </MicroPress>
-          <MicroPress style={styles.quickNavChip} onPress={() => navigation.navigate('Contact')}>
-            <Text style={styles.quickNavChipText}>Contact</Text>
+          <MicroPress style={[styles.quickNavChip, themed.heroNavChip]} onPress={() => navigation.navigate('Contact')}>
+            <Text style={[styles.quickNavChipText, themed.heroNavChipText]}>Contact</Text>
           </MicroPress>
-          <MicroPress style={styles.quickNavChip} onPress={() => navigation.navigate('Settings')}>
-            <Text style={styles.quickNavChipText}>Settings</Text>
+          <MicroPress style={[styles.quickNavChip, themed.heroNavChip]} onPress={() => navigation.navigate('More')}>
+            <Text style={[styles.quickNavChipText, themed.heroNavChipText]}>More</Text>
           </MicroPress>
         </View>
       </Animated.View>
 
-      <Animated.View style={[styles.card, themed.cardBorder, cardIn(28)]}>
-        <Text style={styles.cardTitle}>Booking Details</Text>
-        <Text style={styles.reachabilityTitle}>Jump to section</Text>
-        <View style={styles.rowWrap}>
+      <Animated.View style={[styles.card, themed.card, cardIn(28)]}>
+        <Text style={[styles.cardTitle, themed.cardTitle]}>Booking Details</Text>
+        <Text style={[styles.reachabilityTitle, themed.reachabilityTitle]}>Jump to section</Text>
+        <View style={[styles.rowWrap, styles.scheduleInputRow]}>
           <MicroPress style={[styles.quickChip, themed.chip]} onPress={() => jumpToSection('details')}>
             <Text style={[styles.quickChipText, themed.chipText]}>Your details</Text>
           </MicroPress>
@@ -796,19 +833,19 @@ export default function BookScreen() {
           </MicroPress>
         </View>
         <View style={styles.progressChipRow}>
-          <View style={styles.progressChip}><Text style={styles.progressChipText}>1. Your details</Text></View>
-          <View style={styles.progressChip}><Text style={styles.progressChipText}>2. Schedule</Text></View>
-          <View style={styles.progressChip}><Text style={styles.progressChipText}>3. Confirm</Text></View>
+          <View style={[styles.progressChip, themed.progressChip]}><Text style={[styles.progressChipText, themed.progressChipText]}>1. Your details</Text></View>
+          <View style={[styles.progressChip, themed.progressChip]}><Text style={[styles.progressChipText, themed.progressChipText]}>2. Schedule</Text></View>
+          <View style={[styles.progressChip, themed.progressChip]}><Text style={[styles.progressChipText, themed.progressChipText]}>3. Confirm</Text></View>
         </View>
         <View style={styles.selectionSummaryRow}>
-          <View style={styles.selectionBadge}>
-            <Text style={styles.selectionBadgeText}>Services: {selectedServiceIds.length}</Text>
+          <View style={[styles.selectionBadge, themed.selectionBadge]}>
+            <Text style={[styles.selectionBadgeText, themed.selectionBadgeText]}>Services: {selectedServiceIds.length}</Text>
           </View>
-          <View style={styles.selectionBadge}>
-            <Text style={styles.selectionBadgeText}>Products: {selectedProductUnits}</Text>
+          <View style={[styles.selectionBadge, themed.selectionBadge]}>
+            <Text style={[styles.selectionBadgeText, themed.selectionBadgeText]}>Products: {selectedProductUnits}</Text>
           </View>
         </View>
-        <View style={styles.rowWrap}>
+        <View style={[styles.rowWrap, styles.scheduleChipRow]}>
           <MicroPress style={[styles.quickChip, themed.chip]} onPress={useLastSavedDetails}>
             <Text style={[styles.quickChipText, themed.chipText]}>Use saved details</Text>
           </MicroPress>
@@ -818,7 +855,7 @@ export default function BookScreen() {
         </View>
 
         <View onLayout={(event) => setSectionOffset('details', event.nativeEvent.layout.y)} />
-        <Text style={styles.sectionTitle}>Your details</Text>
+        <Text style={[styles.sectionTitle, themed.sectionTitle]}>Your details</Text>
         <Text style={[styles.label, themed.label]}>Name</Text>
         <TextInput style={[styles.input, themed.input]} value={name} onChangeText={setName} placeholder="Full name" placeholderTextColor={palette.textMuted} />
 
@@ -846,16 +883,16 @@ export default function BookScreen() {
         />
 
         <View onLayout={(event) => setSectionOffset('services', event.nativeEvent.layout.y)} />
-        <Text style={styles.sectionTitle}>Services</Text>
+        <Text style={[styles.sectionTitle, themed.sectionTitle]}>Services</Text>
         <Text style={[styles.label, themed.label]}>Services (select one or more)</Text>
-        <View style={styles.rowWrap}>
+        <View style={[styles.rowWrap, styles.scheduleInputRow]}>
           {services.map((s) => (
             <TouchableOpacity
               key={s.id}
-              style={[styles.pill, themed.chip, selectedServiceIds.includes(s.id) && styles.pillActive]}
+              style={[styles.pill, themed.chip, selectedServiceIds.includes(s.id) && themed.chipActive]}
               onPress={() => toggleServiceSelection(s.id)}
             >
-              <Text style={[styles.pillText, themed.chipText, selectedServiceIds.includes(s.id) && styles.pillTextActive]}>
+              <Text style={[styles.pillText, themed.chipText, selectedServiceIds.includes(s.id) && themed.chipActiveText]}>
                 {selectedServiceIds.includes(s.id) ? '✓ ' : ''}{s.name} (₦{Number(s.price).toLocaleString()})
               </Text>
             </TouchableOpacity>
@@ -863,30 +900,32 @@ export default function BookScreen() {
         </View>
 
         <View onLayout={(event) => setSectionOffset('products', event.nativeEvent.layout.y)} />
-        <Text style={styles.sectionTitle}>Products</Text>
+        <Text style={[styles.sectionTitle, themed.sectionTitle]}>Products</Text>
         <Text style={[styles.label, themed.label]}>Products (optional add-ons)</Text>
-        <View style={styles.rowWrap}>
+        <View style={[styles.rowWrap, styles.scheduleChipRow]}>
           {products.map((product) => {
             const quantity = Number(productQuantities[product.id] || 0);
             return (
-              <View key={product.id} style={[styles.productCard, themed.cardBorder]}>
-                <Text style={[styles.productName, themed.bodyText]}>{product.name}</Text>
+              <View key={product.id} style={[styles.productCard, themed.productCard]}>
+                <View style={styles.productInfo}>
+                <Text style={[styles.productName, themed.bodyText]} numberOfLines={1}>{product.name}</Text>
                 <Text style={[styles.productMeta, themed.mutedText]}>₦{Number(product.price || 0).toLocaleString()} • Stock: {Number(product.stock || 0)}</Text>
+                </View>
                 <View style={styles.quantityRow}>
                   <TouchableOpacity
-                    style={styles.qtyButton}
+                    style={[styles.qtyButton, themed.qtyButton]}
                     onPress={() => updateProductQuantity(product.id, quantity - 1)}
                     disabled={quantity <= 0}
                   >
-                    <Text style={styles.qtyButtonText}>−</Text>
+                    <Text style={[styles.qtyButtonText, themed.qtyButtonText]}>−</Text>
                   </TouchableOpacity>
                   <Text style={[styles.qtyText, themed.bodyText]}>{quantity}</Text>
                   <TouchableOpacity
-                    style={styles.qtyButton}
+                    style={[styles.qtyButton, themed.qtyButton]}
                     onPress={() => updateProductQuantity(product.id, quantity + 1)}
                     disabled={quantity >= Number(product.stock || 0)}
                   >
-                    <Text style={styles.qtyButtonText}>+</Text>
+                    <Text style={[styles.qtyButtonText, themed.qtyButtonText]}>+</Text>
                   </TouchableOpacity>
                 </View>
               </View>
@@ -895,12 +934,14 @@ export default function BookScreen() {
         </View>
 
         <View onLayout={(event) => setSectionOffset('schedule', event.nativeEvent.layout.y)} />
-        <Text style={styles.sectionTitle}>Schedule</Text>
+        <Text style={[styles.sectionTitle, themed.sectionTitle]}>Schedule</Text>
+        <View style={styles.scheduleFieldBlock}>
         <Text style={[styles.label, themed.label]}>Date (YYYY-MM-DD)</Text>
         <View style={styles.rowWrap}>
           <TouchableOpacity style={[styles.pickerButton, themed.picker]} onPress={() => setShowDatePicker(true)}>
             <Text style={[styles.pickerButtonText, themed.bodyText]}>{date || 'Pick a date'}</Text>
           </TouchableOpacity>
+        </View>
         </View>
         <View style={styles.rowWrap}>
           <TouchableOpacity style={[styles.quickChip, themed.chip]} onPress={() => setDate(formatDateYYYYMMDD(new Date()))}>
@@ -914,21 +955,23 @@ export default function BookScreen() {
           </TouchableOpacity>
         </View>
 
+        <View style={styles.scheduleFieldBlock}>
         <Text style={[styles.label, themed.label]}>Time (HH:MM)</Text>
         <View style={styles.rowWrap}>
           <TouchableOpacity style={[styles.pickerButton, themed.picker]} onPress={() => setShowTimePicker(true)}>
             <Text style={[styles.pickerButtonText, themed.bodyText]}>{time || 'Pick a time'}</Text>
           </TouchableOpacity>
         </View>
-        {loadingSlots ? <Text style={[styles.hint, themed.mutedText]}>Checking available slots…</Text> : null}
-        {!!slotsError ? <Text style={styles.errorText}>{slotsError}</Text> : null}
+        </View>
+        {loadingSlots ? <Text style={[styles.hint, themed.mutedText, styles.scheduleStatusText]}>Checking available slots…</Text> : null}
+        {!!slotsError ? <Text style={[styles.errorText, themed.errorText, styles.scheduleStatusText]}>{slotsError}</Text> : null}
         {!loadingSlots && date.trim() && availableSlots.length === 0 ? (
-          <Text style={[styles.hint, themed.mutedText]}>No slots available for this date. Try another date.</Text>
+          <Text style={[styles.hint, themed.mutedText, styles.scheduleStatusText]}>No slots available for this date. Try another date.</Text>
         ) : null}
         <View style={styles.rowWrap}>
           {quickTimes.map((t) => (
-            <TouchableOpacity key={t} style={[styles.quickChip, themed.chip, time === t && styles.quickChipActive]} onPress={() => setTime(t)}>
-              <Text style={[styles.quickChipText, themed.chipText, time === t && styles.quickChipTextActive]}>{t}</Text>
+            <TouchableOpacity key={t} style={[styles.quickChip, themed.chip, time === t && themed.chipActive]} onPress={() => setTime(t)}>
+              <Text style={[styles.quickChipText, themed.chipText, time === t && themed.chipActiveText]}>{t}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -953,40 +996,42 @@ export default function BookScreen() {
           />
         ) : null}
 
+        <View style={styles.scheduleFieldBlock}>
         <Text style={[styles.label, themed.label]}>Language</Text>
-        <TextInput style={[styles.input, themed.input]} value={language} onChangeText={setLanguage} placeholder="English" placeholderTextColor={palette.textMuted} />
+        <TextInput style={[styles.input, themed.input, styles.scheduleLanguageInput]} value={language} onChangeText={setLanguage} placeholder="English" placeholderTextColor={palette.textMuted} />
+        </View>
 
         <View onLayout={(event) => setSectionOffset('payment', event.nativeEvent.layout.y)} />
-        <Text style={styles.sectionTitle}>Payment</Text>
+        <Text style={[styles.sectionTitle, themed.sectionTitle]}>Payment</Text>
         <Text style={[styles.label, themed.label]}>Payment method</Text>
         <View style={styles.row}>
           <TouchableOpacity
-            style={[styles.pill, themed.chip, paymentMethod === 'Bank Transfer' && styles.pillActive]}
+            style={[styles.pill, themed.chip, paymentMethod === 'Bank Transfer' && themed.chipActive]}
             onPress={() => setPaymentMethod('Bank Transfer')}
           >
-            <Text style={[styles.pillText, themed.chipText, paymentMethod === 'Bank Transfer' && styles.pillTextActive]}>Bank Transfer</Text>
+            <Text style={[styles.pillText, themed.chipText, paymentMethod === 'Bank Transfer' && themed.chipActiveText]}>Bank Transfer</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.pill, themed.chip, paymentMethod === 'Credit Card' && styles.pillActive]}
+            style={[styles.pill, themed.chip, paymentMethod === 'Credit Card' && themed.chipActive]}
             onPress={() => setPaymentMethod('Credit Card')}
           >
-            <Text style={[styles.pillText, themed.chipText, paymentMethod === 'Credit Card' && styles.pillTextActive]}>Credit Card</Text>
+            <Text style={[styles.pillText, themed.chipText, paymentMethod === 'Credit Card' && themed.chipActiveText]}>Credit Card</Text>
           </TouchableOpacity>
         </View>
 
         <Text style={[styles.label, themed.label]}>Payment plan</Text>
         <View style={styles.row}>
           <TouchableOpacity
-            style={[styles.pill, themed.chip, paymentPlan === 'deposit_50' && styles.pillActive]}
+            style={[styles.pill, themed.chip, paymentPlan === 'deposit_50' && themed.chipActive]}
             onPress={() => setPaymentPlan('deposit_50')}
           >
-            <Text style={[styles.pillText, themed.chipText, paymentPlan === 'deposit_50' && styles.pillTextActive]}>50% Deposit</Text>
+            <Text style={[styles.pillText, themed.chipText, paymentPlan === 'deposit_50' && themed.chipActiveText]}>50% Deposit</Text>
           </TouchableOpacity>
           <TouchableOpacity
-            style={[styles.pill, themed.chip, paymentPlan === 'full' && styles.pillActive]}
+            style={[styles.pill, themed.chip, paymentPlan === 'full' && themed.chipActive]}
             onPress={() => setPaymentPlan('full')}
           >
-            <Text style={[styles.pillText, themed.chipText, paymentPlan === 'full' && styles.pillTextActive]}>Full Payment</Text>
+            <Text style={[styles.pillText, themed.chipText, paymentPlan === 'full' && themed.chipActiveText]}>Full Payment</Text>
           </TouchableOpacity>
         </View>
 
@@ -1017,7 +1062,7 @@ export default function BookScreen() {
               </MicroPress>
             </View>
             {loadingAddressSuggestions ? <Text style={[styles.hint, themed.mutedText]}>Searching nearby address matches…</Text> : null}
-            {!!addressLookupError ? <Text style={styles.errorText}>{addressLookupError}</Text> : null}
+            {!!addressLookupError ? <Text style={[styles.errorText, themed.errorText]}>{addressLookupError}</Text> : null}
             {addressSuggestions.length ? (
               <View style={[styles.addressSuggestionList, themed.suggestionCard]}>
                 {addressSuggestions.map((item, index) => (
@@ -1041,11 +1086,11 @@ export default function BookScreen() {
 
         <Text style={[styles.label, themed.label]}>Refreshment</Text>
         <View style={styles.row}>
-          <TouchableOpacity style={[styles.pill, themed.chip, refreshment === 'No' && styles.pillActive]} onPress={() => setRefreshment('No')}>
-            <Text style={[styles.pillText, themed.chipText, refreshment === 'No' && styles.pillTextActive]}>No</Text>
+          <TouchableOpacity style={[styles.pill, themed.chip, refreshment === 'No' && themed.chipActive]} onPress={() => setRefreshment('No')}>
+            <Text style={[styles.pillText, themed.chipText, refreshment === 'No' && themed.chipActiveText]}>No</Text>
           </TouchableOpacity>
-          <TouchableOpacity style={[styles.pill, themed.chip, refreshment === 'Yes' && styles.pillActive]} onPress={() => setRefreshment('Yes')}>
-            <Text style={[styles.pillText, themed.chipText, refreshment === 'Yes' && styles.pillTextActive]}>Yes</Text>
+          <TouchableOpacity style={[styles.pill, themed.chip, refreshment === 'Yes' && themed.chipActive]} onPress={() => setRefreshment('Yes')}>
+            <Text style={[styles.pillText, themed.chipText, refreshment === 'Yes' && themed.chipActiveText]}>Yes</Text>
           </TouchableOpacity>
         </View>
 
@@ -1059,49 +1104,49 @@ export default function BookScreen() {
           multiline
         />
 
-        <MicroPress style={[styles.button, (!canSubmit || creating) && styles.buttonDisabled]} onPress={createBooking} disabled={!canSubmit || creating}>
+        <MicroPress style={[styles.button, themed.button, (!canSubmit || creating) && styles.buttonDisabled]} onPress={createBooking} disabled={!canSubmit || creating}>
           <Text style={styles.buttonText}>{creating ? 'Creating…' : 'Create booking'}</Text>
         </MicroPress>
         {!canSubmit ? <Text style={[styles.hint, themed.mutedText]}>Complete required fields to continue.</Text> : null}
 
         {selectedServices.length ? (
-          <View style={styles.previewBox}>
+          <View style={[styles.previewBox, themed.previewBox]}>
             <View onLayout={(event) => setSectionOffset('preview', event.nativeEvent.layout.y)} />
-            <Text style={styles.previewTitle}>Booking preview</Text>
+            <Text style={[styles.previewTitle, themed.previewTitle]}>Booking preview</Text>
             <Text style={[styles.hint, themed.mutedText]}>Services: {selectedServices.map((service) => service.name).join(', ')}</Text>
             <Text style={[styles.hint, themed.mutedText]}>Duration: {totalDuration} mins</Text>
             <Text style={[styles.hint, themed.mutedText]}>Services total: ₦{Number(serviceSubtotal).toLocaleString()}</Text>
             <Text style={[styles.hint, themed.mutedText]}>Products total: ₦{Number(productsSubtotal).toLocaleString()}</Text>
             <Text style={[styles.hint, themed.mutedText]}>Order total: ₦{Number(totalPreview).toLocaleString()}</Text>
-            <Text style={styles.previewDue}>Due now: ₦{Number(dueNowPreview).toLocaleString()}</Text>
+            <Text style={[styles.previewDue, themed.previewDue]}>Due now: ₦{Number(dueNowPreview).toLocaleString()}</Text>
           </View>
         ) : null}
       </Animated.View>
 
       {created ? (
-        <Animated.View style={[styles.card, themed.cardBorder, cardIn(36)]}>
-          <Text style={styles.cardTitle}>Booking Created</Text>
+        <Animated.View style={[styles.card, themed.card, cardIn(36)]}>
+          <Text style={[styles.cardTitle, themed.cardTitle]}>Booking Created</Text>
           <Text style={[styles.h2, themed.bodyText]}>Booking created 🎉</Text>
-          <Text style={[styles.mono, themed.bodyText]}>Booking ID: {created.booking.id}</Text>
-          <Text style={[styles.mono, themed.bodyText]}>Amount due now: ₦{Number(created.booking.amountDueNow || 0).toLocaleString()}</Text>
+          <Text style={[styles.mono, themed.mono]}>Booking ID: {created.booking.id}</Text>
+          <Text style={[styles.mono, themed.mono]}>Amount due now: ₦{Number(created.booking.amountDueNow || 0).toLocaleString()}</Text>
           <Text style={[{ marginTop: 8 }, themed.bodyText]}>{created.message}</Text>
 
           {created.paymentBankDetails ? (
-            <View style={[styles.cardInner, themed.cardBorder, { marginTop: 12 }]}>
+            <View style={[styles.cardInner, themed.cardInner, { marginTop: 12 }]}>
               <Text style={[styles.h3, themed.bodyText]}>Bank Transfer Details</Text>
-              <Text style={[styles.mono, themed.bodyText]}>{created.paymentBankDetails.bankName}</Text>
-              <Text style={[styles.mono, themed.bodyText]}>{created.paymentBankDetails.accountNumber}</Text>
-              <Text style={[styles.mono, themed.bodyText]}>{created.paymentBankDetails.accountName}</Text>
-              <Text style={[styles.mono, themed.bodyText]}>Reference: {created.paymentBankDetails.reference}</Text>
+              <Text style={[styles.mono, themed.mono]}>{created.paymentBankDetails.bankName}</Text>
+              <Text style={[styles.mono, themed.mono]}>{created.paymentBankDetails.accountNumber}</Text>
+              <Text style={[styles.mono, themed.mono]}>{created.paymentBankDetails.accountName}</Text>
+              <Text style={[styles.mono, themed.mono]}>Reference: {created.paymentBankDetails.reference}</Text>
             </View>
           ) : null}
 
           <View style={[styles.row, { marginTop: 12 }]}>
-            <MicroPress style={[styles.buttonSmall]} onPress={goToTrack}>
+            <MicroPress style={[styles.buttonSmall, themed.button]} onPress={goToTrack}>
               <Text style={styles.buttonText}>Track booking</Text>
             </MicroPress>
-            <MicroPress style={[styles.buttonSmallAlt]} onPress={shareBookingDetails}>
-              <Text style={styles.buttonSmallAltText}>Share</Text>
+            <MicroPress style={[styles.buttonSmallAlt, themed.buttonSmallAlt]} onPress={shareBookingDetails}>
+              <Text style={[styles.buttonSmallAltText, themed.buttonSmallAltText]}>Share</Text>
             </MicroPress>
           </View>
 
@@ -1112,7 +1157,7 @@ export default function BookScreen() {
               </Text>
               <View style={styles.rowWrap}>
                 <MicroPress
-                  style={[styles.buttonSmall, !(paystackStatus?.configured) && styles.buttonDisabled]}
+                  style={[styles.buttonSmall, themed.button, !(paystackStatus?.configured) && styles.buttonDisabled]}
                   onPress={payWithPaystack}
                   disabled={!paystackStatus?.configured}
                 >
@@ -1120,7 +1165,7 @@ export default function BookScreen() {
                 </MicroPress>
 
                 <MicroPress
-                  style={[styles.buttonSmall, !(monnifyStatus?.configured) && styles.buttonDisabled]}
+                  style={[styles.buttonSmall, themed.button, !(monnifyStatus?.configured) && styles.buttonDisabled]}
                   onPress={payWithMonnify}
                   disabled={!monnifyStatus?.configured}
                 >
@@ -1138,29 +1183,29 @@ export default function BookScreen() {
         </Animated.View>
       ) : null}
     </ScrollView>
-    <View style={styles.floatingQuickNav}>
+    <View style={[styles.floatingQuickNav, showBackToTop && styles.floatingQuickNavRaised]}>
       <MicroPress
         style={[styles.floatingQuickNavBtn, { backgroundColor: palette.card, borderColor: palette.border }]}
         onPress={() => jumpToSection('details')}
       >
-        <Text style={[styles.floatingQuickNavText, { color: palette.text }]}>Details</Text>
+        <Text numberOfLines={1} style={[styles.floatingQuickNavText, { color: palette.text }]}>Details</Text>
       </MicroPress>
       <MicroPress
         style={[styles.floatingQuickNavBtn, { backgroundColor: palette.card, borderColor: palette.border }]}
         onPress={() => jumpToSection('schedule')}
       >
-        <Text style={[styles.floatingQuickNavText, { color: palette.text }]}>Schedule</Text>
+        <Text numberOfLines={1} style={[styles.floatingQuickNavText, { color: palette.text }]}>Schedule</Text>
       </MicroPress>
       <MicroPress
         style={[styles.floatingQuickNavBtn, { backgroundColor: palette.primarySoft, borderColor: palette.border }]}
         onPress={() => jumpToSection('preview')}
       >
-        <Text style={[styles.floatingQuickNavText, { color: palette.primary }]}>Preview</Text>
+        <Text numberOfLines={1} style={[styles.floatingQuickNavText, { color: palette.primary }]}>Preview</Text>
       </MicroPress>
     </View>
     {showBackToTop ? (
-      <Pressable style={styles.backToTopButton} onPress={scrollToTop}>
-        <Text style={styles.backToTopText}>↑ Top</Text>
+      <Pressable style={[styles.backToTopButton, { backgroundColor: palette.primary }]} onPress={scrollToTop}>
+        <Text style={styles.backToTopText}>Top</Text>
       </Pressable>
     ) : null}
     </View>
@@ -1219,9 +1264,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: MOBILE_SPACE.md,
     paddingVertical: MOBILE_SPACE.xs,
     borderRadius: MOBILE_SHAPE.chipRadius,
-    borderWidth: 1,
-    borderColor: 'rgba(255,255,255,0.26)',
-    backgroundColor: 'rgba(255,255,255,0.16)'
+    borderWidth: 1
   },
   quickNavChipText: {
     color: '#ffffff',
@@ -1257,11 +1300,9 @@ const styles = StyleSheet.create({
   },
   card: {
     marginTop: MOBILE_SPACE.xl,
-    backgroundColor: '#fff',
     borderRadius: MOBILE_SHAPE.cardRadius,
     padding: MOBILE_SPACE.xl,
     borderWidth: 1,
-    borderColor: '#ece7f6',
     shadowColor: '#160a2a',
     shadowOpacity: 0.08,
     shadowOffset: { width: 0, height: 8 },
@@ -1287,6 +1328,21 @@ const styles = StyleSheet.create({
     fontSize: MOBILE_TYPE.subheading,
     fontWeight: '900',
     color: '#2f3b58'
+  },
+  scheduleFieldBlock: {
+    marginTop: MOBILE_SPACE.md
+  },
+  scheduleInputRow: {
+    marginTop: MOBILE_SPACE.xs
+  },
+  scheduleChipRow: {
+    marginTop: MOBILE_SPACE.sm
+  },
+  scheduleStatusText: {
+    marginTop: MOBILE_SPACE.sm
+  },
+  scheduleLanguageInput: {
+    marginTop: MOBILE_SPACE.xs
   },
   input: {
     borderWidth: 1,
@@ -1346,13 +1402,11 @@ const styles = StyleSheet.create({
     alignItems: 'center'
   },
   buttonSmallAlt: {
-    backgroundColor: '#f1ebff',
     borderRadius: MOBILE_SHAPE.controlRadius,
     paddingVertical: MOBILE_SPACE.md,
     paddingHorizontal: MOBILE_SPACE.lg,
     alignItems: 'center',
-    borderWidth: 1,
-    borderColor: '#dccffb'
+    borderWidth: 1
   },
   buttonSmallAltText: {
     color: '#5a31b3',
@@ -1447,11 +1501,21 @@ const styles = StyleSheet.create({
   },
   productCard: {
     width: '100%',
+    alignSelf: 'stretch',
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: MOBILE_SPACE.md,
     borderWidth: 1,
     borderColor: '#e0d6f7',
     backgroundColor: '#fbf9ff',
     borderRadius: MOBILE_SHAPE.controlRadius,
     padding: 10
+  },
+  productInfo: {
+    flex: 1,
+    minWidth: 0,
+    paddingRight: MOBILE_SPACE.sm
   },
   productName: {
     fontSize: MOBILE_TYPE.body,
@@ -1464,10 +1528,11 @@ const styles = StyleSheet.create({
     fontSize: MOBILE_TYPE.caption
   },
   quantityRow: {
-    marginTop: MOBILE_SPACE.md,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: MOBILE_SPACE.lg
+    justifyContent: 'flex-end',
+    gap: MOBILE_SPACE.md,
+    minWidth: 106
   },
   qtyButton: {
     width: 34,
@@ -1560,17 +1625,22 @@ const styles = StyleSheet.create({
   floatingQuickNav: {
     position: 'absolute',
     left: 12,
-    right: 78,
+    right: 12,
     bottom: 16,
     flexDirection: 'row',
     gap: MOBILE_SPACE.sm,
     alignItems: 'center'
   },
+  floatingQuickNavRaised: {
+    bottom: 72
+  },
   floatingQuickNavBtn: {
     flex: 1,
-    minHeight: 38,
+    minWidth: 0,
+    minHeight: 42,
     borderRadius: MOBILE_SHAPE.chipRadius,
     borderWidth: 1,
+    paddingHorizontal: 8,
     alignItems: 'center',
     justifyContent: 'center',
     shadowColor: '#1d2538',
@@ -1580,7 +1650,8 @@ const styles = StyleSheet.create({
     elevation: 2
   },
   floatingQuickNavText: {
-    fontSize: MOBILE_TYPE.caption,
-    fontWeight: '800'
+    fontSize: MOBILE_TYPE.micro,
+    fontWeight: '800',
+    textAlign: 'center'
   }
 });

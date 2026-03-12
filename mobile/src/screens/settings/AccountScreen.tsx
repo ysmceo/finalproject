@@ -5,11 +5,15 @@ import * as Clipboard from 'expo-clipboard';
 
 import { API_BASE_URL, WEB_BASE_URL, buildApiUrl } from '../../config';
 import { SettingsCard, SettingsPill, SettingsRow, SettingsSectionTitle } from './ui';
+import { useThemePrefs } from '../../theme';
+import { getMobilePalette } from '../../ui/polish';
 
 const LAST_BOOKING_ID_KEY = 'ceosalon:lastBookingId';
 const LAST_BOOKING_EMAIL_KEY = 'ceosalon:lastBookingEmail';
 
 export default function AccountScreen() {
+  const { resolvedColorScheme } = useThemePrefs();
+  const palette = getMobilePalette(resolvedColorScheme === 'dark');
   const [lastBookingId, setLastBookingId] = useState<string>('');
   const [lastBookingEmail, setLastBookingEmail] = useState<string>('');
   const [testing, setTesting] = useState(false);
@@ -74,7 +78,7 @@ export default function AccountScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={styles.container}>
+    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: palette.bg }]}>
       <SettingsSectionTitle>Saved booking</SettingsSectionTitle>
       <SettingsCard>
         <SettingsRow icon="bookmark-outline" title="Last Booking ID" subtitle={lastBookingId || 'Not set'} noTopBorder />
@@ -93,7 +97,7 @@ export default function AccountScreen() {
           <SettingsPill label="Copy API" onPress={() => copy(API_BASE_URL, 'API_BASE_URL')} variant="ghost" />
           <SettingsPill label={testing ? 'Testing…' : 'Test API'} onPress={testApi} variant="primary" />
         </View>
-        {apiStatus ? <Text style={styles.status}>{apiStatus}</Text> : null}
+        {apiStatus ? <Text style={[styles.status, { color: palette.text }]}>{apiStatus}</Text> : null}
       </SettingsCard>
     </ScrollView>
   );

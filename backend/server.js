@@ -9,6 +9,7 @@ const multer = require('multer');
 const nodemailer = require('nodemailer');
 const PDFDocument = require('pdfkit');
 const jwt = require('jsonwebtoken');
+const { MongoClient } = require('mongodb');
 const { PrismaClient } = require('@prisma/client');
 const Stripe = require('stripe');
 require('dotenv').config();
@@ -1224,10 +1225,13 @@ function mergeProductDefaults(existingProducts) {
   return mergedProducts;
 }
 
-// Use writable runtime paths on Vercel (/var/task is read-only at runtime).
-const uploadsDir = IS_VERCEL_RUNTIME
-  ? path.join('/tmp', 'uploads')
-  : FRONTEND_UPLOADS_DIR;
+// Use a configurable writable uploads directory for Render/persistent disks.
+const configuredUploadsDir = String(process.env.UPLOADS_DIR || '').trim();
+const uploadsDir = configuredUploadsDir
+  ? path.resolve(configuredUploadsDir)
+  : IS_VERCEL_RUNTIME
+    ? path.join('/tmp', 'uploads')
+    : FRONTEND_UPLOADS_DIR;
 if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
@@ -1280,6 +1284,19 @@ app.use(bodyParser.json({
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(express.static(FRONTEND_PUBLIC_DIR));
 app.use('/uploads', express.static(uploadsDir));
+
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'ok',
+    configuredMode: DATA_STORE_MODE,
+    datastore: isMongoPrimaryEnabled()
+      ? 'mongo'
+      : (isPrismaPrimaryEnabled() ? 'prisma' : 'json'),
+    mongoConfigured: isMongoEnabled(),
+    prismaConfigured: isPrismaMirrorEnabled(),
+    uploadsDir
+  });
+});
 app.use('/images', express.static(FRONTEND_IMAGES_DIR));
 app.get('/p1.webp', (req, res) => {
   res.sendFile(path.join(FRONTEND_IMAGES_DIR, 'p1.webp'));
@@ -1308,9 +1325,19 @@ const packagedDbPath = path.join(__dirname, 'database.json');
 const dbPath = IS_VERCEL_RUNTIME
   ? path.join('/tmp', 'database.json')
   : packagedDbPath;
+const MONGODB_URI = String(process.env.MONGODB_URI || '').trim();
+const MONGODB_DB_NAME = String(process.env.MONGODB_DB_NAME || 'ceo_unisex_salon').trim();
+const MONGODB_STATE_COLLECTION = String(process.env.MONGODB_STATE_COLLECTION || 'app_state').trim();
+const MONGODB_STATE_DOCUMENT_ID = 'primary';
 const DATABASE_URL = String(process.env.DATABASE_URL || '').trim();
 const DATA_STORE_MODE = String(process.env.DATA_STORE_MODE || 'auto').trim().toLowerCase();
 
+let mongoClientPromise = null;
+let mongoSyncInFlight = false;
+let mongoSyncQueued = false;
+let mongoPrimaryCache = null;
+let mongoPrimaryCacheLoadedAt = 0;
+let mongoPrimaryCacheRefreshInFlight = false;
 let prismaClient = null;
 let prismaSyncInFlight = false;
 let prismaSyncQueued = false;
@@ -1318,16 +1345,51 @@ let prismaPrimaryCache = null;
 let prismaPrimaryCacheLoadedAt = 0;
 let prismaPrimaryCacheRefreshInFlight = false;
 
+function isMongoEnabled() {
+  return Boolean(MONGODB_URI);
+}
+
+function isMongoPrimaryEnabled() {
+  if (!isMongoEnabled()) return false;
+  if (DATA_STORE_MODE === 'json') return false;
+  if (DATA_STORE_MODE === 'prisma') return false;
+  if (DATA_STORE_MODE === 'mongo') return true;
+  // auto mode
+  return true;
+}
+
 function isPrismaMirrorEnabled() {
   return Boolean(DATABASE_URL);
 }
 
 function isPrismaPrimaryEnabled() {
+  if (isMongoPrimaryEnabled()) return false;
   if (!isPrismaMirrorEnabled()) return false;
   if (DATA_STORE_MODE === 'json') return false;
   if (DATA_STORE_MODE === 'prisma') return true;
+  if (DATA_STORE_MODE === 'mongo') return false;
   // auto mode
   return true;
+}
+
+async function getMongoCollection() {
+  if (!isMongoEnabled()) {
+    return null;
+  }
+
+  if (!mongoClientPromise) {
+    const client = new MongoClient(MONGODB_URI, {
+      ignoreUndefined: true
+    });
+
+    mongoClientPromise = client.connect().catch((error) => {
+      mongoClientPromise = null;
+      throw error;
+    });
+  }
+
+  const client = await mongoClientPromise;
+  return client.db(MONGODB_DB_NAME).collection(MONGODB_STATE_COLLECTION);
 }
 
 function getPrismaClient() {
@@ -1514,6 +1576,41 @@ async function refreshPrismaPrimaryCache() {
   }
 }
 
+async function buildDatabaseObjectFromMongo() {
+  const collection = await getMongoCollection();
+  if (!collection) {
+    return null;
+  }
+
+  const document = await collection.findOne({ _id: MONGODB_STATE_DOCUMENT_ID });
+  if (!document || !document.state || typeof document.state !== 'object') {
+    return null;
+  }
+
+  return normalizeDatabaseObject(document.state);
+}
+
+async function refreshMongoPrimaryCache() {
+  if (!isMongoPrimaryEnabled()) return;
+  if (mongoPrimaryCacheRefreshInFlight) return;
+
+  mongoPrimaryCacheRefreshInFlight = true;
+  try {
+    const fromMongo = await buildDatabaseObjectFromMongo();
+    if (fromMongo) {
+      mongoPrimaryCache = fromMongo;
+      mongoPrimaryCacheLoadedAt = Date.now();
+      return;
+    }
+
+    await syncJsonDatabaseToMongo(mongoPrimaryCache || readDatabaseFromJsonDisk());
+  } catch (error) {
+    console.warn('[Mongo Primary] Cache refresh failed:', error && error.message ? String(error.message) : error);
+  } finally {
+    mongoPrimaryCacheRefreshInFlight = false;
+  }
+}
+
 function buildPrismaMirrorPayload(db) {
   return {
     bookings: arrayOf(db.bookings)
@@ -1608,6 +1705,32 @@ async function prismaReplaceTable(tx, tableName, rows) {
   }
 }
 
+async function syncJsonDatabaseToMongo(dbSnapshot) {
+  if (!isMongoEnabled()) {
+    return { synced: false, skipped: true, reason: 'MONGODB_URI not configured' };
+  }
+
+  const collection = await getMongoCollection();
+  if (!collection) {
+    return { synced: false, skipped: true, reason: 'Mongo collection unavailable' };
+  }
+
+  const normalized = normalizeDatabaseObject(dbSnapshot || {});
+
+  await collection.updateOne(
+    { _id: MONGODB_STATE_DOCUMENT_ID },
+    {
+      $set: {
+        state: normalized,
+        updatedAt: new Date().toISOString()
+      }
+    },
+    { upsert: true }
+  );
+
+  return { synced: true };
+}
+
 async function syncJsonDatabaseToPrisma(dbSnapshot) {
   if (!isPrismaMirrorEnabled()) {
     return { synced: false, skipped: true, reason: 'DATABASE_URL not configured' };
@@ -1638,6 +1761,35 @@ async function syncJsonDatabaseToPrisma(dbSnapshot) {
   });
 
   return { synced: true };
+}
+
+async function triggerMongoMirrorSync(dbSnapshot) {
+  if (!isMongoEnabled()) {
+    return;
+  }
+
+  if (mongoSyncInFlight) {
+    mongoSyncQueued = true;
+    return;
+  }
+
+  mongoSyncInFlight = true;
+  let snapshot = dbSnapshot;
+
+  try {
+    do {
+      mongoSyncQueued = false;
+      await syncJsonDatabaseToMongo(snapshot || readDatabaseFromJsonDisk());
+
+      if (mongoSyncQueued) {
+        snapshot = readDatabaseFromJsonDisk();
+      }
+    } while (mongoSyncQueued);
+  } catch (error) {
+    console.warn('[Mongo Mirror] Sync failed:', error && error.message ? String(error.message) : error);
+  } finally {
+    mongoSyncInFlight = false;
+  }
 }
 
 async function triggerPrismaMirrorSync(dbSnapshot) {
@@ -1708,6 +1860,18 @@ function readDatabaseFromJsonDisk() {
 
 // Helper functions to read/write database
 function readDatabase() {
+  if (isMongoPrimaryEnabled()) {
+    if (mongoPrimaryCache) {
+      return normalizeDatabaseObject(mongoPrimaryCache);
+    }
+
+    const fallbackDb = readDatabaseFromJsonDisk();
+    mongoPrimaryCache = fallbackDb;
+    mongoPrimaryCacheLoadedAt = Date.now();
+    refreshMongoPrimaryCache();
+    return fallbackDb;
+  }
+
   if (!isPrismaPrimaryEnabled()) {
     return readDatabaseFromJsonDisk();
   }
@@ -2519,20 +2683,31 @@ function requireAdminAuth(req, res, next) {
 function writeDatabase(data) {
   const normalized = normalizeDatabaseObject(data);
 
+  if (isMongoPrimaryEnabled()) {
+    mongoPrimaryCache = normalized;
+    mongoPrimaryCacheLoadedAt = Date.now();
+  }
+
   if (isPrismaPrimaryEnabled()) {
     prismaPrimaryCache = normalized;
     prismaPrimaryCacheLoadedAt = Date.now();
   }
 
   writeDatabaseFile(normalized);
+  triggerMongoMirrorSync(normalized);
   // Keep Prisma mirror in sync (non-blocking) when DATABASE_URL is configured.
   triggerPrismaMirrorSync(normalized);
 }
 
 // Initialize database on startup
 initializeDatabase();
-// Ensure JSON structure defaults are normalized, then push initial Prisma mirror snapshot.
+// Ensure JSON structure defaults are normalized, then warm remote mirrors.
 const startupDbSnapshot = readDatabaseFromJsonDisk();
+if (isMongoPrimaryEnabled()) {
+  mongoPrimaryCache = startupDbSnapshot;
+  mongoPrimaryCacheLoadedAt = Date.now();
+  refreshMongoPrimaryCache();
+}
 if (isPrismaPrimaryEnabled()) {
   prismaPrimaryCache = startupDbSnapshot;
   prismaPrimaryCacheLoadedAt = Date.now();

@@ -23,6 +23,8 @@ import { API_BASE_URL, WEB_BASE_URL } from '../config';
 import { ApiError, apiGetAuth, apiPostJson, apiPutJsonAuth } from '../lib/api';
 import { triggerLightHaptic, triggerMediumHaptic, triggerSuccessHaptic, triggerWarningHaptic } from '../lib/haptics';
 import { ADMIN_EMAIL_KEY, ADMIN_TOKEN_KEY } from './SettingsScreen';
+import { useThemePrefs } from '../theme';
+import { getMobilePalette, MOBILE_SHAPE, MOBILE_SPACE, MOBILE_TYPE } from '../ui/polish';
 
 type AdminLoginResponse = {
   message: string;
@@ -40,20 +42,22 @@ function normalizeUrl(url: string): string {
 }
 
 export default function AdminScreen() {
-  // Expo Web: keep the existing web admin experience.
+  const navigation = useNavigation<any>();
+  const { resolvedColorScheme } = useThemePrefs();
+  const isDark = resolvedColorScheme === 'dark';
+  const palette = getMobilePalette(isDark);
+
   if (Platform.OS === 'web') {
     const startUrl = `${normalizeUrl(WEB_BASE_URL)}/admin`;
     return (
-      <View style={{ flex: 1, backgroundColor: '#f6f8fc' }}>
+      <View style={{ flex: 1, backgroundColor: palette.bg }}>
         {/* eslint-disable-next-line react/no-unknown-property */}
         <iframe title="CEO Salon Admin" src={startUrl} width="100%" height="100%" frameBorder="0" />
       </View>
     );
   }
 
-  const navigation = useNavigation<any>();
-
-  const [token, setToken] = useState<string>('');
+  const [token, setToken] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [secretPasscode, setSecretPasscode] = useState('');
@@ -68,12 +72,22 @@ export default function AdminScreen() {
 
   const isLoggedIn = Boolean(token);
 
-  const adminWebsiteUrl = useMemo(() => {
-    return `${normalizeUrl(WEB_BASE_URL)}/admin`;
-  }, []);
+  const adminWebsiteUrl = useMemo(() => `${normalizeUrl(WEB_BASE_URL)}/admin`, []);
+
+  const themed = {
+    wrap: { backgroundColor: palette.bg },
+    hero: { backgroundColor: isDark ? '#172744' : '#2d477f', borderColor: isDark ? '#314b7e' : '#4b67a4' },
+    card: { backgroundColor: palette.card, borderColor: palette.border },
+    cardMuted: { backgroundColor: palette.cardMuted, borderColor: palette.border },
+    input: { backgroundColor: palette.inputBg, borderColor: palette.border, color: palette.text },
+    iconButton: { backgroundColor: palette.card, borderColor: palette.border },
+    mutedText: { color: palette.textMuted },
+    text: { color: palette.text }
+  };
 
   useEffect(() => {
     let active = true;
+
     (async () => {
       try {
         const [storedToken, storedEmail] = await Promise.all([
@@ -134,12 +148,10 @@ export default function AdminScreen() {
       triggerSuccessHaptic();
       Alert.alert('Admin login', 'Login successful.');
       await loadBookings(res.token);
-    } catch (e) {
-      if (e instanceof ApiError) {
-        Alert.alert('Login failed', e.message);
-      } else {
-        Alert.alert('Login failed', e instanceof Error ? e.message : 'Unknown error');
-      }
+    } catch (error) {
+      const message =
+        error instanceof ApiError ? error.message : error instanceof Error ? error.message : 'Unknown error';
+      Alert.alert('Login failed', message);
     } finally {
       setBusy(false);
     }
@@ -160,12 +172,10 @@ export default function AdminScreen() {
       });
       triggerSuccessHaptic();
       Alert.alert('OTP sent', 'Password reset OTP has been sent to your admin email.');
-    } catch (e) {
-      if (e instanceof ApiError) {
-        Alert.alert('Request failed', e.message);
-      } else {
-        Alert.alert('Request failed', e instanceof Error ? e.message : 'Unknown error');
-      }
+    } catch (error) {
+      const message =
+        error instanceof ApiError ? error.message : error instanceof Error ? error.message : 'Unknown error';
+      Alert.alert('Request failed', message);
     } finally {
       setBusy(false);
     }
@@ -198,37 +208,34 @@ export default function AdminScreen() {
       setShowForgotPassword(false);
       triggerSuccessHaptic();
       Alert.alert('Password reset', 'Password reset successful. Use your new password to login.');
-    } catch (e) {
-      if (e instanceof ApiError) {
-        Alert.alert('Reset failed', e.message);
-      } else {
-        Alert.alert('Reset failed', e instanceof Error ? e.message : 'Unknown error');
-      }
+    } catch (error) {
+      const message =
+        error instanceof ApiError ? error.message : error instanceof Error ? error.message : 'Unknown error';
+      Alert.alert('Reset failed', message);
     } finally {
       setBusy(false);
     }
   }
 
   async function loadBookings(activeToken?: string) {
-    const t = activeToken || token;
-    if (!t) return;
+    const currentToken = activeToken || token;
+    if (!currentToken) return;
 
     setLoadingBookings(true);
     try {
-      const list = await apiGetAuth<any[]>('/api/admin/bookings', t);
-      // Sort newest first if createdAt exists.
+      const list = await apiGetAuth<any[]>('/api/admin/bookings', currentToken);
       const sorted = [...(Array.isArray(list) ? list : [])].sort((a, b) => {
         const ta = new Date(a.createdAt || 0).getTime();
         const tb = new Date(b.createdAt || 0).getTime();
         return tb - ta;
       });
       setBookings(sorted);
-    } catch (e) {
-      if (e instanceof ApiError && e.status === 401) {
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
         Alert.alert('Session expired', 'Please login again.');
         await clearAuth();
       } else {
-        Alert.alert('Failed to load', e instanceof Error ? e.message : 'Could not load bookings');
+        Alert.alert('Failed to load', error instanceof Error ? error.message : 'Could not load bookings');
       }
     } finally {
       setLoadingBookings(false);
@@ -244,7 +251,10 @@ export default function AdminScreen() {
     }
   }
 
-  async function updateBookingStatus(bookingId: string, nextStatus: 'pending' | 'approved' | 'cancelled' | 'completed') {
+  async function updateBookingStatus(
+    bookingId: string,
+    nextStatus: 'pending' | 'approved' | 'cancelled' | 'completed'
+  ) {
     if (!token) return;
 
     setBusy(true);
@@ -257,24 +267,22 @@ export default function AdminScreen() {
         triggerSuccessHaptic();
       }
       await loadBookings();
-    } catch (e) {
-      if (e instanceof ApiError) {
-        Alert.alert('Update failed', e.message);
-      } else {
-        Alert.alert('Update failed', e instanceof Error ? e.message : 'Unknown error');
-      }
+    } catch (error) {
+      const message =
+        error instanceof ApiError ? error.message : error instanceof Error ? error.message : 'Unknown error';
+      Alert.alert('Update failed', message);
     } finally {
       setBusy(false);
     }
   }
 
-  function promptBookingActions(b: any) {
-    const id = String(b.id || '');
+  function promptBookingActions(booking: any) {
+    const id = String(booking.id || '');
     if (!id) return;
 
     Alert.alert(
       'Booking actions',
-      `${b.name || ''}\n${b.serviceName || ''}\nStatus: ${b.status || 'pending'}`,
+      `${booking.name || ''}\n${booking.serviceName || ''}\nStatus: ${booking.status || 'pending'}`,
       [
         { text: 'Close', style: 'cancel' },
         { text: 'Approve', onPress: () => updateBookingStatus(id, 'approved') },
@@ -282,6 +290,36 @@ export default function AdminScreen() {
         { text: 'Cancel', style: 'destructive', onPress: () => updateBookingStatus(id, 'cancelled') }
       ]
     );
+  }
+
+  function getStatusTone(status: string) {
+    const normalized = String(status || '').trim().toLowerCase();
+    if (normalized === 'approved') {
+      return {
+        backgroundColor: isDark ? '#173224' : '#e8f8ef',
+        borderColor: isDark ? '#2d6b49' : '#b6dfc5',
+        color: isDark ? '#97e3b4' : '#0f6b3d'
+      };
+    }
+    if (normalized === 'cancelled') {
+      return {
+        backgroundColor: isDark ? '#341921' : '#fff0ef',
+        borderColor: isDark ? '#6a3442' : '#efc1bf',
+        color: isDark ? '#ffb6b6' : '#ad2f2f'
+      };
+    }
+    if (normalized === 'completed') {
+      return {
+        backgroundColor: isDark ? '#1d2947' : '#ecf3ff',
+        borderColor: isDark ? '#355080' : '#bfd1f0',
+        color: isDark ? '#bdd3ff' : '#214f9a'
+      };
+    }
+    return {
+      backgroundColor: isDark ? '#392d1f' : '#fff5df',
+      borderColor: isDark ? '#6b5438' : '#e9cf98',
+      color: isDark ? '#ffd38a' : '#94610a'
+    };
   }
 
   useEffect(() => {
@@ -293,7 +331,7 @@ export default function AdminScreen() {
 
   if (!isLoggedIn) {
     return (
-      <SafeAreaView style={styles.wrap}>
+      <SafeAreaView style={[styles.wrap, themed.wrap]}>
         <KeyboardAvoidingView
           style={styles.authKeyboardWrap}
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -305,21 +343,13 @@ export default function AdminScreen() {
             keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
           >
-            <View style={styles.header}>
-              <Text style={styles.h1}>Admin</Text>
-              <Pressable
-                onPress={() => {
-                  triggerLightHaptic();
-                  openAdminWebsite();
-                }}
-                style={({ pressed }) => [styles.linkBtn, pressed && styles.pressed, pressed && styles.tapScale]}
-              >
-                <Ionicons name="globe-outline" size={16} color="#b78a2a" />
-                <Text style={styles.linkText}>Open web admin</Text>
-              </Pressable>
+            <View style={[styles.heroCard, themed.hero]}>
+              <View style={styles.heroGlowOne} />
+              <View style={styles.heroGlowTwo} />
+              <Text style={styles.heroKicker}>ADMIN</Text>
+              <Text style={styles.heroTitle}>Secure sign-in for bookings and operational updates.</Text>
+              <Text style={styles.heroSubtitle}>Use the same backend credentials you configured for the web admin.</Text>
             </View>
-
-            <Text style={styles.sub}>Sign in to view and manage all bookings.</Text>
 
             <View style={styles.quickAccessRow}>
               <Pressable
@@ -327,50 +357,75 @@ export default function AdminScreen() {
                   triggerLightHaptic();
                   navigation.navigate('Track');
                 }}
-                style={({ pressed }) => [styles.linkBtn, pressed && styles.pressed, pressed && styles.tapScale]}
+                style={({ pressed }) => [
+                  styles.quickAction,
+                  themed.card,
+                  pressed && styles.pressed
+                ]}
               >
-                <Ionicons name="search-outline" size={16} color="#344054" />
-                <Text style={styles.secondaryLinkText}>Track</Text>
+                <Ionicons name="search-outline" size={18} color={palette.primary} />
+                <Text style={[styles.quickActionText, themed.text]}>Track</Text>
               </Pressable>
               <Pressable
                 onPress={() => {
                   triggerLightHaptic();
-                  navigation.navigate('Settings');
+                  navigation.navigate('More');
                 }}
-                style={({ pressed }) => [styles.linkBtn, pressed && styles.pressed, pressed && styles.tapScale]}
+                style={({ pressed }) => [
+                  styles.quickAction,
+                  themed.card,
+                  pressed && styles.pressed
+                ]}
               >
-                <Ionicons name="settings-outline" size={16} color="#344054" />
-                <Text style={styles.secondaryLinkText}>Settings</Text>
+                <Ionicons name="grid-outline" size={18} color={palette.primary} />
+                <Text style={[styles.quickActionText, themed.text]}>More</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => {
+                  triggerLightHaptic();
+                  openAdminWebsite();
+                }}
+                style={({ pressed }) => [
+                  styles.quickAction,
+                  themed.card,
+                  pressed && styles.pressed
+                ]}
+              >
+                <Ionicons name="globe-outline" size={18} color={palette.primary} />
+                <Text style={[styles.quickActionText, themed.text]}>Web admin</Text>
               </Pressable>
             </View>
 
-            <View style={styles.card}>
-              <Text style={styles.label}>Email</Text>
+            <View style={[styles.card, themed.card]}>
+              <Text style={[styles.label, themed.text]}>Email</Text>
               <TextInput
                 value={email}
                 onChangeText={setEmail}
                 autoCapitalize="none"
                 keyboardType="email-address"
                 placeholder="admin@ceosaloon.com"
-                style={styles.input}
+                placeholderTextColor={palette.textMuted}
+                style={[styles.input, themed.input]}
               />
 
-              <Text style={styles.label}>Password</Text>
+              <Text style={[styles.label, themed.text]}>Password</Text>
               <TextInput
                 value={password}
                 onChangeText={setPassword}
                 secureTextEntry
-                placeholder="••••••••"
-                style={styles.input}
+                placeholder="Enter password"
+                placeholderTextColor={palette.textMuted}
+                style={[styles.input, themed.input]}
               />
 
-              <Text style={styles.label}>Secret passcode</Text>
+              <Text style={[styles.label, themed.text]}>Secret passcode</Text>
               <TextInput
                 value={secretPasscode}
                 onChangeText={setSecretPasscode}
                 secureTextEntry
-                placeholder="Your admin secret passcode"
-                style={styles.input}
+                placeholder="Enter admin secret passcode"
+                placeholderTextColor={palette.textMuted}
+                style={[styles.input, themed.input]}
               />
 
               <Pressable
@@ -379,25 +434,33 @@ export default function AdminScreen() {
                   login();
                 }}
                 disabled={busy}
-                style={({ pressed }) => [styles.primaryBtn, (busy || pressed) && styles.primaryBtnPressed, pressed && styles.tapScale]}
+                style={({ pressed }) => [
+                  styles.primaryBtn,
+                  { backgroundColor: palette.primary },
+                  (busy || pressed) && styles.primaryBtnPressed
+                ]}
               >
-                <Text style={styles.primaryBtnText}>{busy ? 'Signing in…' : 'Sign in'}</Text>
+                <Text style={styles.primaryBtnText}>{busy ? 'Signing in...' : 'Sign in'}</Text>
               </Pressable>
 
               <Pressable
                 onPress={() => {
                   triggerLightHaptic();
-                  setShowForgotPassword(prev => !prev);
+                  setShowForgotPassword((prev) => !prev);
                 }}
-                style={({ pressed }) => [styles.forgotToggleBtn, pressed && styles.primaryBtnPressed, pressed && styles.tapScale]}
+                style={({ pressed }) => [
+                  styles.secondaryBtn,
+                  themed.cardMuted,
+                  pressed && styles.primaryBtnPressed
+                ]}
               >
-                <Text style={styles.forgotToggleText}>
-                  {showForgotPassword ? 'Hide password reset options' : 'Forgot password? Tap to reset'}
+                <Text style={[styles.secondaryBtnText, { color: palette.text }]}>
+                  {showForgotPassword ? 'Hide password reset' : 'Forgot password? Reset with OTP'}
                 </Text>
                 <Ionicons
                   name={showForgotPassword ? 'chevron-up-outline' : 'chevron-down-outline'}
                   size={16}
-                  color="#667085"
+                  color={palette.textMuted}
                 />
               </Pressable>
 
@@ -409,27 +472,33 @@ export default function AdminScreen() {
                       requestPasswordResetOtp();
                     }}
                     disabled={busy}
-                    style={({ pressed }) => [styles.secondaryBtn, (busy || pressed) && styles.primaryBtnPressed, pressed && styles.tapScale]}
+                    style={({ pressed }) => [
+                      styles.secondaryBlockButton,
+                      themed.cardMuted,
+                      pressed && styles.primaryBtnPressed
+                    ]}
                   >
-                    <Text style={styles.secondaryBtnText}>Send password reset OTP</Text>
+                    <Text style={[styles.secondaryBtnText, { color: palette.text }]}>Send password reset OTP</Text>
                   </Pressable>
 
-                  <Text style={styles.label}>Reset OTP code</Text>
+                  <Text style={[styles.label, themed.text]}>Reset OTP code</Text>
                   <TextInput
                     value={resetCode}
                     onChangeText={setResetCode}
                     keyboardType="number-pad"
                     placeholder="Enter 6-digit OTP"
-                    style={styles.input}
+                    placeholderTextColor={palette.textMuted}
+                    style={[styles.input, themed.input]}
                   />
 
-                  <Text style={styles.label}>New password</Text>
+                  <Text style={[styles.label, themed.text]}>New password</Text>
                   <TextInput
                     value={newPassword}
                     onChangeText={setNewPassword}
                     secureTextEntry
                     placeholder="Enter new password"
-                    style={styles.input}
+                    placeholderTextColor={palette.textMuted}
+                    style={[styles.input, themed.input]}
                   />
 
                   <Pressable
@@ -438,16 +507,18 @@ export default function AdminScreen() {
                       resetPassword();
                     }}
                     disabled={busy}
-                    style={({ pressed }) => [styles.secondaryBtn, (busy || pressed) && styles.primaryBtnPressed, pressed && styles.tapScale]}
+                    style={({ pressed }) => [
+                      styles.secondaryBlockButton,
+                      themed.cardMuted,
+                      pressed && styles.primaryBtnPressed
+                    ]}
                   >
-                    <Text style={styles.secondaryBtnText}>Reset password</Text>
+                    <Text style={[styles.secondaryBtnText, { color: palette.text }]}>Reset password</Text>
                   </Pressable>
                 </View>
               ) : null}
 
-              <Text style={styles.note}>
-                Server: {normalizeUrl(API_BASE_URL)}
-              </Text>
+              <Text style={[styles.note, themed.mutedText]}>Backend: {normalizeUrl(API_BASE_URL)}</Text>
             </View>
           </ScrollView>
         </KeyboardAvoidingView>
@@ -456,42 +527,36 @@ export default function AdminScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.wrap}>
-      <View style={styles.header}>
-        <View>
-          <Text style={styles.h1}>Bookings</Text>
-          <Text style={styles.subSmall}>Signed in as {email || 'admin'}</Text>
-          <View style={styles.quickAccessRowCompact}>
-            <Pressable
-              onPress={() => {
-                triggerLightHaptic();
-                navigation.navigate('Track');
-              }}
-              style={({ pressed }) => [styles.miniPill, pressed && styles.pressed, pressed && styles.tapScale]}
-            >
-              <Text style={styles.miniPillText}>Track</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => {
-                triggerLightHaptic();
-                navigation.navigate('Settings');
-              }}
-              style={({ pressed }) => [styles.miniPill, pressed && styles.pressed, pressed && styles.tapScale]}
-            >
-              <Text style={styles.miniPillText}>Settings</Text>
-            </Pressable>
-          </View>
+    <SafeAreaView style={[styles.wrap, themed.wrap]}>
+      <View style={styles.listHeaderWrap}>
+        <View style={[styles.heroCompact, themed.hero]}>
+          <View style={styles.heroGlowOne} />
+          <View style={styles.heroGlowTwo} />
+          <Text style={styles.heroKicker}>ADMIN</Text>
+          <Text style={styles.heroTitle}>Bookings overview</Text>
+          <Text style={styles.heroSubtitle}>Signed in as {email || 'admin'}</Text>
         </View>
 
-        <View style={{ flexDirection: 'row', gap: 10 }}>
+        <View style={styles.quickAccessRow}>
+          <Pressable
+            onPress={() => {
+              triggerLightHaptic();
+              navigation.navigate('Track');
+            }}
+            style={({ pressed }) => [styles.quickAction, themed.card, pressed && styles.pressed]}
+          >
+            <Ionicons name="search-outline" size={18} color={palette.primary} />
+            <Text style={[styles.quickActionText, themed.text]}>Track</Text>
+          </Pressable>
           <Pressable
             onPress={() => {
               triggerLightHaptic();
               openAdminWebsite();
             }}
-            style={({ pressed }) => [styles.iconBtn, pressed && styles.pressed, pressed && styles.tapScale]}
+            style={({ pressed }) => [styles.quickAction, themed.card, pressed && styles.pressed]}
           >
-            <Ionicons name="globe-outline" size={18} color="#344054" />
+            <Ionicons name="globe-outline" size={18} color={palette.primary} />
+            <Text style={[styles.quickActionText, themed.text]}>Web admin</Text>
           </Pressable>
           <Pressable
             onPress={() => {
@@ -507,58 +572,56 @@ export default function AdminScreen() {
                 }
               ]);
             }}
-            style={({ pressed }) => [styles.iconBtn, pressed && styles.pressed, pressed && styles.tapScale]}
+            style={({ pressed }) => [styles.quickAction, themed.card, pressed && styles.pressed]}
           >
-            <Ionicons name="log-out-outline" size={18} color="#344054" />
+            <Ionicons name="log-out-outline" size={18} color={palette.danger} />
+            <Text style={[styles.quickActionText, { color: palette.danger }]}>Logout</Text>
           </Pressable>
         </View>
       </View>
 
       {loadingBookings && bookings.length === 0 ? (
         <View style={styles.center}>
-          <ActivityIndicator size="large" />
-          <Text style={{ marginTop: 10 }}>Loading bookings…</Text>
+          <ActivityIndicator size="large" color={palette.primary} />
+          <Text style={[styles.centerText, themed.mutedText]}>Loading bookings...</Text>
         </View>
       ) : (
         <FlatList
           data={bookings}
           keyExtractor={(item) => String(item.id)}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
-          contentContainerStyle={{ paddingHorizontal: 16, paddingBottom: 24 }}
+          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={palette.primary} />}
+          contentContainerStyle={styles.listContent}
+          ListHeaderComponent={<View style={{ height: 4 }} />}
           ListEmptyComponent={
             <View style={styles.center}>
-              <Text style={{ fontWeight: '700' }}>No bookings found.</Text>
+              <Text style={[styles.emptyTitle, themed.text]}>No bookings found.</Text>
+              <Text style={[styles.centerText, themed.mutedText]}>New bookings will appear here after customers submit them.</Text>
             </View>
           }
           renderItem={({ item }) => {
-            const status = String(item.status || 'pending');
-            const badgeStyle =
-              status === 'approved'
-                ? styles.badgeOk
-                : status === 'cancelled'
-                  ? styles.badgeBad
-                  : status === 'completed'
-                    ? styles.badgeDone
-                    : styles.badgePending;
-
+            const tone = getStatusTone(String(item.status || 'pending'));
             return (
               <Pressable
                 onPress={() => {
                   triggerLightHaptic();
                   promptBookingActions(item);
                 }}
-                style={({ pressed }) => [styles.bookingCard, pressed && styles.rowPressed, pressed && styles.tapScale]}
+                style={({ pressed }) => [
+                  styles.bookingCard,
+                  themed.card,
+                  pressed && styles.pressed
+                ]}
               >
-                <View style={{ flexDirection: 'row', alignItems: 'center' }}>
-                  <Text style={styles.bookingTitle}>{item.serviceName || 'Service'}</Text>
-                  <View style={[styles.badge, badgeStyle]}>
-                    <Text style={styles.badgeText}>{status}</Text>
+                <View style={styles.bookingTopRow}>
+                  <Text style={[styles.bookingTitle, themed.text]}>{item.serviceName || 'Service'}</Text>
+                  <View style={[styles.badge, tone]}>
+                    <Text style={[styles.badgeText, { color: tone.color }]}>{String(item.status || 'pending')}</Text>
                   </View>
                 </View>
 
-                <Text style={styles.bookingSub}>{item.name} • {item.phone || ''}</Text>
-                <Text style={styles.bookingSub}>{item.date || ''} {item.time || ''}</Text>
-                <Text style={styles.bookingTiny}>ID: {String(item.id).slice(0, 10)}…</Text>
+                <Text style={[styles.bookingSub, themed.text]}>{item.name} - {item.phone || 'No phone'}</Text>
+                <Text style={[styles.bookingMeta, themed.mutedText]}>{item.date || ''} {item.time || ''}</Text>
+                <Text style={[styles.bookingMeta, themed.mutedText]}>ID: {String(item.id).slice(0, 12)}...</Text>
               </Pressable>
             );
           }}
@@ -570,238 +633,213 @@ export default function AdminScreen() {
 
 const styles = StyleSheet.create({
   wrap: {
-    flex: 1,
-    backgroundColor: '#f6f8fc'
+    flex: 1
   },
   authKeyboardWrap: {
     flex: 1
   },
   authScrollContent: {
-    paddingBottom: 24
+    padding: MOBILE_SPACE.xxl,
+    paddingBottom: 28
   },
-  header: {
-    paddingHorizontal: 16,
-    paddingTop: 10,
-    paddingBottom: 10,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between'
+  heroCard: {
+    borderRadius: MOBILE_SHAPE.cardRadius,
+    borderWidth: 1,
+    padding: MOBILE_SPACE.xxl,
+    overflow: 'hidden'
   },
-  h1: {
-    fontSize: 20,
+  heroCompact: {
+    borderRadius: MOBILE_SHAPE.cardRadius,
+    borderWidth: 1,
+    padding: MOBILE_SPACE.xl,
+    overflow: 'hidden'
+  },
+  heroGlowOne: {
+    position: 'absolute',
+    width: 140,
+    height: 140,
+    borderRadius: 999,
+    top: -54,
+    right: -30,
+    backgroundColor: 'rgba(255,255,255,0.1)'
+  },
+  heroGlowTwo: {
+    position: 'absolute',
+    width: 170,
+    height: 170,
+    borderRadius: 999,
+    bottom: -85,
+    left: -50,
+    backgroundColor: 'rgba(125, 198, 255, 0.14)'
+  },
+  heroKicker: {
+    color: '#d9e5ff',
+    fontWeight: '800',
+    letterSpacing: 1,
+    fontSize: MOBILE_TYPE.caption,
+    marginBottom: 6
+  },
+  heroTitle: {
+    color: '#ffffff',
     fontWeight: '900',
-    color: '#2d2342'
+    fontSize: MOBILE_TYPE.title,
+    lineHeight: 30
   },
-  sub: {
-    paddingHorizontal: 16,
-    marginBottom: 12,
-    color: '#6b5f86'
+  heroSubtitle: {
+    marginTop: 8,
+    color: '#d7e4ff',
+    fontSize: MOBILE_TYPE.body,
+    lineHeight: 20
   },
   quickAccessRow: {
-    paddingHorizontal: 16,
-    marginBottom: 12,
     flexDirection: 'row',
-    gap: 10
+    gap: 10,
+    marginTop: MOBILE_SPACE.lg
   },
-  subSmall: {
-    marginTop: 4,
-    color: '#6b5f86',
-    fontSize: 12
-  },
-  quickAccessRowCompact: {
-    marginTop: 8,
-    flexDirection: 'row',
-    gap: 8
-  },
-  miniPill: {
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 999,
+  quickAction: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: MOBILE_SHAPE.controlRadius,
     borderWidth: 1,
-    borderColor: '#e3daef',
-    backgroundColor: '#f8f5ff'
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4
   },
-  miniPillText: {
-    color: '#4f5fa8',
-    fontSize: 11,
+  quickActionText: {
+    fontSize: MOBILE_TYPE.caption,
     fontWeight: '800'
   },
   card: {
-    marginHorizontal: 16,
-    backgroundColor: '#fff',
+    marginTop: MOBILE_SPACE.lg,
+    borderRadius: MOBILE_SHAPE.cardRadius,
     borderWidth: 1,
-    borderColor: '#ece7f6',
-    borderRadius: 18,
-    padding: 14,
-    shadowColor: '#1f1238',
+    padding: MOBILE_SPACE.lg,
+    shadowColor: '#09111f',
     shadowOpacity: 0.08,
     shadowOffset: { width: 0, height: 8 },
-    shadowRadius: 18,
+    shadowRadius: 16,
     elevation: 3
   },
   label: {
-    fontWeight: '800',
-    color: '#3b2f54',
-    marginTop: 10
+    marginTop: 10,
+    marginBottom: 6,
+    fontSize: MOBILE_TYPE.body,
+    fontWeight: '800'
   },
   input: {
-    marginTop: 6,
-    backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: '#d9d2e8',
-    borderRadius: 12,
+    borderRadius: MOBILE_SHAPE.inputRadius,
     paddingHorizontal: 12,
-    paddingVertical: 10
+    paddingVertical: 11,
+    fontSize: MOBILE_TYPE.body
   },
   primaryBtn: {
-    marginTop: 14,
-    backgroundColor: '#7c46e8',
-    borderRadius: 14,
-    paddingVertical: 12,
-    alignItems: 'center',
-    shadowColor: '#4f22a8',
-    shadowOpacity: 0.22,
-    shadowOffset: { width: 0, height: 6 },
-    shadowRadius: 12,
-    elevation: 3
+    marginTop: 16,
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    paddingVertical: 13,
+    alignItems: 'center'
   },
   primaryBtnPressed: {
-    opacity: 0.85
+    opacity: 0.88
   },
   primaryBtnText: {
     color: '#fff',
-    fontWeight: '900'
+    fontWeight: '900',
+    fontSize: MOBILE_TYPE.body
   },
   secondaryBtn: {
-    marginTop: 10,
-    backgroundColor: '#fff',
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: '#d8cfee',
-    paddingVertical: 11,
-    alignItems: 'center'
-  },
-  secondaryBtnText: {
-    color: '#4b3f69',
-    fontWeight: '800'
-  },
-  forgotToggleBtn: {
     marginTop: 14,
-    paddingVertical: 10,
-    paddingHorizontal: 10,
-    borderRadius: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: MOBILE_SHAPE.controlRadius,
     borderWidth: 1,
-    borderColor: '#e6def5',
-    backgroundColor: '#fbf8ff',
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center'
   },
-  forgotToggleText: {
-    color: '#6b5f86',
-    fontWeight: '700',
-    fontSize: 13
-  },
-  forgotPanel: {
-    marginTop: 10,
-    paddingTop: 4
-  },
-  note: {
+  secondaryBlockButton: {
     marginTop: 12,
-    color: '#9e90bf',
-    fontSize: 11
-  },
-  linkBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    backgroundColor: '#fff',
+    minHeight: 46,
+    borderRadius: MOBILE_SHAPE.controlRadius,
     borderWidth: 1,
-    borderColor: '#e8e2f6',
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    borderRadius: 999
-  },
-  linkText: {
-    color: '#7c46e8',
-    fontWeight: '900'
-  },
-  secondaryLinkText: {
-    color: '#344054',
-    fontWeight: '800'
-  },
-  pressed: {
-    opacity: 0.85
-  },
-  tapScale: {
-    transform: [{ scale: 0.985 }]
-  },
-  iconBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: '#fff',
-    borderWidth: 1,
-    borderColor: '#e8e2f6',
     alignItems: 'center',
     justifyContent: 'center'
+  },
+  secondaryBtnText: {
+    fontWeight: '800',
+    fontSize: MOBILE_TYPE.caption
+  },
+  forgotPanel: {
+    marginTop: 10
+  },
+  note: {
+    marginTop: 14,
+    fontSize: MOBILE_TYPE.caption
+  },
+  listHeaderWrap: {
+    paddingHorizontal: MOBILE_SPACE.xxl,
+    paddingTop: MOBILE_SPACE.lg
+  },
+  listContent: {
+    paddingHorizontal: MOBILE_SPACE.xxl,
+    paddingBottom: 28
   },
   center: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 16
+    padding: 20
+  },
+  centerText: {
+    marginTop: 10,
+    textAlign: 'center',
+    fontSize: MOBILE_TYPE.body
+  },
+  emptyTitle: {
+    fontWeight: '900',
+    fontSize: MOBILE_TYPE.heading
   },
   bookingCard: {
-    backgroundColor: '#fff',
+    borderRadius: MOBILE_SHAPE.cardRadius,
     borderWidth: 1,
-    borderColor: '#ece7f6',
-    borderRadius: 16,
-    padding: 14,
+    padding: MOBILE_SPACE.lg,
     marginTop: 12,
-    shadowColor: '#1f1238',
-    shadowOpacity: 0.05,
+    shadowColor: '#09111f',
+    shadowOpacity: 0.06,
     shadowOffset: { width: 0, height: 6 },
     shadowRadius: 12,
     elevation: 2
   },
+  bookingTopRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10
+  },
   bookingTitle: {
+    flex: 1,
     fontWeight: '900',
-    color: '#111827',
-    flex: 1
+    fontSize: MOBILE_TYPE.body
   },
   bookingSub: {
-    marginTop: 6,
-    color: '#5e5873'
-  },
-  bookingTiny: {
     marginTop: 8,
-    color: '#9e90bf',
-    fontSize: 11
+    fontSize: MOBILE_TYPE.body,
+    fontWeight: '700'
   },
-  rowPressed: {
-    backgroundColor: '#f7f3ff'
+  bookingMeta: {
+    marginTop: 5,
+    fontSize: MOBILE_TYPE.caption
   },
   badge: {
+    borderWidth: 1,
+    borderRadius: 999,
     paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 999
+    paddingVertical: 5
   },
   badgeText: {
-    fontSize: 11,
-    fontWeight: '900',
-    color: '#3f2f62'
+    fontSize: MOBILE_TYPE.micro,
+    fontWeight: '900'
   },
-  badgePending: {
-    backgroundColor: '#ede7f7'
-  },
-  badgeOk: {
-    backgroundColor: '#e8f8ef'
-  },
-  badgeBad: {
-    backgroundColor: '#fff0ef'
-  },
-  badgeDone: {
-    backgroundColor: '#eef4ff'
+  pressed: {
+    opacity: 0.9
   }
 });
