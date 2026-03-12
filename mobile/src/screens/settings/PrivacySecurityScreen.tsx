@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
-import { Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import { SettingsCard, SettingsPill, SettingsSectionTitle } from './ui';
 import { useThemePrefs } from '../../theme';
 import { getMobilePalette } from '../../ui/polish';
+import { ThemedScrollView } from '../../ui/ThemedScrollView';
 
 const LAST_BOOKING_ID_KEY = 'ceosalon:lastBookingId';
 const LAST_BOOKING_EMAIL_KEY = 'ceosalon:lastBookingEmail';
@@ -40,7 +41,7 @@ export default function PrivacySecurityScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: palette.bg }]}>
+    <ThemedScrollView contentContainerStyle={[styles.container, { backgroundColor: palette.bg }]}>
       <SettingsSectionTitle>Privacy</SettingsSectionTitle>
       <SettingsCard>
         <View style={styles.pad}>
@@ -60,7 +61,7 @@ export default function PrivacySecurityScreen() {
           </View>
         </View>
       </SettingsCard>
-    </ScrollView>
+    </ThemedScrollView>
   );
 }
 

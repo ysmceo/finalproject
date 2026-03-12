@@ -8,7 +8,6 @@ import {
   Linking,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -20,6 +19,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useThemePrefs } from '../theme';
 import { getMobilePalette, MOBILE_MOTION, MOBILE_SHAPE, MOBILE_SPACE, MOBILE_TYPE } from '../ui/polish';
+import { ThemedScrollView } from '../ui/ThemedScrollView';
 import { apiGet } from '../lib/api';
 import { resolveImageUri } from '../lib/images';
 import { triggerLightHaptic } from '../lib/haptics';
@@ -251,7 +251,7 @@ export default function HomeScreen() {
   };
 
   return (
-    <ScrollView 
+    <ThemedScrollView 
       style={[styles.container, themed.container]} 
       contentContainerStyle={styles.contentContainer}
       showsVerticalScrollIndicator={false}
@@ -496,7 +496,7 @@ export default function HomeScreen() {
       </Animated.View>
 
       <View style={styles.bottomSpacer} />
-    </ScrollView>
+    </ThemedScrollView>
   );
 }
 

@@ -120,6 +120,39 @@ function HeaderActions() {
   );
 }
 
+function MobileWebScrollbarStyles() {
+  useEffect(() => {
+    if (Platform.OS !== 'web') return;
+
+    const doc = (globalThis as any).document;
+    if (!doc?.head) return;
+
+    const styleId = 'ceosalon-mobile-scrollbars';
+    let styleEl = doc.getElementById?.(styleId);
+
+    if (!styleEl) {
+      styleEl = doc.createElement('style');
+      styleEl.id = styleId;
+      doc.head.appendChild(styleEl);
+    }
+
+    styleEl.textContent = `
+      * {
+        -ms-overflow-style: none;
+        scrollbar-width: none;
+      }
+
+      *::-webkit-scrollbar {
+        display: none;
+        width: 0;
+        height: 0;
+      }
+    `;
+  }, []);
+
+  return null;
+}
+
 function MainTabs() {
   const { resolvedColorScheme } = useThemePrefs();
   const isDark = resolvedColorScheme === 'dark';
@@ -276,68 +309,74 @@ function AppShell() {
 
   if (showIntro) {
     return (
-      <SafeAreaProvider>
-        <View style={styles.introWrap}>
-          <ImageBackground
-            source={{ uri: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1200&q=80' }}
-            style={styles.introBackdrop}
-            imageStyle={styles.introBackdropImage}
-          >
-            <View style={styles.introBackdropTint} />
-            <View style={styles.introGlowTop} />
-            <View style={styles.introGlowBottom} />
+      <>
+        <MobileWebScrollbarStyles />
+        <SafeAreaProvider>
+          <View style={styles.introWrap}>
+            <ImageBackground
+              source={{ uri: 'https://images.unsplash.com/photo-1560066984-138dadb4c035?auto=format&fit=crop&w=1200&q=80' }}
+              style={styles.introBackdrop}
+              imageStyle={styles.introBackdropImage}
+            >
+              <View style={styles.introBackdropTint} />
+              <View style={styles.introGlowTop} />
+              <View style={styles.introGlowBottom} />
 
-            <Animated.View style={[styles.introCard, { opacity: introOpacity, transform: [{ scale: introScale }] }]}>
-              <Image source={require('./assets/splash-icon.png')} style={styles.introLogo} resizeMode="contain" />
-              <Text style={styles.introBrand}>D CEO OFFICIAL UNISEX SALON APP</Text>
-              {introStage === 'landing' ? (
-                <>
-                  <Text style={styles.introSub}>Professional grooming for every schedule.</Text>
-                  <Pressable style={styles.enterButton} onPress={handleEnter}>
-                    <Text style={styles.enterButtonText}>Enter App</Text>
-                  </Pressable>
-                </>
-              ) : (
-                <>
-                  <Text style={styles.welcomeTitle}>Book, track, and manage every salon visit from one place.</Text>
-                  <Text style={styles.welcomeBody}>
-                    Clean design, reliable booking flow, and direct contact with the salon team.
-                  </Text>
-                  <Text style={styles.welcomeFootnote}>Preparing your premium salon experience...</Text>
-                  <Pressable style={[styles.enterButton, styles.enterButtonAlt]} onPress={enterAppNow}>
-                    <Text style={[styles.enterButtonText, styles.enterButtonTextAlt]}>Continue</Text>
-                  </Pressable>
-                </>
-              )}
-            </Animated.View>
-          </ImageBackground>
-        </View>
-      </SafeAreaProvider>
+              <Animated.View style={[styles.introCard, { opacity: introOpacity, transform: [{ scale: introScale }] }]}>
+                <Image source={require('./assets/splash-icon.png')} style={styles.introLogo} resizeMode="contain" />
+                <Text style={styles.introBrand}>D CEO OFFICIAL UNISEX SALON APP</Text>
+                {introStage === 'landing' ? (
+                  <>
+                    <Text style={styles.introSub}>Professional grooming for every schedule.</Text>
+                    <Pressable style={styles.enterButton} onPress={handleEnter}>
+                      <Text style={styles.enterButtonText}>Enter App</Text>
+                    </Pressable>
+                  </>
+                ) : (
+                  <>
+                    <Text style={styles.welcomeTitle}>Book, track, and manage every salon visit from one place.</Text>
+                    <Text style={styles.welcomeBody}>
+                      Clean design, reliable booking flow, and direct contact with the salon team.
+                    </Text>
+                    <Text style={styles.welcomeFootnote}>Preparing your premium salon experience...</Text>
+                    <Pressable style={[styles.enterButton, styles.enterButtonAlt]} onPress={enterAppNow}>
+                      <Text style={[styles.enterButtonText, styles.enterButtonTextAlt]}>Continue</Text>
+                    </Pressable>
+                  </>
+                )}
+              </Animated.View>
+            </ImageBackground>
+          </View>
+        </SafeAreaProvider>
+      </>
     );
   }
 
   return (
-    <SafeAreaProvider>
-      <NavigationContainer theme={navigationTheme}>
-        <StatusBar style={resolvedColorScheme === 'dark' ? 'light' : 'dark'} />
-        <Stack.Navigator
-          screenOptions={{
-            contentStyle: { backgroundColor: palette.bg },
-            headerStyle: { backgroundColor: palette.card },
-            headerTitleStyle: { fontWeight: '900', color: palette.text },
-            headerTintColor: palette.text,
-            headerShadowVisible: false,
-            headerRight: () => <HeaderActions />
-          }}
-        >
-          <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
-          <Stack.Screen name="Gallery" component={GalleryScreen} options={{ title: 'Gallery' }} />
-          <Stack.Screen name="Team" component={TeamScreen} options={{ title: 'Team' }} />
-          <Stack.Screen name="Contact" component={ContactScreen} options={{ title: 'Contact' }} />
-          <Stack.Screen name="Admin" component={AdminScreen} options={{ title: 'Admin' }} />
-        </Stack.Navigator>
-      </NavigationContainer>
-    </SafeAreaProvider>
+    <>
+      <MobileWebScrollbarStyles />
+      <SafeAreaProvider>
+        <NavigationContainer theme={navigationTheme}>
+          <StatusBar style={resolvedColorScheme === 'dark' ? 'light' : 'dark'} />
+          <Stack.Navigator
+            screenOptions={{
+              contentStyle: { backgroundColor: palette.bg },
+              headerStyle: { backgroundColor: palette.card },
+              headerTitleStyle: { fontWeight: '900', color: palette.text },
+              headerTintColor: palette.text,
+              headerShadowVisible: false,
+              headerRight: () => <HeaderActions />
+            }}
+          >
+            <Stack.Screen name="MainTabs" component={MainTabs} options={{ headerShown: false }} />
+            <Stack.Screen name="Gallery" component={GalleryScreen} options={{ title: 'Gallery' }} />
+            <Stack.Screen name="Team" component={TeamScreen} options={{ title: 'Team' }} />
+            <Stack.Screen name="Contact" component={ContactScreen} options={{ title: 'Contact' }} />
+            <Stack.Screen name="Admin" component={AdminScreen} options={{ title: 'Admin' }} />
+          </Stack.Navigator>
+        </NavigationContainer>
+      </SafeAreaProvider>
+    </>
   );
 }
 

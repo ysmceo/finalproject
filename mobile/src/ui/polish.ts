@@ -50,6 +50,13 @@ export type MobilePalette = {
   inputBg: string;
 };
 
+export type WebsiteScrollbarPalette = {
+  track: string;
+  thumb: string;
+  thumbActive: string;
+  shadow: string;
+};
+
 const lightPalette: MobilePalette = {
   bg: '#eef3f8',
   card: '#ffffff',
@@ -84,6 +91,24 @@ const darkPalette: MobilePalette = {
   inputBg: '#10192a'
 };
 
+const lightWebsiteScrollbarPalette: WebsiteScrollbarPalette = {
+  track: 'rgba(245, 208, 152, 0.42)',
+  thumb: '#c26e2e',
+  thumbActive: '#914218',
+  shadow: '#2d6c53'
+};
+
+const darkWebsiteScrollbarPalette: WebsiteScrollbarPalette = {
+  track: 'rgba(255, 217, 163, 0.2)',
+  thumb: '#ffab3d',
+  thumbActive: '#f6781e',
+  shadow: '#46e2cb'
+};
+
 export function getMobilePalette(isDark: boolean): MobilePalette {
   return isDark ? darkPalette : lightPalette;
+}
+
+export function getWebsiteScrollbarPalette(isDark: boolean): WebsiteScrollbarPalette {
+  return isDark ? darkWebsiteScrollbarPalette : lightWebsiteScrollbarPalette;
 }

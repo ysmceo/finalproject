@@ -1,11 +1,12 @@
 import React, { useMemo, useState } from 'react';
-import { ScrollView, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import type { NativeStackScreenProps } from '@react-navigation/native-stack';
 
 import type { SettingsStackParamList } from '../SettingsNavigator';
 import { SettingsCard, SettingsRow, SettingsSearchBox, SettingsSectionTitle } from './ui';
 import { useThemePrefs } from '../../theme';
 import { getMobilePalette } from '../../ui/polish';
+import { ThemedScrollView } from '../../ui/ThemedScrollView';
 
 type Props = NativeStackScreenProps<SettingsStackParamList, 'SettingsHome'>;
 
@@ -50,7 +51,7 @@ export default function SettingsHomeScreen({ navigation }: Props) {
   }, [filtered]);
 
   return (
-    <ScrollView
+    <ThemedScrollView
       contentContainerStyle={[styles.container, { backgroundColor: palette.bg }]}
       keyboardShouldPersistTaps="handled"
     >
@@ -98,7 +99,7 @@ export default function SettingsHomeScreen({ navigation }: Props) {
           </SettingsCard>
         </View>
       ))}
-    </ScrollView>
+    </ThemedScrollView>
   );
 }
 

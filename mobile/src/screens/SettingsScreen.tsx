@@ -1,5 +1,5 @@
 import React from 'react';
-import { Alert, Linking, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
@@ -7,6 +7,7 @@ import { useNavigation } from '@react-navigation/native';
 import { triggerLightHaptic, triggerWarningHaptic } from '../lib/haptics';
 import { ThemeMode, useThemePrefs } from '../theme';
 import { getMobilePalette, MOBILE_SHAPE, MOBILE_SPACE, MOBILE_TYPE } from '../ui/polish';
+import { ThemedScrollView } from '../ui/ThemedScrollView';
 
 const LAST_BOOKING_ID_KEY = 'ceosalon:lastBookingId';
 const LAST_BOOKING_EMAIL_KEY = 'ceosalon:lastBookingEmail';
@@ -152,7 +153,7 @@ export default function SettingsScreen() {
   ];
 
   return (
-    <ScrollView style={{ flex: 1, backgroundColor: palette.bg }} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+    <ThemedScrollView style={{ flex: 1, backgroundColor: palette.bg }} contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
       <View
         style={[
           styles.hero,
@@ -314,7 +315,7 @@ export default function SettingsScreen() {
           This clears locally saved tracking and admin session data on this device only.
         </Text>
       </Card>
-    </ScrollView>
+    </ThemedScrollView>
   );
 }
 

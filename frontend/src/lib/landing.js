@@ -150,7 +150,7 @@ export const fallbackProductImages = [
   assetPath("hair cream.jpeg"),
   assetPath("hair oil.jpeg"),
   assetPath("wig fresh oil.jpeg"),
-  assetPath("bread oil.jpeg"),
+  assetPath("beard oil.jpeg"),
   assetPath("face cream.jpeg")
 ];
 

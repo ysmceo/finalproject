@@ -25,6 +25,7 @@ import { apiGet, apiPostJson, ApiError } from '../lib/api';
 import { useThemePrefs } from '../theme';
 import type { Service, Product, Booking, PaystackStatusResponse, MonnifyStatusResponse } from '../types';
 import { getMobilePalette, MOBILE_MOTION, MOBILE_SHAPE, MOBILE_SPACE, MOBILE_TYPE } from '../ui/polish';
+import { ThemedScrollView } from '../ui/ThemedScrollView';
 
 type CreateBookingResponse = {
   message: string;
@@ -784,7 +785,7 @@ export default function BookScreen() {
 
   return (
     <View style={styles.screenWrap}>
-    <ScrollView
+    <ThemedScrollView
       ref={scrollViewRef}
       contentContainerStyle={[styles.container, themed.containerBg]}
       keyboardShouldPersistTaps="handled"
@@ -1182,7 +1183,7 @@ export default function BookScreen() {
           ) : null}
         </Animated.View>
       ) : null}
-    </ScrollView>
+    </ThemedScrollView>
     <View style={[styles.floatingQuickNav, showBackToTop && styles.floatingQuickNavRaised]}>
       <MicroPress
         style={[styles.floatingQuickNavBtn, { backgroundColor: palette.card, borderColor: palette.border }]}

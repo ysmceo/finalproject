@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { Alert, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Clipboard from 'expo-clipboard';
 
@@ -7,6 +7,7 @@ import { API_BASE_URL, WEB_BASE_URL, buildApiUrl } from '../../config';
 import { SettingsCard, SettingsPill, SettingsRow, SettingsSectionTitle } from './ui';
 import { useThemePrefs } from '../../theme';
 import { getMobilePalette } from '../../ui/polish';
+import { ThemedScrollView } from '../../ui/ThemedScrollView';
 
 const LAST_BOOKING_ID_KEY = 'ceosalon:lastBookingId';
 const LAST_BOOKING_EMAIL_KEY = 'ceosalon:lastBookingEmail';
@@ -78,7 +79,7 @@ export default function AccountScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: palette.bg }]}>
+    <ThemedScrollView contentContainerStyle={[styles.container, { backgroundColor: palette.bg }]}>
       <SettingsSectionTitle>Saved booking</SettingsSectionTitle>
       <SettingsCard>
         <SettingsRow icon="bookmark-outline" title="Last Booking ID" subtitle={lastBookingId || 'Not set'} noTopBorder />
@@ -99,7 +100,7 @@ export default function AccountScreen() {
         </View>
         {apiStatus ? <Text style={[styles.status, { color: palette.text }]}>{apiStatus}</Text> : null}
       </SettingsCard>
-    </ScrollView>
+    </ThemedScrollView>
   );
 }
 

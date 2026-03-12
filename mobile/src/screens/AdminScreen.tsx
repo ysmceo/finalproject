@@ -9,7 +9,6 @@ import {
   Pressable,
   RefreshControl,
   SafeAreaView,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -25,6 +24,7 @@ import { triggerLightHaptic, triggerMediumHaptic, triggerSuccessHaptic, triggerW
 import { ADMIN_EMAIL_KEY, ADMIN_TOKEN_KEY } from './SettingsScreen';
 import { useThemePrefs } from '../theme';
 import { getMobilePalette, MOBILE_SHAPE, MOBILE_SPACE, MOBILE_TYPE } from '../ui/polish';
+import { ThemedScrollView } from '../ui/ThemedScrollView';
 
 type AdminLoginResponse = {
   message: string;
@@ -337,7 +337,7 @@ export default function AdminScreen() {
           behavior={Platform.OS === 'ios' ? 'padding' : undefined}
           keyboardVerticalOffset={Platform.OS === 'ios' ? 8 : 0}
         >
-          <ScrollView
+          <ThemedScrollView
             contentContainerStyle={styles.authScrollContent}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
@@ -520,7 +520,7 @@ export default function AdminScreen() {
 
               <Text style={[styles.note, themed.mutedText]}>Backend: {normalizeUrl(API_BASE_URL)}</Text>
             </View>
-          </ScrollView>
+          </ThemedScrollView>
         </KeyboardAvoidingView>
       </SafeAreaView>
     );

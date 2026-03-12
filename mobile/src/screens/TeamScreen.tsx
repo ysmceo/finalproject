@@ -6,7 +6,6 @@ import {
   Image,
   Linking,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -16,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useThemePrefs } from '../theme';
 import { getMobilePalette, MOBILE_MOTION, MOBILE_SHAPE, MOBILE_SPACE, MOBILE_TYPE } from '../ui/polish';
+import { ThemedScrollView } from '../ui/ThemedScrollView';
 import { resolveImageUri } from '../lib/images';
 import { triggerLightHaptic } from '../lib/haptics';
 
@@ -235,7 +235,7 @@ export default function TeamScreen() {
             }}
           />
           <Animated.View style={[styles.modalCard, themed.cardElevated, cardIn(20)]}>
-            <ScrollView contentContainerStyle={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
+            <ThemedScrollView contentContainerStyle={styles.modalScrollContent} showsVerticalScrollIndicator={false}>
               {resolveImageUri(selectedMember.image) && !failedImageIds[selectedMember.id] ? (
                 <Image
                   source={{ uri: resolveImageUri(selectedMember.image)! }}
@@ -284,7 +284,7 @@ export default function TeamScreen() {
               >
                 <Ionicons name="close" size={20} color={palette.text} />
               </Pressable>
-            </ScrollView>
+            </ThemedScrollView>
           </Animated.View>
         </View>
       )}

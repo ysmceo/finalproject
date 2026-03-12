@@ -1,10 +1,11 @@
 import React from 'react';
-import { Alert, Linking, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, StyleSheet, Text, View } from 'react-native';
 
 import { WEB_BASE_URL } from '../../config';
 import { SettingsCard, SettingsRow, SettingsSectionTitle } from './ui';
 import { useThemePrefs } from '../../theme';
 import { getMobilePalette } from '../../ui/polish';
+import { ThemedScrollView } from '../../ui/ThemedScrollView';
 
 const CUSTOMER_CARE_PHONE = '07036939125';
 const CUSTOMER_CARE_EMAIL = 'okontaysm@gmail.com';
@@ -23,7 +24,7 @@ export default function HelpSupportScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: palette.bg }]}>
+    <ThemedScrollView contentContainerStyle={[styles.container, { backgroundColor: palette.bg }]}>
       <SettingsSectionTitle>Help</SettingsSectionTitle>
       <SettingsCard>
         <SettingsRow icon="globe-outline" title="Open website" subtitle={WEB_BASE_URL} onPress={() => open(WEB_BASE_URL)} noTopBorder />
@@ -65,7 +66,7 @@ export default function HelpSupportScreen() {
           <Text style={[styles.text, { marginTop: 8, color: palette.textMuted }]}>Tip: Windows Firewall must allow port 3000.</Text>
         </View>
       </SettingsCard>
-    </ScrollView>
+    </ThemedScrollView>
   );
 }
 

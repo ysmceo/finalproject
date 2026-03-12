@@ -18,6 +18,7 @@ import { ApiError, apiPostJson } from '../lib/api';
 import { triggerLightHaptic, triggerSuccessHaptic, triggerWarningHaptic } from '../lib/haptics';
 import { useThemePrefs } from '../theme';
 import { getMobilePalette, MOBILE_MOTION, MOBILE_SHAPE, MOBILE_SPACE, MOBILE_TYPE } from '../ui/polish';
+import { ThemedScrollView } from '../ui/ThemedScrollView';
 
 const CONTACT_INFO = {
   phone: '07036939125',
@@ -192,7 +193,7 @@ export default function ContactScreen() {
 
   return (
     <View style={styles.screenWrap}>
-      <ScrollView
+      <ThemedScrollView
         ref={scrollViewRef}
         style={[styles.container, themed.container]}
         contentContainerStyle={styles.contentContainer}
@@ -430,7 +431,7 @@ export default function ContactScreen() {
         </Animated.View>
 
         <View style={styles.bottomSpacer} />
-      </ScrollView>
+      </ThemedScrollView>
 
       {showBackToTop ? (
         <Pressable style={[styles.backToTopButton, { backgroundColor: palette.primary }]} onPress={scrollToTop}>

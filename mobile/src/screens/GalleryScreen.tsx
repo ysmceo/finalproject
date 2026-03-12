@@ -6,7 +6,6 @@ import {
   Image,
   Modal,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -16,6 +15,7 @@ import { Ionicons } from '@expo/vector-icons';
 
 import { useThemePrefs } from '../theme';
 import { getMobilePalette, MOBILE_MOTION, MOBILE_SHAPE, MOBILE_SPACE, MOBILE_TYPE } from '../ui/polish';
+import { ThemedScrollView } from '../ui/ThemedScrollView';
 import { resolveImageUri } from '../lib/images';
 import { triggerLightHaptic } from '../lib/haptics';
 
@@ -190,7 +190,7 @@ export default function GalleryScreen() {
             setSelectedImage(null);
           }}
         >
-          <ScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
+          <ThemedScrollView contentContainerStyle={styles.modalContent} showsVerticalScrollIndicator={false}>
             {selectedImage && (
               <>
                 {resolveImageUri(selectedImage.uri) && !failedImageIds[selectedImage.id] ? (
@@ -220,7 +220,7 @@ export default function GalleryScreen() {
                 </Pressable>
               </>
             )}
-          </ScrollView>
+          </ThemedScrollView>
         </Pressable>
       </Modal>
     </View>

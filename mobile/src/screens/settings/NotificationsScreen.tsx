@@ -1,16 +1,17 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { StyleSheet, Text, View } from 'react-native';
 
 import { SettingsCard, SettingsSectionTitle } from './ui';
 import { useThemePrefs } from '../../theme';
 import { getMobilePalette } from '../../ui/polish';
+import { ThemedScrollView } from '../../ui/ThemedScrollView';
 
 export default function NotificationsScreen() {
   const { resolvedColorScheme } = useThemePrefs();
   const palette = getMobilePalette(resolvedColorScheme === 'dark');
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: palette.bg }]}>
+    <ThemedScrollView contentContainerStyle={[styles.container, { backgroundColor: palette.bg }]}>
       <SettingsSectionTitle>In-app notifications</SettingsSectionTitle>
       <SettingsCard>
         <View style={styles.pad}>
@@ -22,7 +23,7 @@ export default function NotificationsScreen() {
           </Text>
         </View>
       </SettingsCard>
-    </ScrollView>
+    </ThemedScrollView>
   );
 }
 

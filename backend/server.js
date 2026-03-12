@@ -1188,7 +1188,7 @@ let monnifyAccessTokenCache = {
 
 function getDefaultProducts() {
   return [
-    { id: 1, name: 'Bread Oil', category: 'Grooming', price: 4500, stock: 35, image: '/images/bread oil.jpeg' },
+    { id: 1, name: 'Beard Oil', category: 'Grooming', price: 4500, stock: 35, image: '/images/beard oil.jpeg' },
     { id: 2, name: 'Hair Oil', category: 'Hair Care', price: 3500, stock: 42, image: '/images/hair oil.jpeg' },
     { id: 3, name: 'Face Cream', category: 'Skin Care', price: 5000, stock: 28, image: '/images/face cream.jpeg' },
     { id: 4, name: 'Hair Cream', category: 'Hair Care', price: 4000, stock: 40, image: '/images/hair cream.jpeg' },

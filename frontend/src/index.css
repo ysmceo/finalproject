@@ -135,6 +135,48 @@ html.dark #root::before {
   color: hsl(var(--ink));
 }
 
+html,
+body,
+* {
+  scrollbar-width: thin;
+  scrollbar-color: hsl(var(--brand)) hsl(var(--panel-strong) / 0.58);
+}
+
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+*::-webkit-scrollbar-track {
+  background: hsl(var(--panel-strong) / 0.56);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+  border: 2px solid transparent;
+  border-radius: 999px;
+  background-clip: padding-box;
+  background-image: linear-gradient(180deg, hsl(var(--brand)), hsl(var(--pine)));
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background-image: linear-gradient(180deg, hsl(var(--brand-deep)), hsl(var(--pine)));
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+html.dark,
+html.dark body,
+html.dark * {
+  scrollbar-color: hsl(var(--brand)) hsl(var(--panel-strong) / 0.84);
+}
+
+html.dark *::-webkit-scrollbar-track {
+  background: hsl(var(--panel-strong) / 0.84);
+}
+
 .theme-toggle {
   position: relative;
   display: inline-flex;

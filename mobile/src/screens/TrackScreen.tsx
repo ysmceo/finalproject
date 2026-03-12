@@ -22,6 +22,7 @@ import { buildApiUrl } from '../config';
 import { useThemePrefs } from '../theme';
 import type { ProductOrderTrackResponse, TrackResponse } from '../types';
 import { getMobilePalette, MOBILE_MOTION, MOBILE_SHAPE, MOBILE_SPACE, MOBILE_TYPE } from '../ui/polish';
+import { ThemedScrollView } from '../ui/ThemedScrollView';
 
 const LAST_TRACKING_CODE_KEY = 'ceosalon:lastTrackingCode';
 const LAST_BOOKING_EMAIL_KEY = 'ceosalon:lastBookingEmail';
@@ -687,7 +688,7 @@ export default function TrackScreen(props: any) {
 
   return (
     <View style={styles.screenWrap}>
-    <ScrollView
+    <ThemedScrollView
       ref={scrollViewRef}
       style={[styles.container, themed.container]}
       contentContainerStyle={styles.contentContainer}
@@ -1139,7 +1140,7 @@ export default function TrackScreen(props: any) {
           </View>
         </View>
       ) : null}
-    </ScrollView>
+    </ThemedScrollView>
     <View style={[styles.floatingQuickNav, showBackToTop && styles.floatingQuickNavRaised]}>
       <MicroPress
         style={[styles.floatingQuickNavBtn, { backgroundColor: palette.card, borderColor: palette.border }]}

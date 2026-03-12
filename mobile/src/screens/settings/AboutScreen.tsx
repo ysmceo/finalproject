@@ -1,5 +1,5 @@
 import React, { useMemo, useState } from 'react';
-import { Alert, Linking, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, Linking, Platform, StyleSheet, Text, View } from 'react-native';
 import * as Clipboard from 'expo-clipboard';
 import Constants from 'expo-constants';
 
@@ -7,6 +7,7 @@ import { API_BASE_URL, WEB_BASE_URL, buildApiUrl } from '../../config';
 import { SettingsCard, SettingsPill, SettingsRow, SettingsSectionTitle } from './ui';
 import { useThemePrefs } from '../../theme';
 import { getMobilePalette } from '../../ui/polish';
+import { ThemedScrollView } from '../../ui/ThemedScrollView';
 
 export default function AboutScreen() {
   const { resolvedColorScheme } = useThemePrefs();
@@ -53,7 +54,7 @@ export default function AboutScreen() {
   }
 
   return (
-    <ScrollView contentContainerStyle={[styles.container, { backgroundColor: palette.bg }]}>
+    <ThemedScrollView contentContainerStyle={[styles.container, { backgroundColor: palette.bg }]}>
       <SettingsSectionTitle>App</SettingsSectionTitle>
       <SettingsCard>
         <SettingsRow icon="apps-outline" title="Name" subtitle={appInfo.name} noTopBorder />
@@ -101,7 +102,7 @@ export default function AboutScreen() {
           <SettingsPill label="Email" onPress={() => open('mailto:okontaysm@gmail.com')} variant="ghost" />
         </View>
       </SettingsCard>
-    </ScrollView>
+    </ThemedScrollView>
   );
 }
 
