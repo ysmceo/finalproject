@@ -21,6 +21,12 @@ import { resolveMediaSrc } from "@/lib/storefront";
 
 const TOKEN_KEY = "ceo-salon-admin-token";
 const BOOKING_STATUSES = ["pending", "approved", "cancelled", "completed"];
+const BOOKING_STATUS_LABELS = {
+  pending: "Pending",
+  approved: "Approved",
+  cancelled: "Cancelled",
+  completed: "Completed"
+};
 const ORDER_STATUSES = ["pending", "approved", "processed", "shipped", "on_the_way", "delivered", "cancelled"];
 const ORDER_STATUS_LABELS = {
   pending: "Pending",
@@ -193,7 +199,9 @@ export default function Admin() {
   const [orderDateFilter, setOrderDateFilter] = useState("");
   const [selectedBookingIds, setSelectedBookingIds] = useState([]);
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
+  const [bookingActionBusyById, setBookingActionBusyById] = useState({});
   const [orderActionBusyById, setOrderActionBusyById] = useState({});
+  const [focusedBookingId, setFocusedBookingId] = useState("");
   const [bulkBookingStatus, setBulkBookingStatus] = useState("approved");
   const [bulkOrderStatus, setBulkOrderStatus] = useState("processed");
   const [activePanel, setActivePanel] = useState(null);
@@ -460,12 +468,46 @@ export default function Admin() {
     }
   }
 
-  async function saveBooking(id, status) {
+  async function saveBooking(id, status, options = {}) {
+    const bookingId = String(id || "").trim();
+    if (!bookingId) return;
+
+    const source = String(options?.source || "bookings-panel").trim().toLowerCase();
+    const sourceLabel = source === "approval-queue" ? "Booking approval queue" : "Bookings panel";
+
     try {
-      await apiPut(`/api/admin/bookings/${encodeURIComponent(id)}`, { status }, { token });
+      setBookingActionBusyById((prev) => ({ ...prev, [bookingId]: true }));
+
+      const response = await apiPut(`/api/admin/bookings/${encodeURIComponent(bookingId)}`, { status }, { token });
+      const previousStatus = normalizeStatus(response?.previousStatus || "");
+      const currentStatus = normalizeStatus(response?.currentStatus || status);
+      syncBookingStatusLocally(bookingId, currentStatus);
+      const previousLabel = BOOKING_STATUS_LABELS[previousStatus] || String(previousStatus || "").trim();
+      const currentLabel = BOOKING_STATUS_LABELS[currentStatus] || String(status || "Pending");
+      const transitionText = previousLabel ? `${previousLabel} → ${currentLabel}` : currentLabel;
+      const customerEmailNotice = response?.notifications?.email;
+      let emailStatusSuffix = "";
+      if (customerEmailNotice?.sent) {
+        emailStatusSuffix = " Customer approval email sent.";
+      } else if (customerEmailNotice?.error) {
+        emailStatusSuffix = ` Customer email failed: ${String(customerEmailNotice.reason || "send error")}.`;
+      } else if (customerEmailNotice?.reason && !String(customerEmailNotice.reason).toLowerCase().includes("no status change")) {
+        emailStatusSuffix = ` Customer email status: ${String(customerEmailNotice.reason)}.`;
+      }
+
+      setDashboardNotice({
+        tone: "success",
+        message: `${sourceLabel}: Booking moved to ${transitionText}.${emailStatusSuffix}`
+      });
       await refreshDashboard();
     } catch (error) {
       setDashboardNotice({ tone: "error", message: getErrorMessage(error) });
+    } finally {
+      setBookingActionBusyById((prev) => {
+        const next = { ...prev };
+        delete next[bookingId];
+        return next;
+      });
     }
   }
 
@@ -482,6 +524,7 @@ export default function Admin() {
       const response = await apiPut(`/api/admin/product-orders/${encodeURIComponent(orderId)}`, { status }, { token });
       const normalizedNextStatus = normalizeStatus(response?.currentStatus || status);
       const normalizedPreviousStatus = normalizeStatus(response?.previousStatus || "");
+      syncOrderStatusLocally(orderId, normalizedNextStatus);
       const nextStatusLabel = getOrderStatusLabel(normalizedNextStatus || status);
       const previousStatusLabel = normalizedPreviousStatus ? getOrderStatusLabel(normalizedPreviousStatus) : "";
       const customerEmailNotice = response?.notifications?.customerEmail;
@@ -587,6 +630,48 @@ export default function Admin() {
 
   function normalizeStatus(value) {
     return String(value || "").trim().toLowerCase();
+  }
+
+  function syncBookingStatusLocally(bookingId, nextStatus) {
+    const normalizedId = String(bookingId || "").trim();
+    if (!normalizedId) return;
+    const normalizedNext = normalizeStatus(nextStatus) || "pending";
+    const nowIso = new Date().toISOString();
+
+    setDashboard((prev) => ({
+      ...prev,
+      bookings: Array.isArray(prev.bookings)
+        ? prev.bookings.map((booking) => {
+          if (String(booking?.id || "") !== normalizedId) return booking;
+          return {
+            ...booking,
+            status: normalizedNext,
+            updatedAt: nowIso
+          };
+        })
+        : prev.bookings
+    }));
+  }
+
+  function syncOrderStatusLocally(orderId, nextStatus) {
+    const normalizedId = String(orderId || "").trim();
+    if (!normalizedId) return;
+    const normalizedNext = normalizeStatus(nextStatus) || "pending";
+    const nowIso = new Date().toISOString();
+
+    setDashboard((prev) => ({
+      ...prev,
+      orders: Array.isArray(prev.orders)
+        ? prev.orders.map((order) => {
+          if (String(order?.id || "") !== normalizedId) return order;
+          return {
+            ...order,
+            status: normalizedNext,
+            updatedAt: nowIso
+          };
+        })
+        : prev.orders
+    }));
   }
 
   function getOrderStatusLabel(value) {
@@ -887,6 +972,18 @@ export default function Admin() {
   }
 
   const pendingBookings = dashboard.bookings.filter((item) => ["pending", "new"].includes(String(item.status || "").toLowerCase()));
+  const approvedBookings = useMemo(
+    () => dashboard.bookings.filter((item) => normalizeStatus(item.status) === "approved"),
+    [dashboard.bookings]
+  );
+  const pendingApprovalBookings = useMemo(
+    () => dashboard.bookings.filter((item) => ["pending", "new"].includes(normalizeStatus(item.status))),
+    [dashboard.bookings]
+  );
+  const focusedBooking = useMemo(
+    () => dashboard.bookings.find((item) => String(item?.id || "") === String(focusedBookingId || "")) || null,
+    [dashboard.bookings, focusedBookingId]
+  );
   const pendingOrders = dashboard.orders.filter((item) => ["pending", "new"].includes(String(item.status || "").toLowerCase()));
   const newRequestEntries = useMemo(() => {
     const bookingEntries = pendingBookings.map((item) => ({
@@ -2396,6 +2493,88 @@ export default function Admin() {
             icon="📖"
           >
               <SectionHeading eyebrow="Bookings" title="Update booking status" description="Each card is rendered directly in React." />
+            <div className="grid gap-4 rounded-[1.2rem] border border-line/70 bg-panel/85 p-4 lg:grid-cols-2">
+              <div className="space-y-3 rounded-xl border border-warning/35 bg-warning/5 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-ink">Pending approval</p>
+                  <StatusPill value={`${pendingApprovalBookings.length} pending`} />
+                </div>
+                {pendingApprovalBookings.length === 0 ? (
+                  <p className="text-xs text-ink-soft">No booking is waiting for approval.</p>
+                ) : (
+                  pendingApprovalBookings.slice(0, 4).map((item) => {
+                    const bookingId = String(item.id || "");
+                    const actionBusy = Boolean(bookingActionBusyById[bookingId]);
+                    return (
+                      <div key={`pending-approval-${item.id}`} className="rounded-lg border border-warning/30 bg-panel/92 p-3">
+                        <p className="text-sm font-semibold text-ink">{item.name || "Customer"}</p>
+                        <p className="mt-1 text-xs text-ink-soft">{item.serviceName || "Service"} · {item.date || ""} {item.time || ""}</p>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <Button
+                            type="button"
+                            onClick={() => saveBooking(item.id, "approved", { source: "approval-queue" })}
+                            disabled={actionBusy}
+                          >
+                            {actionBusy ? "Approving..." : "Approve booking"}
+                          </Button>
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => {
+                              setFocusedBookingId(String(item.id || ""));
+                              setBookingSearch(String(item.name || item.phone || item.id || ""));
+                              setBookingStatusFilter("all");
+                              setBookingsPage(1);
+                            }}
+                          >
+                            Open details
+                          </Button>
+                        </div>
+                      </div>
+                    );
+                  })
+                )}
+              </div>
+
+              <div className="space-y-3 rounded-xl border border-success/35 bg-success/5 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-ink">Approved bookings</p>
+                  <StatusPill value={`${approvedBookings.length} approved`} />
+                </div>
+                {approvedBookings.length === 0 ? (
+                  <p className="text-xs text-ink-soft">Approved bookings will appear here.</p>
+                ) : (
+                  approvedBookings.slice(0, 4).map((item) => (
+                    <div key={`approved-booking-${item.id}`} className="rounded-lg border border-success/30 bg-panel/92 p-3">
+                      <p className="text-sm font-semibold text-ink">{item.name || "Customer"}</p>
+                      <p className="mt-1 text-xs text-ink-soft">{item.serviceName || "Service"} · {item.date || ""} {item.time || ""}</p>
+                      <p className="mt-1 text-[11px] text-success">Approved by admin workflow</p>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+            {focusedBooking ? (
+              <div className="rounded-[1.2rem] border border-brand/35 bg-panel/90 p-4">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-ink">Booker details</p>
+                  <div className="flex items-center gap-2">
+                    <StatusPill value={focusedBooking.status || "pending"} />
+                    <Button type="button" variant="outline" onClick={() => setFocusedBookingId("")}>Close details</Button>
+                  </div>
+                </div>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  <DetailRow label="Booking ID" value={focusedBooking.id || "N/A"} />
+                  <DetailRow label="Name" value={focusedBooking.name || "N/A"} />
+                  <DetailRow label="Email" value={focusedBooking.email || "N/A"} />
+                  <DetailRow label="Phone" value={focusedBooking.phone || "N/A"} />
+                  <DetailRow label="Service" value={focusedBooking.serviceName || "N/A"} />
+                  <DetailRow label="Scheduled" value={`${focusedBooking.date || ""} ${focusedBooking.time || ""}`.trim() || "N/A"} />
+                  <DetailRow label="Payment method" value={focusedBooking.paymentMethod || "N/A"} />
+                  <DetailRow label="Amount due now" value={formatCurrency(focusedBooking.amountDueNow || 0)} />
+                </div>
+              </div>
+            ) : null}
             <div className="grid gap-3 md:grid-cols-3">
               <input
                 className="h-11 rounded-[1.2rem] border border-line bg-panel/92 px-4 text-sm text-ink"
