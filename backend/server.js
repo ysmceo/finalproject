@@ -2512,6 +2512,49 @@ function normalizeEmail(email) {
   return String(email || '').trim().toLowerCase();
 }
 
+function normalizeAdminRole(role) {
+  const normalized = String(role || '').trim().toLowerCase();
+  if (['super-admin', 'ops', 'support', 'inventory'].includes(normalized)) {
+    return normalized;
+  }
+  // Backward compatibility for legacy admins without role field.
+  return 'super-admin';
+}
+
+function getAdminRole(admin) {
+  return normalizeAdminRole(admin && admin.role ? admin.role : 'super-admin');
+}
+
+function toPublicAdmin(admin) {
+  return {
+    id: admin && admin.id ? admin.id : '',
+    email: admin && admin.email ? admin.email : '',
+    name: admin && admin.name ? admin.name : '',
+    role: getAdminRole(admin)
+  };
+}
+
+function pushAuditLog(db, entry) {
+  if (!db.settings || typeof db.settings !== 'object') {
+    db.settings = {};
+  }
+
+  if (!Array.isArray(db.settings.auditLogs)) {
+    db.settings.auditLogs = [];
+  }
+
+  db.settings.auditLogs.push({
+    id: uuidv4(),
+    createdAt: new Date().toISOString(),
+    ...entry
+  });
+
+  const maxEntries = 500;
+  if (db.settings.auditLogs.length > maxEntries) {
+    db.settings.auditLogs = db.settings.auditLogs.slice(db.settings.auditLogs.length - maxEntries);
+  }
+}
+
 function isValidEmail(email) {
   const normalized = normalizeEmail(email);
   if (!normalized) return false;
@@ -2875,10 +2918,27 @@ function requireAdminAuth(req, res, next) {
   req.admin = {
     id: admin.id,
     email: admin.email,
-    name: admin.name
+    name: admin.name,
+    role: getAdminRole(admin)
   };
 
   next();
+}
+
+function requireAdminRole(allowedRoles = []) {
+  const allowed = new Set((Array.isArray(allowedRoles) ? allowedRoles : []).map((role) => normalizeAdminRole(role)));
+
+  return (req, res, next) => {
+    const role = normalizeAdminRole(req && req.admin ? req.admin.role : '');
+    if (!allowed.has(role)) {
+      return res.status(403).json({
+        error: 'You do not have permission to perform this action',
+        requiredRoles: Array.from(allowed),
+        currentRole: role
+      });
+    }
+    return next();
+  };
 }
 
 function writeDatabase(data) {
@@ -3183,8 +3243,9 @@ app.get('/api/admin/product-orders/delivery-fees', requireAdminAuth, (req, res) 
   });
 });
 
-app.put('/api/admin/product-orders/delivery-fees', requireAdminAuth, (req, res) => {
+app.put('/api/admin/product-orders/delivery-fees', requireAdminAuth, requireAdminRole(['super-admin']), (req, res) => {
   const db = readDatabase();
+  const previousFees = getProductDeliveryFeeSettings(db);
   const standardRaw = Number(req.body && req.body.standard);
   const expressRaw = Number(req.body && req.body.express);
 
@@ -3200,6 +3261,14 @@ app.put('/api/admin/product-orders/delivery-fees', requireAdminAuth, (req, res) 
   }
 
   db.settings.productDeliveryFees = { standard, express };
+  pushAuditLog(db, {
+    actor: toPublicAdmin(req.admin),
+    action: 'update_delivery_fees',
+    targetType: 'settings',
+    targetId: 'productDeliveryFees',
+    before: previousFees,
+    after: db.settings.productDeliveryFees
+  });
   writeDatabase(db);
 
   return res.json({
@@ -3430,7 +3499,7 @@ app.get('/api/admin/products', requireAdminAuth, (req, res) => {
 });
 
 // Create product (Admin)
-app.post('/api/admin/products', requireAdminAuth, upload.single('productImage'), (req, res) => {
+app.post('/api/admin/products', requireAdminAuth, requireAdminRole(['super-admin', 'inventory']), upload.single('productImage'), (req, res) => {
   const { name, category, price, stock } = req.body;
   const normalizedName = String(name || '').trim();
   const normalizedCategory = String(category || '').trim();
@@ -3455,13 +3524,25 @@ app.post('/api/admin/products', requireAdminAuth, upload.single('productImage'),
   };
 
   db.products.unshift(product);
+  pushAuditLog(db, {
+    actor: toPublicAdmin(req.admin),
+    action: 'create_product',
+    targetType: 'product',
+    targetId: String(product.id),
+    after: {
+      name: product.name,
+      category: product.category,
+      price: product.price,
+      stock: product.stock
+    }
+  });
   writeDatabase(db);
 
   res.status(201).json({ message: 'Product added successfully', product });
 });
 
 // Update product image (Admin)
-app.put('/api/admin/products/:id/image', requireAdminAuth, upload.single('productImage'), (req, res) => {
+app.put('/api/admin/products/:id/image', requireAdminAuth, requireAdminRole(['super-admin', 'inventory']), upload.single('productImage'), (req, res) => {
   const productId = Number(req.params.id);
 
   if (!req.file) {
@@ -3475,17 +3556,27 @@ app.put('/api/admin/products/:id/image', requireAdminAuth, upload.single('produc
     return res.status(404).json({ error: 'Product not found' });
   }
 
+  const beforeImage = String(product.image || '');
   product.image = `/uploads/${req.file.filename}`;
   product.updatedAt = new Date().toISOString();
+  pushAuditLog(db, {
+    actor: toPublicAdmin(req.admin),
+    action: 'update_product_image',
+    targetType: 'product',
+    targetId: String(product.id),
+    before: { image: beforeImage },
+    after: { image: product.image }
+  });
   writeDatabase(db);
 
   res.json({ message: 'Product image updated successfully', product });
 });
 
 // Delete product (Admin)
-app.delete('/api/admin/products/:id', requireAdminAuth, (req, res) => {
+app.delete('/api/admin/products/:id', requireAdminAuth, requireAdminRole(['super-admin', 'inventory']), (req, res) => {
   const productId = Number(req.params.id);
   const db = readDatabase();
+  const existingProduct = db.products.find(p => Number(p.id) === productId) || null;
   const existingCount = db.products.length;
 
   db.products = db.products.filter(p => Number(p.id) !== productId);
@@ -3494,6 +3585,13 @@ app.delete('/api/admin/products/:id', requireAdminAuth, (req, res) => {
     return res.status(404).json({ error: 'Product not found' });
   }
 
+  pushAuditLog(db, {
+    actor: toPublicAdmin(req.admin),
+    action: 'delete_product',
+    targetType: 'product',
+    targetId: String(productId),
+    before: existingProduct
+  });
   writeDatabase(db);
   res.json({ message: 'Product deleted successfully' });
 });
@@ -4872,7 +4970,7 @@ app.get('/api/admin/product-orders', requireAdminAuth, async (req, res) => {
 });
 
 // Update product order status (Admin)
-app.put('/api/admin/product-orders/:id', requireAdminAuth, async (req, res) => {
+app.put('/api/admin/product-orders/:id', requireAdminAuth, requireAdminRole(['super-admin', 'ops']), async (req, res) => {
   const orderId = String(req.params.id || '').trim();
   const requestedStatus = String((req.body && req.body.status) || '').trim().toLowerCase();
   const status = normalizeProductOrderStatus(requestedStatus);
@@ -4890,6 +4988,10 @@ app.put('/api/admin/product-orders/:id', requireAdminAuth, async (req, res) => {
   }
 
   const previousStatus = normalizeProductOrderStatus(order.status || 'pending') || 'pending';
+  const beforeSnapshot = {
+    status: previousStatus,
+    deliverySpeed: normalizeDeliverySpeed(order.deliverySpeed)
+  };
   const statusChanged = previousStatus !== status;
   const speedChanged = normalizeDeliverySpeed(order.deliverySpeed) !== requestedDeliverySpeed;
 
@@ -4958,6 +5060,17 @@ app.put('/api/admin/product-orders/:id', requireAdminAuth, async (req, res) => {
     customerEmail = { sent: false, skipped: true, reason: 'No status change' };
   }
 
+  pushAuditLog(db, {
+    actor: toPublicAdmin(req.admin),
+    action: 'update_product_order_status',
+    targetType: 'productOrder',
+    targetId: String(order.id),
+    before: beforeSnapshot,
+    after: {
+      status,
+      deliverySpeed: order.deliverySpeed
+    }
+  });
   writeDatabase(db);
 
   return res.json({
@@ -4976,9 +5089,10 @@ app.put('/api/admin/product-orders/:id', requireAdminAuth, async (req, res) => {
 });
 
 // Delete product order (Admin)
-app.delete('/api/admin/product-orders/:id', requireAdminAuth, (req, res) => {
+app.delete('/api/admin/product-orders/:id', requireAdminAuth, requireAdminRole(['super-admin', 'ops']), (req, res) => {
   const orderId = String(req.params.id || '').trim();
   const db = readDatabase();
+  const existingOrder = (db.productOrders || []).find(o => String(o.id) === orderId) || null;
   const before = (db.productOrders || []).length;
   db.productOrders = (db.productOrders || []).filter(o => String(o.id) !== orderId);
 
@@ -4986,6 +5100,13 @@ app.delete('/api/admin/product-orders/:id', requireAdminAuth, (req, res) => {
     return res.status(404).json({ error: 'Product order not found' });
   }
 
+  pushAuditLog(db, {
+    actor: toPublicAdmin(req.admin),
+    action: 'delete_product_order',
+    targetType: 'productOrder',
+    targetId: orderId,
+    before: existingOrder
+  });
   writeDatabase(db);
   return res.json({ message: 'Product order deleted successfully' });
 });
@@ -5138,7 +5259,7 @@ app.get('/api/product-orders/payments/paystack/verify/:reference', async (req, r
 });
 
 // Update booking status (Admin)
-app.put('/api/admin/bookings/:id', requireAdminAuth, async (req, res) => {
+app.put('/api/admin/bookings/:id', requireAdminAuth, requireAdminRole(['super-admin', 'ops']), async (req, res) => {
   const { status } = req.body;
   const bookingId = req.params.id;
 
@@ -5164,6 +5285,7 @@ app.put('/api/admin/bookings/:id', requireAdminAuth, async (req, res) => {
   const previousStatusRaw = String(booking.status || '').trim().toLowerCase();
   const previousStatus = normalizedStatusMap[previousStatusRaw] || previousStatusRaw || 'pending';
   const statusChanged = previousStatus !== normalizedStatus;
+  const beforeSnapshot = { status: previousStatus };
 
   booking.status = normalizedStatus;
   booking.updatedAt = new Date().toISOString();
@@ -5237,6 +5359,14 @@ app.put('/api/admin/bookings/:id', requireAdminAuth, async (req, res) => {
     bookingStatusAdminEmailResult = { sent: false, skipped: true, reason: 'No status change' };
   }
 
+  pushAuditLog(db, {
+    actor: toPublicAdmin(req.admin),
+    action: 'update_booking_status',
+    targetType: 'booking',
+    targetId: String(booking.id),
+    before: beforeSnapshot,
+    after: { status: normalizedStatus }
+  });
   writeDatabase(db);
 
   const statusActionLabel = normalizedStatus === 'approved'
@@ -5262,7 +5392,7 @@ app.put('/api/admin/bookings/:id', requireAdminAuth, async (req, res) => {
 });
 
 // Approve or disapprove booking image
-app.put('/api/admin/bookings/:id/approve-image', requireAdminAuth, (req, res) => {
+app.put('/api/admin/bookings/:id/approve-image', requireAdminAuth, requireAdminRole(['super-admin', 'ops']), (req, res) => {
   const { approved } = req.body;
   const bookingId = req.params.id;
 
@@ -5290,6 +5420,16 @@ app.put('/api/admin/bookings/:id/approve-image', requireAdminAuth, (req, res) =>
   } else {
     booking.imageRejectedAt = nowIso;
   }
+
+  pushAuditLog(db, {
+    actor: toPublicAdmin(req.admin),
+    action: 'update_booking_image_approval',
+    targetType: 'booking',
+    targetId: String(booking.id),
+    after: {
+      imageApprovalStatus: booking.imageApprovalStatus
+    }
+  });
   writeDatabase(db);
 
   res.json({ message: 'Image approval updated successfully', booking });
@@ -5297,7 +5437,7 @@ app.put('/api/admin/bookings/:id/approve-image', requireAdminAuth, (req, res) =>
 
 // Test booking status notifications (Admin)
 // This endpoint helps confirm email/SMS delivery config without changing booking status.
-app.post('/api/admin/bookings/:id/test-notify', requireAdminAuth, async (req, res) => {
+app.post('/api/admin/bookings/:id/test-notify', requireAdminAuth, requireAdminRole(['super-admin', 'ops']), async (req, res) => {
   const bookingId = String(req.params.id || '').trim();
   const status = String((req.body && req.body.status) || 'approved').trim().toLowerCase();
 
@@ -5350,7 +5490,7 @@ app.post('/api/admin/bookings/:id/test-notify', requireAdminAuth, async (req, re
 });
 
 // Notify booking customer about staff/chair assignment (Admin)
-app.post('/api/admin/bookings/:id/assignment-notify', requireAdminAuth, async (req, res) => {
+app.post('/api/admin/bookings/:id/assignment-notify', requireAdminAuth, requireAdminRole(['super-admin', 'ops']), async (req, res) => {
   try {
     const bookingId = String(req.params.id || '').trim();
     const staff = String(req.body && req.body.staff ? req.body.staff : '').trim();
@@ -5551,6 +5691,23 @@ app.post('/api/admin/bookings/:id/assignment-notify', requireAdminAuth, async (r
         };
       }
     }
+
+    pushAuditLog(db, {
+      actor: toPublicAdmin(req.admin),
+      action: 'notify_booking_assignment',
+      targetType: 'booking',
+      targetId: String(booking.id),
+      after: {
+        assignment: {
+          staff,
+          chair,
+          date: resolvedDate,
+          time: resolvedTime
+        },
+        bookingStatus: statusAfterNotify,
+        autoApproved
+      }
+    });
 
     writeDatabase(db);
 
@@ -5936,13 +6093,43 @@ app.post('/api/admin/product-orders/:id/reply', requireAdminAuth, async (req, re
 });
 
 // Delete booking (Admin)
-app.delete('/api/admin/bookings/:id', requireAdminAuth, (req, res) => {
+app.delete('/api/admin/bookings/:id', requireAdminAuth, requireAdminRole(['super-admin', 'ops']), (req, res) => {
   const bookingId = req.params.id;
   const db = readDatabase();
+  const existingBooking = db.bookings.find(b => b.id === bookingId) || null;
   db.bookings = db.bookings.filter(b => b.id !== bookingId);
+
+  pushAuditLog(db, {
+    actor: toPublicAdmin(req.admin),
+    action: 'delete_booking',
+    targetType: 'booking',
+    targetId: String(bookingId),
+    before: existingBooking
+  });
   writeDatabase(db);
 
   res.json({ message: 'Booking deleted successfully' });
+});
+
+// Read admin audit logs (Super Admin)
+app.get('/api/admin/audit-logs', requireAdminAuth, requireAdminRole(['super-admin']), (req, res) => {
+  const db = readDatabase();
+  const limitRaw = Number(req.query.limit);
+  const limit = Number.isFinite(limitRaw) && limitRaw > 0
+    ? Math.min(200, Math.max(1, Math.floor(limitRaw)))
+    : 100;
+
+  const logs = Array.isArray(db.settings && db.settings.auditLogs)
+    ? [...db.settings.auditLogs]
+    : [];
+
+  logs.sort((a, b) => new Date(String(b && b.createdAt ? b.createdAt : 0)).getTime() - new Date(String(a && a.createdAt ? a.createdAt : 0)).getTime());
+
+  return res.json({
+    total: logs.length,
+    limit,
+    logs: logs.slice(0, limit)
+  });
 });
 
 // Admin Authentication Routes
@@ -6283,6 +6470,7 @@ app.post('/api/admin/register', (req, res) => {
     email: normalizedEmail,
     password: normalizedPassword,
     name: normalizedName,
+    role: 'super-admin',
     phone: normalizedPhone || '',
     createdAt: new Date().toISOString()
   };
@@ -6292,7 +6480,7 @@ app.post('/api/admin/register', (req, res) => {
 
   res.status(201).json({ 
     message: 'Admin registered successfully',
-    admin: { id: newAdmin.id, email: newAdmin.email, name: newAdmin.name }
+    admin: toPublicAdmin(newAdmin)
   });
 });
 
@@ -6342,11 +6530,7 @@ app.post('/api/admin/login', (req, res) => {
   if (usedSecretPasscodeForLogin) {
     return res.json({ 
       message: 'Login successful',
-      admin: { 
-        id: admin.id, 
-        email: admin.email, 
-        name: admin.name 
-      },
+      admin: toPublicAdmin(admin),
       token: Buffer.from(`${admin.email}:${admin.id}`).toString('base64')
     });
   }
@@ -6354,11 +6538,7 @@ app.post('/api/admin/login', (req, res) => {
   if (ALLOW_ADMIN_PASSWORD_ONLY_LOGIN && !normalizedSecretPasscode && !normalizedOneTimeCode) {
     return res.json({
       message: 'Login successful',
-      admin: {
-        id: admin.id,
-        email: admin.email,
-        name: admin.name
-      },
+      admin: toPublicAdmin(admin),
       token: Buffer.from(`${admin.email}:${admin.id}`).toString('base64')
     });
   }
@@ -6389,11 +6569,7 @@ app.post('/api/admin/login', (req, res) => {
 
   res.json({ 
     message: 'Login successful',
-    admin: { 
-      id: admin.id, 
-      email: admin.email, 
-      name: admin.name 
-    },
+    admin: toPublicAdmin(admin),
     token: Buffer.from(`${admin.email}:${admin.id}`).toString('base64')
   });
 });
@@ -6420,11 +6596,7 @@ app.post('/api/admin/verify', (req, res) => {
 
     res.json({ 
       valid: true, 
-      admin: { 
-        id: admin.id, 
-        email: admin.email, 
-        name: admin.name 
-      }
+      admin: toPublicAdmin(admin)
     });
   } catch (error) {
     res.status(401).json({ error: 'Invalid token' });
