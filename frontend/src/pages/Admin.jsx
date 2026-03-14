@@ -17,6 +17,7 @@ import {
   TextField
 } from "@/components/site/shared";
 import { formatCurrency, getErrorMessage } from "@/lib/site";
+import { resolveMediaSrc } from "@/lib/storefront";
 
 const TOKEN_KEY = "ceo-salon-admin-token";
 const BOOKING_STATUSES = ["pending", "approved", "cancelled", "completed"];
@@ -391,7 +392,7 @@ export default function Admin() {
       formData.append("category", productForm.category);
       formData.append("price", productForm.price);
       formData.append("stock", productForm.stock);
-      if (productForm.image) formData.append("image", productForm.image);
+      if (productForm.image) formData.append("productImage", productForm.image);
 
       await apiRequest("/api/admin/products", {
         method: "POST",
@@ -2413,7 +2414,7 @@ export default function Admin() {
                 <div key={item.id} className="rounded-[1.4rem] border border-line/70 bg-panel/92 p-4 flex gap-4 items-center">
                   {item.image && (
                     <img
-                      src={typeof item.image === "string" ? item.image : `/uploads/${item.image}`}
+                      src={resolveMediaSrc(item.image) || undefined}
                       alt={item.name}
                       className="w-20 h-20 object-cover rounded-lg border border-line"
                       style={{ background: '#f8f8f8' }}

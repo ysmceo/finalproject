@@ -2211,6 +2211,27 @@ function normalizePhone(phone) {
   return String(phone || '').trim();
 }
 
+function getProductFreshnessScore(product) {
+  const updatedAtMs = Date.parse(String(product && product.updatedAt ? product.updatedAt : ''));
+  if (Number.isFinite(updatedAtMs)) {
+    return updatedAtMs;
+  }
+
+  const createdAtMs = Date.parse(String(product && product.createdAt ? product.createdAt : ''));
+  if (Number.isFinite(createdAtMs)) {
+    return createdAtMs;
+  }
+
+  const numericId = Number(product && product.id ? product.id : 0);
+  return Number.isFinite(numericId) ? numericId : 0;
+}
+
+function sortProductsForDisplay(products) {
+  const list = Array.isArray(products) ? [...products] : [];
+  list.sort((a, b) => getProductFreshnessScore(b) - getProductFreshnessScore(a));
+  return list;
+}
+
 function buildBankTransferReference(bookingId) {
   const shortId = String(bookingId || '').replace(/[^a-zA-Z0-9]/g, '').slice(0, 8).toUpperCase();
   return `CEOSALOON-${shortId || 'BOOKING'}`;
@@ -2477,6 +2498,14 @@ function generateOneTimeCode() {
 
 function normalizeOneTimeCode(code) {
   return String(code || '').replace(/\D/g, '').trim();
+}
+
+function normalizeTrackingToken(value) {
+  return String(value || '')
+    .trim()
+    .replace(/[\u2010-\u2015]/g, '-')
+    .replace(/\s+/g, '')
+    .toUpperCase();
 }
 
 function normalizeEmail(email) {
@@ -2911,7 +2940,7 @@ app.get('/api/services', (req, res) => {
 // Get all products
 app.get('/api/products', (req, res) => {
   const db = readDatabase();
-  res.json(db.products);
+  res.json(sortProductsForDisplay(db.products));
 });
 
 // Get booking staff list (Customer)
@@ -3181,7 +3210,7 @@ app.put('/api/admin/product-orders/delivery-fees', requireAdminAuth, (req, res) 
 
 // Track product order by order code + email (Customer)
 app.get('/api/product-orders/track', async (req, res) => {
-  const orderCode = String(req.query.orderCode || '').trim().toUpperCase();
+  const orderCode = normalizeTrackingToken(req.query.orderCode);
   const email = normalizeEmail(req.query.email);
 
   if (!orderCode || !email) {
@@ -3189,7 +3218,8 @@ app.get('/api/product-orders/track', async (req, res) => {
   }
 
   const db = readDatabase();
-  const order = (db.productOrders || []).find(o => String(o.orderCode || '').trim().toUpperCase() === orderCode);
+  const order = (db.productOrders || []).find(o => String(o.orderCode || '').trim().toUpperCase() === orderCode)
+    || (db.productOrders || []).find(o => String(o.id || '').trim().toUpperCase() === orderCode);
 
   if (!order) {
     return res.status(404).json({ error: 'Product order not found' });
@@ -3396,7 +3426,7 @@ app.get('/api/product-orders/:id/invoice', async (req, res) => {
 // Get all products (Admin)
 app.get('/api/admin/products', requireAdminAuth, (req, res) => {
   const db = readDatabase();
-  res.json(db.products);
+  res.json(sortProductsForDisplay(db.products));
 });
 
 // Create product (Admin)
@@ -3424,7 +3454,7 @@ app.post('/api/admin/products', requireAdminAuth, upload.single('productImage'),
     createdAt: new Date().toISOString()
   };
 
-  db.products.push(product);
+  db.products.unshift(product);
   writeDatabase(db);
 
   res.status(201).json({ message: 'Product added successfully', product });
@@ -4598,7 +4628,7 @@ app.get('/api/payments/paystack/verify/:reference', async (req, res) => {
 
 // Track booking status + notifications by tracking code (Customer)
 app.get('/api/bookings/track', (req, res) => {
-  const trackingCode = String(req.query.trackingCode || '').trim().toUpperCase();
+  const trackingCode = normalizeTrackingToken(req.query.trackingCode);
   const email = normalizeEmail(req.query.email);
 
   if (!trackingCode || !email) {
@@ -4606,7 +4636,8 @@ app.get('/api/bookings/track', (req, res) => {
   }
 
   const db = readDatabase();
-  const booking = db.bookings.find(b => getBookingTrackingCode(b) === trackingCode);
+  const booking = db.bookings.find(b => getBookingTrackingCode(b) === trackingCode)
+    || db.bookings.find(b => String(b.id || '').trim().toUpperCase() === trackingCode);
 
   if (!booking) {
     return res.status(404).json({ error: 'Booking not found' });

@@ -7,6 +7,31 @@ import { apiGet } from "@/lib/api";
 import { formatDateTime, getErrorMessage } from "@/lib/site";
 import { sectionBackdrops } from "@/lib/landing";
 
+const ORDER_PROGRESS_STEPS = [
+  { key: "pending", label: "Order received", statuses: ["pending", "approved", "processed", "shipped", "on_the_way", "delivered"] },
+  { key: "approved", label: "Approved", statuses: ["approved", "processed", "shipped", "on_the_way", "delivered"] },
+  { key: "processed", label: "Processing", statuses: ["processed", "shipped", "on_the_way", "delivered"] },
+  { key: "shipped", label: "Shipped", statuses: ["shipped", "on_the_way", "delivered"] },
+  { key: "on_the_way", label: "On the way", statuses: ["on_the_way", "delivered"] },
+  { key: "delivered", label: "Delivered", statuses: ["delivered"] }
+];
+
+function normalizeTrackingInput(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[\u2010-\u2015]/g, "-")
+    .replace(/\s+/g, "")
+    .toUpperCase();
+}
+
+function isStepComplete(step, status) {
+  if (String(status || "").toLowerCase() === "cancelled") {
+    return false;
+  }
+
+  return step.statuses.includes(String(status || "").toLowerCase());
+}
+
 function TrackingHeroAside() {
   return (
     <div className="grid gap-4">
@@ -33,9 +58,20 @@ export default function TrackOrder() {
     event.preventDefault();
     setNotice(null);
 
+    const normalizedOrderCode = normalizeTrackingInput(form.orderCode);
+    const normalizedEmail = String(form.email || "").trim().toLowerCase();
+
+    if (!normalizedOrderCode || !normalizedEmail) {
+      setResult(null);
+      setNotice({ tone: "error", message: "Please enter both order code and order email." });
+      return;
+    }
+
+    setForm((current) => ({ ...current, orderCode: normalizedOrderCode, email: normalizedEmail }));
+
     try {
       const data = await apiGet(
-        `/api/product-orders/track?orderCode=${encodeURIComponent(form.orderCode)}&email=${encodeURIComponent(form.email)}`
+        `/api/product-orders/track?orderCode=${encodeURIComponent(normalizedOrderCode)}&email=${encodeURIComponent(normalizedEmail)}`
       );
       setResult(data);
       setNotice({ tone: "success", message: "Order loaded." });
@@ -46,6 +82,7 @@ export default function TrackOrder() {
   }
 
   const order = result?.order;
+  const normalizedStatus = String(order?.status || "pending").toLowerCase();
 
   return (
     <SitePageShell
@@ -88,12 +125,45 @@ export default function TrackOrder() {
         <div className="space-y-6 xl:sticky xl:top-32 xl:self-start">
           <Surface className="space-y-5">
             <SectionHeading
+              description="Live fulfillment progress for your product order."
+              eyebrow="Progress"
+              title="Order progress"
+            />
+            {order ? (
+              <div className="space-y-3 rounded-3xl border border-line/70 bg-panel/92 px-5 py-4">
+                {normalizedStatus === "cancelled" ? (
+                  <Notice tone="error" message="This order was cancelled. Please contact support for assistance." />
+                ) : null}
+                <div className="grid gap-2">
+                  {ORDER_PROGRESS_STEPS.map((step, index) => {
+                    const completed = isStepComplete(step, normalizedStatus);
+                    return (
+                      <div
+                        key={step.key}
+                        className={`flex items-center justify-between rounded-xl border px-3 py-2 text-sm ${completed ? "border-success/40 bg-success/10" : "border-line/70 bg-panel/80"}`}
+                      >
+                        <span className="text-ink">{index + 1}. {step.label}</span>
+                        <span className={`text-xs font-semibold uppercase tracking-[0.16em] ${completed ? "text-success" : "text-ink-soft"}`}>
+                          {completed ? "Done" : "Pending"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <EmptyState description="Search for your order to see real-time progress." title="No progress yet" />
+            )}
+          </Surface>
+
+          <Surface className="space-y-5">
+            <SectionHeading
               description="Order details appear here after a successful lookup."
               eyebrow="Details"
               title="Order overview"
             />
             {order ? (
-              <div className="space-y-3 rounded-[1.5rem] border border-line/70 bg-panel/92 px-5 py-4">
+              <div className="space-y-3 rounded-3xl border border-line/70 bg-panel/92 px-5 py-4">
                 <DetailRow label="Order code" value={order.orderCode || form.orderCode} />
                 <DetailRow label="Client" value={order.name || "Guest"} />
                 <DetailRow label="Email" value={order.email || form.email} />

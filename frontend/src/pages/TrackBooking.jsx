@@ -7,6 +7,28 @@ import { apiGet } from "@/lib/api";
 import { getErrorMessage, formatDateTime } from "@/lib/site";
 import { sectionBackdrops } from "@/lib/landing";
 
+const BOOKING_PROGRESS_STEPS = [
+  { key: "pending", label: "Request received", statuses: ["pending", "approved", "completed"] },
+  { key: "approved", label: "Approved by salon", statuses: ["approved", "completed"] },
+  { key: "completed", label: "Service completed", statuses: ["completed"] }
+];
+
+function normalizeTrackingInput(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[\u2010-\u2015]/g, "-")
+    .replace(/\s+/g, "")
+    .toUpperCase();
+}
+
+function isStepComplete(step, status) {
+  if (String(status || "").toLowerCase() === "cancelled") {
+    return false;
+  }
+
+  return step.statuses.includes(String(status || "").toLowerCase());
+}
+
 function TrackingHeroAside() {
   return (
     <div className="grid gap-4">
@@ -33,9 +55,20 @@ export default function TrackBooking() {
     event.preventDefault();
     setNotice(null);
 
+    const normalizedTrackingCode = normalizeTrackingInput(form.trackingCode);
+    const normalizedEmail = String(form.email || "").trim().toLowerCase();
+
+    if (!normalizedTrackingCode || !normalizedEmail) {
+      setResult(null);
+      setNotice({ tone: "error", message: "Please enter both booking code and booking email." });
+      return;
+    }
+
+    setForm((current) => ({ ...current, trackingCode: normalizedTrackingCode, email: normalizedEmail }));
+
     try {
       const data = await apiGet(
-        `/api/bookings/track?trackingCode=${encodeURIComponent(form.trackingCode)}&email=${encodeURIComponent(form.email)}`
+        `/api/bookings/track?trackingCode=${encodeURIComponent(normalizedTrackingCode)}&email=${encodeURIComponent(normalizedEmail)}`
       );
       setResult(data);
       setNotice({ tone: "success", message: "Booking loaded." });
@@ -46,6 +79,7 @@ export default function TrackBooking() {
   }
 
   const booking = result?.booking;
+  const normalizedStatus = String(booking?.status || "pending").toLowerCase();
 
   return (
     <SitePageShell
@@ -88,12 +122,45 @@ export default function TrackBooking() {
         <div className="space-y-6 xl:sticky xl:top-32 xl:self-start">
           <Surface className="space-y-5">
             <SectionHeading
+              description="Live approval progress for your appointment."
+              eyebrow="Progress"
+              title="Booking progress"
+            />
+            {booking ? (
+              <div className="space-y-3 rounded-3xl border border-line/70 bg-panel/92 px-5 py-4">
+                {normalizedStatus === "cancelled" ? (
+                  <Notice tone="error" message="This booking was cancelled. Please contact support to reschedule." />
+                ) : null}
+                <div className="grid gap-2">
+                  {BOOKING_PROGRESS_STEPS.map((step, index) => {
+                    const completed = isStepComplete(step, normalizedStatus);
+                    return (
+                      <div
+                        key={step.key}
+                        className={`flex items-center justify-between rounded-xl border px-3 py-2 text-sm ${completed ? "border-success/40 bg-success/10" : "border-line/70 bg-panel/80"}`}
+                      >
+                        <span className="text-ink">{index + 1}. {step.label}</span>
+                        <span className={`text-xs font-semibold uppercase tracking-[0.16em] ${completed ? "text-success" : "text-ink-soft"}`}>
+                          {completed ? "Done" : "Pending"}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ) : (
+              <EmptyState description="Search for your booking to see live approval progress." title="No progress yet" />
+            )}
+          </Surface>
+
+          <Surface className="space-y-5">
+            <SectionHeading
               description="Appointment details appear here after a successful lookup."
               eyebrow="Details"
               title="Booking overview"
             />
             {booking ? (
-              <div className="space-y-3 rounded-[1.5rem] border border-line/70 bg-panel/92 px-5 py-4">
+              <div className="space-y-3 rounded-3xl border border-line/70 bg-panel/92 px-5 py-4">
                 <DetailRow label="Booking code" value={result.trackingCode || booking.trackingCode || form.trackingCode} />
                 <DetailRow label="Client" value={booking.name || "Guest"} />
                 <DetailRow label="Email" value={booking.email || form.email} />
