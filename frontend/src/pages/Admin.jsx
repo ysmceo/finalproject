@@ -22,6 +22,16 @@ import { resolveMediaSrc } from "@/lib/storefront";
 const TOKEN_KEY = "ceo-salon-admin-token";
 const BOOKING_STATUSES = ["pending", "approved", "cancelled", "completed"];
 const ORDER_STATUSES = ["pending", "approved", "processed", "shipped", "on_the_way", "delivered", "cancelled"];
+const ORDER_STATUS_LABELS = {
+  pending: "Pending",
+  approved: "Approved",
+  processed: "Processed",
+  shipped: "Shipped",
+  on_the_way: "On the way",
+  delivered: "Delivered",
+  cancelled: "Cancelled"
+};
+const ORDER_STATUS_FLOW_TEXT = "Pending → Approved → Processed → Shipped → On the way → Delivered";
 const ADMIN_BACKGROUND_VIDEO_URL = "https://cdn.dribbble.com/userupload/44652968/file/313877bf29b8434b808c8aaad3f89a21.mp4";
 const ADMIN_BACKGROUND_FALLBACK_IMAGE_URL = "/images/p1.webp";
 const ADMIN_BACKGROUND_INTERCHANGE_IMAGE_URL = "https://cdn.dribbble.com/userupload/46843023/file/c8ecfc7f661d1ee36316579ecc740df8.png?resize=1504x859&vertical=center";
@@ -183,6 +193,7 @@ export default function Admin() {
   const [orderDateFilter, setOrderDateFilter] = useState("");
   const [selectedBookingIds, setSelectedBookingIds] = useState([]);
   const [selectedOrderIds, setSelectedOrderIds] = useState([]);
+  const [orderActionBusyById, setOrderActionBusyById] = useState({});
   const [bulkBookingStatus, setBulkBookingStatus] = useState("approved");
   const [bulkOrderStatus, setBulkOrderStatus] = useState("processed");
   const [activePanel, setActivePanel] = useState(null);
@@ -458,12 +469,52 @@ export default function Admin() {
     }
   }
 
-  async function saveOrder(id, status) {
+  async function saveOrder(id, status, options = {}) {
+    const orderId = String(id || "").trim();
+    if (!orderId) return;
+
+    const source = String(options?.source || "queue").trim().toLowerCase();
+    const sourceLabel = source === "queue" ? "Incoming queue" : "Orders panel";
+
     try {
-      await apiPut(`/api/admin/product-orders/${encodeURIComponent(id)}`, { status }, { token });
+      setOrderActionBusyById((prev) => ({ ...prev, [orderId]: true }));
+
+      const response = await apiPut(`/api/admin/product-orders/${encodeURIComponent(orderId)}`, { status }, { token });
+      const normalizedNextStatus = normalizeStatus(response?.currentStatus || status);
+      const normalizedPreviousStatus = normalizeStatus(response?.previousStatus || "");
+      const nextStatusLabel = getOrderStatusLabel(normalizedNextStatus || status);
+      const previousStatusLabel = normalizedPreviousStatus ? getOrderStatusLabel(normalizedPreviousStatus) : "";
+      const customerEmailNotice = response?.notifications?.customerEmail;
+      const shouldIncludeEmailNotice = ["approved", "processed", "shipped", "on_the_way", "delivered", "cancelled"].includes(normalizedNextStatus);
+
+      let emailStatusSuffix = "";
+      if (shouldIncludeEmailNotice) {
+        if (customerEmailNotice?.sent) {
+          emailStatusSuffix = " Customer notification email sent.";
+        } else if (customerEmailNotice?.error) {
+          emailStatusSuffix = ` Customer email failed: ${String(customerEmailNotice.reason || "send error")}.`;
+        } else if (customerEmailNotice?.reason && !String(customerEmailNotice.reason).toLowerCase().includes("no status change")) {
+          emailStatusSuffix = ` Customer email status: ${String(customerEmailNotice.reason)}.`;
+        }
+      }
+
+      const transitionText = previousStatusLabel && nextStatusLabel
+        ? `${previousStatusLabel} → ${nextStatusLabel}`
+        : nextStatusLabel;
+
+      setDashboardNotice({
+        tone: "success",
+        message: `${sourceLabel}: Order moved to ${transitionText}.${emailStatusSuffix}`
+      });
       await refreshDashboard();
     } catch (error) {
       setDashboardNotice({ tone: "error", message: getErrorMessage(error) });
+    } finally {
+      setOrderActionBusyById((prev) => {
+        const next = { ...prev };
+        delete next[orderId];
+        return next;
+      });
     }
   }
 
@@ -536,6 +587,11 @@ export default function Admin() {
 
   function normalizeStatus(value) {
     return String(value || "").trim().toLowerCase();
+  }
+
+  function getOrderStatusLabel(value) {
+    const normalized = normalizeStatus(value);
+    return ORDER_STATUS_LABELS[normalized] || String(value || "Pending");
   }
 
   function getItemDate(item) {
@@ -2259,6 +2315,9 @@ export default function Admin() {
                           }
 
                           const item = entry.data;
+                          const currentOrderStatus = normalizeStatus(item.status);
+                          const orderActionBusy = Boolean(orderActionBusyById[String(item.id) || ""]);
+                          const customerStatusEmailAt = item?.lastStatusEmailSentAt ? new Date(item.lastStatusEmailSentAt).toLocaleString() : "";
                           return (
                             <div key={`new-order-${item.id}`} className="rounded-[1.4rem] border border-brand-dark bg-panel/92 p-4">
                               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -2277,6 +2336,42 @@ export default function Admin() {
                                 <DetailRow label="Phone" value={item.phone || "N/A"} />
                                 <DetailRow label="Delivery speed" value={item.deliverySpeed} />
                                 <DetailRow label="Total" value={formatCurrency(item.totalAmount)} />
+                              </div>
+                              <div className="mt-3 rounded-xl border border-line/70 bg-panel/85 px-3 py-2">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-soft">Standard order flow</p>
+                                <p className="mt-1 text-xs text-ink-soft">{ORDER_STATUS_FLOW_TEXT}</p>
+                                {customerStatusEmailAt ? (
+                                  <p className="mt-1 text-xs text-success">Customer status email last sent: {customerStatusEmailAt}</p>
+                                ) : null}
+                              </div>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <Button
+                                  type="button"
+                                  onClick={() => saveOrder(item.id, "approved", { source: "queue" })}
+                                  disabled={orderActionBusy || ["approved", "processed", "shipped", "on_the_way", "delivered"].includes(currentOrderStatus)}
+                                >
+                                  {orderActionBusy ? "Updating..." : "Approve order"}
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => saveOrder(item.id, "cancelled", { source: "queue" })}
+                                  disabled={orderActionBusy || currentOrderStatus === "cancelled"}
+                                >
+                                  Cancel order
+                                </Button>
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  onClick={() => {
+                                    setActivePanel("orders");
+                                    setOrderSearch(String(item.orderCode || item.id || ""));
+                                    setOrderStatusFilter("all");
+                                    setOrdersPage(1);
+                                  }}
+                                >
+                                  Open full workflow
+                                </Button>
                               </div>
                               {renderOrderContactActions(item)}
                               {renderOrderReplyComposer(item)}
@@ -2454,7 +2549,7 @@ export default function Admin() {
                   <DetailRow label="Total" value={formatCurrency(item.totalAmount)} />
                 </div>
                 <div className="mt-4 flex gap-3">
-                  <select className="h-11 flex-1 rounded-[1.4rem] border border-line bg-panel/92 px-4 text-ink" value={item.status} onChange={(event) => saveOrder(item.id, event.target.value)}>
+                  <select className="h-11 flex-1 rounded-[1.4rem] border border-line bg-panel/92 px-4 text-ink" value={item.status} onChange={(event) => saveOrder(item.id, event.target.value, { source: "orders-panel" })}>
                     {ORDER_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
                   </select>
                 </div>
@@ -2472,7 +2567,7 @@ export default function Admin() {
                       <p className="text-xs text-ink-soft">{item.email || "N/A"} · {item.phone || "N/A"}</p>
                     </div>
                     <StatusPill value={item.status} />
-                    <select className="h-10 rounded-[0.9rem] border border-line bg-panel/92 px-3 text-sm text-ink" value={item.status} onChange={(event) => saveOrder(item.id, event.target.value)}>
+                    <select className="h-10 rounded-[0.9rem] border border-line bg-panel/92 px-3 text-sm text-ink" value={item.status} onChange={(event) => saveOrder(item.id, event.target.value, { source: "orders-panel" })}>
                       {ORDER_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
                     </select>
                     <div className="md:col-span-4">
