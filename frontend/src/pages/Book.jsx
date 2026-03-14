@@ -11,6 +11,26 @@ import { getErrorMessage, formatCurrency } from "@/lib/site";
 import { buildSelectedItems, getSelectionTotal, getTodayDateInputValue, loadCatalog, PAYMENT_METHODS } from "@/lib/storefront";
 import { sectionBackdrops } from "@/lib/landing";
 
+const CASH_PAYMENT_METHOD = "Cash";
+
+function getPaystackChannelFromMethod(paymentMethod) {
+  const method = String(paymentMethod || "").trim();
+
+  if (method === "USSD") {
+    return "ussd";
+  }
+
+  if (method === "Bank Transfer") {
+    return "bank_transfer";
+  }
+
+  if (method === "Credit Card" || method === "Debit Card") {
+    return "card";
+  }
+
+  return "";
+}
+
 function BookingHeroAside({ serviceCount, productCount }) {
   return (
     <div className="grid gap-4">
@@ -60,6 +80,9 @@ export default function Book() {
   const [bookingProducts, setBookingProducts] = useState({});
   const [bookingNotice, setBookingNotice] = useState(null);
   const [bookingResult, setBookingResult] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+
+  const isCashPayment = String(booking.paymentMethod || "").trim() === CASH_PAYMENT_METHOD;
 
   useEffect(() => {
     let active = true;
@@ -126,9 +149,31 @@ export default function Book() {
     (booking.paymentPlan === "deposit_50" ? Math.ceil(serviceSubtotal * 0.5) : serviceSubtotal) +
     addonsSubtotal;
 
+  useEffect(() => {
+    try {
+      const latestStatus = String(localStorage.getItem("lastPaymentStatus") || "").trim();
+      const latestBookingId = String(localStorage.getItem("lastPaymentBookingId") || "").trim();
+
+      if (latestStatus === "paid" && latestBookingId) {
+        setBookingNotice({
+          tone: "success",
+          message: `Payment verified successfully for booking ${latestBookingId}.`
+        });
+      } else if (latestStatus === "failed" && latestBookingId) {
+        setBookingNotice({
+          tone: "error",
+          message: `Payment was not completed for booking ${latestBookingId}. You can retry from the tracking page.`
+        });
+      }
+    } catch {
+      // Ignore browser storage errors.
+    }
+  }, []);
+
   async function submitBooking(event) {
     event.preventDefault();
     setBookingNotice(null);
+    setSubmitting(true);
 
     const payload = new FormData();
     payload.append("name", booking.name);
@@ -150,9 +195,70 @@ export default function Book() {
     try {
       const data = await apiRequest("/api/bookings", { method: "POST", body: payload });
       setBookingResult(data);
-      setBookingNotice({ tone: "success", message: data.message || "Booking created." });
+
+      const createdBooking = data && data.booking ? data.booking : null;
+      const bookingId = String(createdBooking && createdBooking.id ? createdBooking.id : "").trim();
+      const normalizedPaymentMethod = String(booking.paymentMethod || "").trim();
+
+      if (normalizedPaymentMethod === CASH_PAYMENT_METHOD) {
+        setBookingNotice({ tone: "success", message: data.message || "Booking created. Pay with cash at the salon." });
+        return;
+      }
+
+      if (normalizedPaymentMethod === "Bank Transfer") {
+        const bankRef = data && data.paymentBankDetails && data.paymentBankDetails.reference
+          ? ` Use reference ${data.paymentBankDetails.reference}.`
+          : "";
+
+        setBookingNotice({
+          tone: "success",
+          message: `${data.message || "Booking created."} Please complete your transfer to validate payment.${bankRef}`
+        });
+        return;
+      }
+
+      if (!bookingId) {
+        setBookingNotice({
+          tone: "error",
+          message: "Booking was created, but payment could not be started automatically. Please track your booking and retry payment."
+        });
+        return;
+      }
+
+      try {
+        const paymentChannel = getPaystackChannelFromMethod(normalizedPaymentMethod);
+        const paymentInit = await apiRequest("/api/payments/paystack/initialize", {
+          method: "POST",
+          body: {
+            bookingId,
+            email: booking.email,
+            paymentChannel: paymentChannel || undefined
+          }
+        });
+
+        if (paymentInit && paymentInit.authorizationUrl) {
+          setBookingNotice({
+            tone: "success",
+            message: "Booking created. Redirecting you to secure payment now..."
+          });
+          window.location.assign(paymentInit.authorizationUrl);
+          return;
+        }
+
+        setBookingNotice({
+          tone: "error",
+          message: "Booking created, but payment link was not returned. Please retry payment from your booking tracking page."
+        });
+      } catch (paymentError) {
+        setBookingNotice({
+          tone: "error",
+          message: `Booking created, but payment initialization failed: ${getErrorMessage(paymentError)}`
+        });
+      }
     } catch (error) {
       setBookingNotice({ tone: "error", message: getErrorMessage(error) });
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -335,8 +441,12 @@ export default function Book() {
               <ProductPicker onChange={(id, value) => setBookingProducts((current) => ({ ...current, [id]: value }))} products={products} quantities={bookingProducts} />
             </Field>
 
-            <Button className="w-full sm:w-auto" disabled={!booking.serviceIds.length || !booking.selectedStaff} type="submit">
-              Create booking
+            <Button className="w-full sm:w-auto" disabled={!booking.serviceIds.length || !booking.selectedStaff || submitting} type="submit">
+              {submitting
+                ? "Submitting..."
+                : isCashPayment
+                  ? "Create booking (Cash)"
+                  : "Create booking & continue to payment"}
             </Button>
           </form>
         </Surface>
@@ -351,10 +461,16 @@ export default function Book() {
             <div className="space-y-3 rounded-3xl border border-line/70 bg-panel/92 px-5 py-4">
               <DetailRow label="Selected services" value={String(selectedServices.length)} />
               <DetailRow label="Preferred staff" value={booking.selectedStaff || "Not selected"} />
+              <DetailRow label="Payment method" value={booking.paymentMethod || "Not selected"} />
               <DetailRow label="Service subtotal" value={formatCurrency(serviceSubtotal)} />
               <DetailRow label="Product add-ons" value={formatCurrency(addonsSubtotal)} />
               <DetailRow label="Due now" value={formatCurrency(dueNow)} />
             </div>
+            <p className="text-sm text-ink-soft">
+              {isCashPayment
+                ? "Cash selected: your booking submits directly and payment happens in person."
+                : "Non-cash selected: after booking submission, you will continue to on-site payment validation."}
+            </p>
             {selectedServices.length ? (
               <div className="space-y-3">
                 {selectedServices.map((service) => (
@@ -369,6 +485,17 @@ export default function Book() {
             ) : (
               <EmptyState description="Add one or more services to build your appointment estimate." title="No service selected" />
             )}
+            {bookingResult?.paymentBankDetails ? (
+              <div className="space-y-2 rounded-[1.4rem] border border-line/70 bg-panel/92 px-4 py-3 text-sm text-ink-soft">
+                <p className="text-xs font-semibold uppercase tracking-[0.2em] text-brand-deep/75">Bank transfer details</p>
+                <p>
+                  {bookingResult.paymentBankDetails.bankName} · {bookingResult.paymentBankDetails.accountNumber}
+                </p>
+                <p>{bookingResult.paymentBankDetails.accountName}</p>
+                <p>Reference: {bookingResult.paymentBankDetails.reference}</p>
+                <p>Amount due now: {formatCurrency(bookingResult.paymentBankDetails.amountDueNow)}</p>
+              </div>
+            ) : null}
           </Surface>
 
           <Surface className="space-y-4 bg-night text-white shadow-glow">

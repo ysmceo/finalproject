@@ -56,6 +56,11 @@ const GROK_MODEL = String(process.env.GROK_MODEL || 'grok-2-latest').trim();
 
 const PAYMENTS_MODE = String(process.env.PAYMENTS_MODE || 'test').trim().toLowerCase();
 const IS_LIVE_MODE = PAYMENTS_MODE === 'live';
+const BOOKING_PAYMENT_METHODS = ['Bank Transfer', 'Credit Card', 'Debit Card', 'USSD', 'Cash'];
+
+function isCashPaymentMethod(method) {
+  return String(method || '').trim().toLowerCase() === 'cash';
+}
 
 function isLikelyPaystackLiveKey(key) {
   return String(key || '').trim().toLowerCase().startsWith('sk_live');
@@ -3710,7 +3715,9 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
     productSelections
   } = req.body;
 
+  const normalizedPaymentMethod = String(paymentMethod || '').trim();
   const normalizedPaymentPlan = String(paymentPlan || '').trim();
+  const requiresOnlinePaymentValidation = !isCashPaymentMethod(normalizedPaymentMethod);
   const normalizedHomeServiceRequested = String(homeServiceRequested || '').trim().toLowerCase();
   const isHomeServiceRequested = normalizedHomeServiceRequested === 'true' || normalizedHomeServiceRequested === '1' || normalizedHomeServiceRequested === 'yes';
   const normalizedHomeServiceAddress = String(homeServiceAddress || '').trim();
@@ -3719,8 +3726,12 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
     (serviceIds !== undefined && serviceIds !== null && String(serviceIds).trim() !== '');
   const normalizedSelectedStaff = normalizeStaffName(selectedStaff);
 
-  if (!name || !email || !phone || !date || !time || !paymentMethod || !normalizedPaymentPlan || !hasServiceSelection || !normalizedSelectedStaff) {
+  if (!name || !email || !phone || !date || !time || !normalizedPaymentMethod || !normalizedPaymentPlan || !hasServiceSelection || !normalizedSelectedStaff) {
     return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  if (!BOOKING_PAYMENT_METHODS.includes(normalizedPaymentMethod)) {
+    return res.status(400).json({ error: 'Invalid payment method selected' });
   }
 
   const normalizedDate = normalizeSlotDate(date);
@@ -3884,11 +3895,13 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
     date: normalizedDate,
     time: normalizedTime,
     language: language || '',
-    paymentMethod: paymentMethod || '',
+    paymentMethod: normalizedPaymentMethod,
     paymentPlan: normalizedPaymentPlan,
     amountDueNow,
     amountRemaining,
     paymentStatus: 'pending',
+    requiresOnlinePaymentValidation,
+    paymentValidationStage: requiresOnlinePaymentValidation ? 'required_after_summary' : 'not_required',
     paymentProvider: '',
     paymentReference: '',
     paidAmount: 0,
@@ -3969,7 +3982,7 @@ app.post('/api/bookings', upload.single('styleImage'), async (req, res) => {
   writeDatabase(db);
 
   res.status(201).json({
-    message: `Your service order has been made. A customer care representative will reach out to you via the email and phone number provided. Booking ID: ${booking.id}. Payment: ${normalizedPaymentPlan === 'deposit_50' ? '50% deposit' : 'full'} (₦${amountDueNow.toLocaleString()} due now).`,
+    message: `Your service order has been made. A customer care representative will reach out to you via the email and phone number provided. Booking ID: ${booking.id}. Payment: ${normalizedPaymentPlan === 'deposit_50' ? '50% deposit' : 'full'} (₦${amountDueNow.toLocaleString()} due now). ${requiresOnlinePaymentValidation ? 'Complete your selected non-cash payment to validate this booking.' : 'Cash payment selected: pay at the salon.'}`,
     trackingCode: booking.trackingCode,
     paymentBankDetails: String(booking.paymentMethod || '').trim() === 'Bank Transfer'
       ? {
@@ -4104,6 +4117,10 @@ app.post('/api/payments/stripe/initialize', async (req, res) => {
 
   if (normalizeEmail(booking.email) !== normalizedEmail) {
     return res.status(401).json({ error: 'Email does not match this booking' });
+  }
+
+  if (isCashPaymentMethod(booking.paymentMethod)) {
+    return res.status(400).json({ error: 'Cash bookings do not require online payment initialization' });
   }
 
   const amountKobo = Math.max(0, Number(booking.amountDueNow || 0)) * 100;
@@ -4341,6 +4358,10 @@ app.post('/api/payments/monnify/initialize', async (req, res) => {
     return res.status(401).json({ error: 'Email does not match this booking' });
   }
 
+  if (isCashPaymentMethod(booking.paymentMethod)) {
+    return res.status(400).json({ error: 'Cash bookings do not require online payment initialization' });
+  }
+
   const amount = Math.max(0, Number(booking.amountDueNow || 0));
   if (!amount) {
     return res.status(400).json({ error: 'No payable amount found for this booking' });
@@ -4564,6 +4585,10 @@ app.post('/api/payments/paystack/initialize', async (req, res) => {
 
   if (normalizeEmail(booking.email) !== normalizedEmail) {
     return res.status(401).json({ error: 'Email does not match this booking' });
+  }
+
+  if (isCashPaymentMethod(booking.paymentMethod)) {
+    return res.status(400).json({ error: 'Cash bookings do not require online payment initialization' });
   }
 
   // Paystack expects the amount as an integer (kobo).
