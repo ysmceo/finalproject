@@ -15,9 +15,9 @@ const LAST_PRODUCT_ORDER_EMAIL_KEY = 'lastProductOrderEmail';
 const LAST_PRODUCT_PAYMENT_STATUS_KEY = 'lastProductPaymentStatus';
 const LAST_PRODUCT_PAYMENT_ORDER_ID_KEY = 'lastProductPaymentOrderId';
 const BOOKING_BANK_DETAILS_DEFAULT = {
-  bankName: 'YSMBANK CEOS',
+  bankName: 'GTB Bank',
   accountNumber: '0204661552',
-  accountName: 'CEO SALOON'
+  accountName: 'Okonta Victor Chidiebere'
 };
 const serviceNameKeyMap = {
   1: 'service_hair_cut',

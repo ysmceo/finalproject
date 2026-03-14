@@ -1184,8 +1184,8 @@ const MONNIFY_ENV = String(process.env.MONNIFY_ENV || 'live').trim().toLowerCase
 const MONNIFY_BASE_URL = process.env.MONNIFY_BASE_URL || (MONNIFY_ENV === 'sandbox' ? 'https://sandbox.monnify.com' : 'https://api.monnify.com');
 
 const SALON_BANK_ACCOUNT_NUMBER = process.env.SALON_BANK_ACCOUNT_NUMBER || '0204661552';
-const SALON_BANK_NAME = process.env.SALON_BANK_NAME || 'YSMBANK CEOS';
-const SALON_BANK_ACCOUNT_NAME = process.env.SALON_BANK_ACCOUNT_NAME || 'CEO SALOON';
+const SALON_BANK_NAME = process.env.SALON_BANK_NAME || 'GTB Bank';
+const SALON_BANK_ACCOUNT_NAME = process.env.SALON_BANK_ACCOUNT_NAME || 'Okonta Victor Chidiebere';
 const PRODUCT_STANDARD_DELIVERY_FEE = Math.max(0, Number(process.env.PRODUCT_STANDARD_DELIVERY_FEE || 0));
 const PRODUCT_EXPRESS_DELIVERY_FEE = Math.max(0, Number(process.env.PRODUCT_EXPRESS_DELIVERY_FEE || 1500));
 
@@ -5483,11 +5483,82 @@ app.post('/api/admin/bookings/:id/assignment-notify', requireAdminAuth, async (r
       notifiedAt: assignmentLog.createdAt
     };
 
+    const bookingStatusMap = {
+      accepted: 'approved',
+      declined: 'cancelled'
+    };
+    const previousStatusRaw = String(booking.status || '').trim().toLowerCase();
+    const previousStatus = bookingStatusMap[previousStatusRaw] || previousStatusRaw || 'pending';
+    let statusAfterNotify = previousStatus;
+    let autoApproved = false;
+    let bookingStatusEmail = { sent: false, skipped: true, reason: 'No status change from assignment notify' };
+    let bookingStatusSms = { sent: false, skipped: true, reason: 'No status change from assignment notify' };
+    let bookingStatusAdminEmail = { sent: false, skipped: true, reason: 'No status change from assignment notify' };
+
+    if (['pending', 'new'].includes(previousStatus)) {
+      booking.status = 'approved';
+      booking.updatedAt = assignmentLog.createdAt;
+      statusAfterNotify = 'approved';
+      autoApproved = true;
+
+      addBookingNotification(
+        db,
+        booking,
+        'approved',
+        `✅ Your booking has been approved and assigned. Staff: ${staff}. Chair: ${chair}. Scheduled: ${safeWhen}.`
+      );
+
+      try {
+        bookingStatusEmail = await maybeSendBookingStatusEmail({
+          booking,
+          previousStatus,
+          newStatus: statusAfterNotify
+        });
+      } catch (e) {
+        bookingStatusEmail = {
+          sent: false,
+          error: true,
+          reason: e && e.message ? String(e.message) : 'Booking status email send failed'
+        };
+      }
+
+      try {
+        bookingStatusSms = await maybeSendBookingStatusSms({
+          booking,
+          previousStatus,
+          newStatus: statusAfterNotify
+        });
+      } catch (e) {
+        bookingStatusSms = {
+          sent: false,
+          error: true,
+          reason: e && e.message ? String(e.message) : 'Booking status SMS send failed'
+        };
+      }
+
+      try {
+        bookingStatusAdminEmail = await maybeSendAdminBookingStatusEmail({
+          booking,
+          previousStatus,
+          newStatus: statusAfterNotify,
+          db
+        });
+      } catch (e) {
+        bookingStatusAdminEmail = {
+          sent: false,
+          error: true,
+          reason: e && e.message ? String(e.message) : 'Booking status admin email send failed'
+        };
+      }
+    }
+
     writeDatabase(db);
 
     return res.json({
       message: 'Assignment notification completed',
       bookingId,
+      bookingStatus: statusAfterNotify,
+      autoApproved,
       assignment: {
         staff,
         chair,
@@ -5496,7 +5567,10 @@ app.post('/api/admin/bookings/:id/assignment-notify', requireAdminAuth, async (r
       },
       notifications: {
         sms: smsResult,
-        email: emailResult
+        email: emailResult,
+        bookingStatusEmail,
+        bookingStatusSms,
+        bookingStatusAdminEmail
       }
     });
   } catch (error) {
