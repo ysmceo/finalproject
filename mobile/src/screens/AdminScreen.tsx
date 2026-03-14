@@ -2,7 +2,6 @@ import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
-  FlatList,
   KeyboardAvoidingView,
   Linking,
   Platform,
@@ -18,7 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Ionicons } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 
-import { API_BASE_URL, WEB_BASE_URL } from '../config';
+import { API_BASE_URL, API_BASE_URL_CANDIDATES, WEB_BASE_URL } from '../config';
 import { ApiError, apiGetAuth, apiPostJson, apiPutJsonAuth } from '../lib/api';
 import { triggerLightHaptic, triggerMediumHaptic, triggerSuccessHaptic, triggerWarningHaptic } from '../lib/haptics';
 import { ADMIN_EMAIL_KEY, ADMIN_TOKEN_KEY } from './SettingsScreen';
@@ -34,11 +33,25 @@ type AdminLoginResponse = {
 
 type AdminUpdateBookingResponse = {
   message: string;
-  booking: any;
+  booking: unknown;
 };
+
+type BookingStatus = 'pending' | 'approved' | 'cancelled' | 'completed';
+
+type SectionKey = 'Bookings' | 'Orders' | 'Messages' | 'Products';
 
 function normalizeUrl(url: string): string {
   return String(url || '').trim().replace(/\/+$/, '');
+}
+
+function extractPortLabel(url: string): string {
+  try {
+    const parsed = new URL(normalizeUrl(url));
+    if (parsed.port) return `:${parsed.port}`;
+    return parsed.protocol === 'https:' ? ':443' : ':80';
+  } catch {
+    return normalizeUrl(url);
+  }
 }
 
 export default function AdminScreen() {
@@ -46,16 +59,6 @@ export default function AdminScreen() {
   const { resolvedColorScheme } = useThemePrefs();
   const isDark = resolvedColorScheme === 'dark';
   const palette = getMobilePalette(isDark);
-
-  if (Platform.OS === 'web') {
-    const startUrl = `${normalizeUrl(WEB_BASE_URL)}/admin`;
-    return (
-      <View style={{ flex: 1, backgroundColor: palette.bg }}>
-        {/* eslint-disable-next-line react/no-unknown-property */}
-        <iframe title="CEO Salon Admin" src={startUrl} width="100%" height="100%" frameBorder="0" />
-      </View>
-    );
-  }
 
   const [token, setToken] = useState('');
   const [email, setEmail] = useState('');
@@ -69,9 +72,38 @@ export default function AdminScreen() {
   const [loadingBookings, setLoadingBookings] = useState(false);
   const [bookings, setBookings] = useState<any[]>([]);
   const [refreshing, setRefreshing] = useState(false);
+  const [expandedSection, setExpandedSection] = useState<SectionKey | null>(null);
+  const [expandedBookingId, setExpandedBookingId] = useState<string | null>(null);
+  const [page, setPage] = useState(1);
+  const [apiStatusLabel, setApiStatusLabel] = useState('probing...');
+
+  const pageSize = 10;
+  const totalPages = Math.max(1, Math.ceil(bookings.length / pageSize));
+  const paginatedBookings = bookings.slice((page - 1) * pageSize, page * pageSize);
+
+  const demoOrders = [
+    { id: 'O1', customer: 'Okonta Victor', product: 'Hair Oil', status: 'delivered', price: 2500 },
+    { id: 'O2', customer: 'Lizzy Okonta', product: 'Wig Fresh Oil', status: 'pending', price: 7500 },
+    { id: 'O3', customer: 'Test Booker', product: 'Premium Wig', status: 'delivered', price: 12000 },
+    { id: 'O4', customer: 'Admin Alert Tester', product: 'Face Cream', status: 'pending', price: 5000 }
+  ] as const;
+
+  const demoMessages = [
+    { id: 'M1', sender: 'Admin', subject: 'Welcome!', content: 'Your admin dashboard is ready.' }
+  ] as const;
+
+  const demoProducts = [
+    { id: 'P1', name: 'Beard Oil', price: 4500, category: 'Grooming', stock: 31 },
+    { id: 'P2', name: 'Hair Oil', price: 3500, category: 'Hair Care', stock: 40 },
+    { id: 'P3', name: 'Face Cream', price: 5000, category: 'Skin Care', stock: 27 },
+    { id: 'P4', name: 'Hair Cream', price: 4000, category: 'Hair Care', stock: 40 },
+    { id: 'P5', name: 'Perfume', price: 9000, category: 'Fragrance', stock: 22 },
+    { id: 'P6', name: 'Premium Wig', price: 45000, category: 'Wigs', stock: 12 },
+    { id: 'P7', name: 'Wig Revamping', price: 15000, category: 'Wig Service', stock: 999 },
+    { id: 'P8', name: 'Wig Fresh Oil', price: 6000, category: 'Wig Care', stock: 30 }
+  ] as const;
 
   const isLoggedIn = Boolean(token);
-
   const adminWebsiteUrl = useMemo(() => `${normalizeUrl(WEB_BASE_URL)}/admin`, []);
 
   const themed = {
@@ -80,7 +112,6 @@ export default function AdminScreen() {
     card: { backgroundColor: palette.card, borderColor: palette.border },
     cardMuted: { backgroundColor: palette.cardMuted, borderColor: palette.border },
     input: { backgroundColor: palette.inputBg, borderColor: palette.border, color: palette.text },
-    iconButton: { backgroundColor: palette.card, borderColor: palette.border },
     mutedText: { color: palette.textMuted },
     text: { color: palette.text }
   };
@@ -101,6 +132,55 @@ export default function AdminScreen() {
         // ignore
       }
     })();
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (token) {
+      loadBookings().catch(() => undefined);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [token]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
+
+  useEffect(() => {
+    let active = true;
+
+    async function detectApi() {
+      for (const base of API_BASE_URL_CANDIDATES) {
+        try {
+          const response = await fetch(`${normalizeUrl(base)}/api/services`, {
+            method: 'GET',
+            headers: { Accept: 'application/json' }
+          });
+
+          if (response.ok) {
+            if (active) {
+              setApiStatusLabel(extractPortLabel(base));
+            }
+            return;
+          }
+        } catch {
+          // continue probing candidate URLs
+        }
+      }
+
+      if (active) {
+        setApiStatusLabel('not detected');
+      }
+    }
+
+    detectApi().catch(() => {
+      if (active) setApiStatusLabel('not detected');
+    });
 
     return () => {
       active = false;
@@ -130,19 +210,24 @@ export default function AdminScreen() {
   }
 
   async function login() {
-    if (!email.trim() || !password.trim() || !secretPasscode.trim()) {
-      Alert.alert('Missing info', 'Enter email, password, and secret passcode.');
+    if (!email.trim() || !password.trim()) {
+      Alert.alert('Missing info', 'Enter admin email and password.');
       return;
     }
 
     setBusy(true);
     triggerMediumHaptic();
     try {
-      const res = await apiPostJson<AdminLoginResponse>('/api/admin/login', {
+      const payload: Record<string, string> = {
         email: email.trim(),
-        password: password.trim(),
-        secretPasscode: secretPasscode.trim()
-      });
+        password: password.trim()
+      };
+
+      if (secretPasscode.trim()) {
+        payload.secretPasscode = secretPasscode.trim();
+      }
+
+      const res = await apiPostJson<AdminLoginResponse>('/api/admin/login', payload);
 
       await persistAuth(res.token, res.admin.email);
       triggerSuccessHaptic();
@@ -230,6 +315,7 @@ export default function AdminScreen() {
         return tb - ta;
       });
       setBookings(sorted);
+      setPage(1);
     } catch (error) {
       if (error instanceof ApiError && error.status === 401) {
         Alert.alert('Session expired', 'Please login again.');
@@ -251,10 +337,7 @@ export default function AdminScreen() {
     }
   }
 
-  async function updateBookingStatus(
-    bookingId: string,
-    nextStatus: 'pending' | 'approved' | 'cancelled' | 'completed'
-  ) {
+  async function updateBookingStatus(bookingId: string, nextStatus: BookingStatus) {
     if (!token) return;
 
     setBusy(true);
@@ -322,12 +405,15 @@ export default function AdminScreen() {
     };
   }
 
-  useEffect(() => {
-    if (token) {
-      loadBookings().catch(() => undefined);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [token]);
+  if (Platform.OS === 'web') {
+    const startUrl = `${normalizeUrl(WEB_BASE_URL)}/admin`;
+    return (
+      <View style={{ flex: 1, backgroundColor: palette.bg }}>
+        {/* eslint-disable-next-line react/no-unknown-property */}
+        <iframe title="CEO Salon Admin" src={startUrl} width="100%" height="100%" frameBorder="0" />
+      </View>
+    );
+  }
 
   if (!isLoggedIn) {
     return (
@@ -349,6 +435,7 @@ export default function AdminScreen() {
               <Text style={styles.heroKicker}>ADMIN</Text>
               <Text style={styles.heroTitle}>Secure sign-in for bookings and operational updates.</Text>
               <Text style={styles.heroSubtitle}>Use the same backend credentials you configured for the web admin.</Text>
+              <Text style={styles.apiBadgeText}>Dev API: {apiStatusLabel}</Text>
             </View>
 
             <View style={styles.quickAccessRow}>
@@ -357,11 +444,7 @@ export default function AdminScreen() {
                   triggerLightHaptic();
                   navigation.navigate('Track');
                 }}
-                style={({ pressed }) => [
-                  styles.quickAction,
-                  themed.card,
-                  pressed && styles.pressed
-                ]}
+                style={({ pressed }) => [styles.quickAction, themed.card, pressed && styles.pressed]}
               >
                 <Ionicons name="search-outline" size={18} color={palette.primary} />
                 <Text style={[styles.quickActionText, themed.text]}>Track</Text>
@@ -371,11 +454,7 @@ export default function AdminScreen() {
                   triggerLightHaptic();
                   navigation.navigate('More');
                 }}
-                style={({ pressed }) => [
-                  styles.quickAction,
-                  themed.card,
-                  pressed && styles.pressed
-                ]}
+                style={({ pressed }) => [styles.quickAction, themed.card, pressed && styles.pressed]}
               >
                 <Ionicons name="grid-outline" size={18} color={palette.primary} />
                 <Text style={[styles.quickActionText, themed.text]}>More</Text>
@@ -385,11 +464,7 @@ export default function AdminScreen() {
                   triggerLightHaptic();
                   openAdminWebsite();
                 }}
-                style={({ pressed }) => [
-                  styles.quickAction,
-                  themed.card,
-                  pressed && styles.pressed
-                ]}
+                style={({ pressed }) => [styles.quickAction, themed.card, pressed && styles.pressed]}
               >
                 <Ionicons name="globe-outline" size={18} color={palette.primary} />
                 <Text style={[styles.quickActionText, themed.text]}>Web admin</Text>
@@ -418,12 +493,12 @@ export default function AdminScreen() {
                 style={[styles.input, themed.input]}
               />
 
-              <Text style={[styles.label, themed.text]}>Secret passcode</Text>
+              <Text style={[styles.label, themed.text]}>Secret passcode (optional)</Text>
               <TextInput
                 value={secretPasscode}
                 onChangeText={setSecretPasscode}
                 secureTextEntry
-                placeholder="Enter admin secret passcode"
+                placeholder="Use only if your backend requires it"
                 placeholderTextColor={palette.textMuted}
                 style={[styles.input, themed.input]}
               />
@@ -448,11 +523,7 @@ export default function AdminScreen() {
                   triggerLightHaptic();
                   setShowForgotPassword((prev) => !prev);
                 }}
-                style={({ pressed }) => [
-                  styles.secondaryBtn,
-                  themed.cardMuted,
-                  pressed && styles.primaryBtnPressed
-                ]}
+                style={({ pressed }) => [styles.secondaryBtn, themed.cardMuted, pressed && styles.primaryBtnPressed]}
               >
                 <Text style={[styles.secondaryBtnText, { color: palette.text }]}>
                   {showForgotPassword ? 'Hide password reset' : 'Forgot password? Reset with OTP'}
@@ -526,15 +597,26 @@ export default function AdminScreen() {
     );
   }
 
+  const sections: Array<{ key: SectionKey; count: number; color: string }> = [
+    { key: 'Bookings', count: bookings.length, color: '#7c46e8' },
+    { key: 'Orders', count: demoOrders.length, color: '#46e8c6' },
+    { key: 'Messages', count: demoMessages.length, color: '#ffb347' },
+    { key: 'Products', count: demoProducts.length, color: '#2d2342' }
+  ];
+
   return (
     <SafeAreaView style={[styles.wrap, themed.wrap]}>
-      <View style={styles.listHeaderWrap}>
+      <ThemedScrollView
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={palette.primary} />}
+        contentContainerStyle={styles.listContent}
+      >
         <View style={[styles.heroCompact, themed.hero]}>
           <View style={styles.heroGlowOne} />
           <View style={styles.heroGlowTwo} />
           <Text style={styles.heroKicker}>ADMIN</Text>
           <Text style={styles.heroTitle}>Bookings overview</Text>
           <Text style={styles.heroSubtitle}>Signed in as {email || 'admin'}</Text>
+          <Text style={styles.apiBadgeText}>Dev API: {apiStatusLabel}</Text>
         </View>
 
         <View style={styles.quickAccessRow}>
@@ -578,55 +660,216 @@ export default function AdminScreen() {
             <Text style={[styles.quickActionText, { color: palette.danger }]}>Logout</Text>
           </Pressable>
         </View>
-      </View>
 
-      {loadingBookings && bookings.length === 0 ? (
-        <View style={styles.center}>
-          <ActivityIndicator size="large" color={palette.primary} />
-          <Text style={[styles.centerText, themed.mutedText]}>Loading bookings...</Text>
-        </View>
-      ) : (
-        <FlatList
-          data={bookings}
-          keyExtractor={(item) => String(item.id)}
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={palette.primary} />}
-          contentContainerStyle={styles.listContent}
-          ListHeaderComponent={<View style={{ height: 4 }} />}
-          ListEmptyComponent={
-            <View style={styles.center}>
-              <Text style={[styles.emptyTitle, themed.text]}>No bookings found.</Text>
-              <Text style={[styles.centerText, themed.mutedText]}>New bookings will appear here after customers submit them.</Text>
-            </View>
-          }
-          renderItem={({ item }) => {
-            const tone = getStatusTone(String(item.status || 'pending'));
-            return (
-              <Pressable
-                onPress={() => {
-                  triggerLightHaptic();
-                  promptBookingActions(item);
-                }}
-                style={({ pressed }) => [
-                  styles.bookingCard,
-                  themed.card,
-                  pressed && styles.pressed
-                ]}
-              >
-                <View style={styles.bookingTopRow}>
-                  <Text style={[styles.bookingTitle, themed.text]}>{item.serviceName || 'Service'}</Text>
-                  <View style={[styles.badge, tone]}>
-                    <Text style={[styles.badgeText, { color: tone.color }]}>{String(item.status || 'pending')}</Text>
-                  </View>
-                </View>
+        {sections.map(({ key, count, color }) => (
+          <View key={key} style={[styles.dashboardBox, themed.card, { borderColor: color }]}> 
+            <Pressable
+              onPress={() => {
+                triggerLightHaptic();
+                setExpandedSection(expandedSection === key ? null : key);
+              }}
+              style={({ pressed }) => [styles.dashboardHeader, pressed && styles.primaryBtnPressed]}
+            >
+              <Text style={[styles.dashboardTitle, { color }]}>{key}</Text>
+              <View style={[styles.dashboardCount, { backgroundColor: color }]}>
+                <Text style={styles.dashboardCountText}>{count}</Text>
+              </View>
+            </Pressable>
 
-                <Text style={[styles.bookingSub, themed.text]}>{item.name} - {item.phone || 'No phone'}</Text>
-                <Text style={[styles.bookingMeta, themed.mutedText]}>{item.date || ''} {item.time || ''}</Text>
-                <Text style={[styles.bookingMeta, themed.mutedText]}>ID: {String(item.id).slice(0, 12)}...</Text>
-              </Pressable>
-            );
-          }}
-        />
-      )}
+            {expandedSection === key ? (
+              <View style={styles.dashboardContent}>
+                {key === 'Bookings' ? (
+                  loadingBookings && bookings.length === 0 ? (
+                    <View style={styles.center}>
+                      <ActivityIndicator size="large" color={palette.primary} />
+                      <Text style={[styles.centerText, themed.mutedText]}>Loading bookings...</Text>
+                    </View>
+                  ) : paginatedBookings.length === 0 ? (
+                    <View style={styles.center}>
+                      <Text style={[styles.emptyTitle, themed.text]}>No bookings found.</Text>
+                      <Text style={[styles.centerText, themed.mutedText]}>
+                        New bookings will appear here after customers submit them.
+                      </Text>
+                    </View>
+                  ) : (
+                    <>
+                      {paginatedBookings.map((item) => {
+                        const tone = getStatusTone(String(item.status || 'pending'));
+                        const expanded = expandedBookingId === String(item.id);
+
+                        return (
+                          <View key={String(item.id)} style={[styles.bookingCard, themed.card]}>
+                            <Pressable
+                              onPress={() => {
+                                triggerLightHaptic();
+                                setExpandedBookingId(expanded ? null : String(item.id));
+                              }}
+                              style={({ pressed }) => [styles.bookingHeader, pressed && styles.pressed]}
+                            >
+                              <View style={styles.bookingTopRow}>
+                                <Text style={[styles.bookingTitle, themed.text]}>{item.serviceName || 'Service'}</Text>
+                                <View style={[styles.badge, tone]}>
+                                  <Text style={[styles.badgeText, { color: tone.color }]}>
+                                    {String(item.status || 'pending')}
+                                  </Text>
+                                </View>
+                              </View>
+                              <Text style={[styles.bookingSub, themed.text]}>{item.name}</Text>
+                            </Pressable>
+
+                            {expanded ? (
+                              <View style={styles.bookingDetails}>
+                                <Text style={[styles.bookingMeta, themed.mutedText]}>Phone: {item.phone || 'No phone'}</Text>
+                                <Text style={[styles.bookingMeta, themed.mutedText]}>
+                                  When: {item.date || ''} {item.time || ''}
+                                </Text>
+                                <Text style={[styles.bookingMeta, themed.mutedText]}>
+                                  ID: {String(item.id).slice(0, 12)}...
+                                </Text>
+                                <Text style={[styles.bookingMeta, themed.mutedText]}>Due now: ₦{item.price || '0'}</Text>
+                                <Pressable
+                                  onPress={() => promptBookingActions(item)}
+                                  style={({ pressed }) => [styles.actionBtn, pressed && styles.primaryBtnPressed]}
+                                >
+                                  <Text style={styles.actionBtnText}>Update booking status</Text>
+                                </Pressable>
+                              </View>
+                            ) : null}
+                          </View>
+                        );
+                      })}
+
+                      {totalPages > 1 ? (
+                        <View style={styles.paginationRow}>
+                          <Pressable
+                            onPress={() => setPage(page > 1 ? page - 1 : 1)}
+                            disabled={page === 1}
+                            style={({ pressed }) => [
+                              styles.pageBtn,
+                              page === 1 && styles.pageBtnDisabled,
+                              pressed && styles.primaryBtnPressed
+                            ]}
+                          >
+                            <Text style={styles.pageBtnText}>Previous</Text>
+                          </Pressable>
+                          <Text style={styles.pageIndicator}>Page {page} of {totalPages}</Text>
+                          <Pressable
+                            onPress={() => setPage(page < totalPages ? page + 1 : totalPages)}
+                            disabled={page === totalPages}
+                            style={({ pressed }) => [
+                              styles.pageBtn,
+                              page === totalPages && styles.pageBtnDisabled,
+                              pressed && styles.primaryBtnPressed
+                            ]}
+                          >
+                            <Text style={styles.pageBtnText}>Next</Text>
+                          </Pressable>
+                        </View>
+                      ) : null}
+                    </>
+                  )
+                ) : null}
+
+                {key === 'Orders'
+                  ? demoOrders.map((item) => (
+                      <View key={item.id} style={[styles.bookingCard, themed.card]}>
+                        <View style={styles.bookingHeader}>
+                          <Text style={[styles.bookingTitle, { color: '#46e8c6' }]}>Order #{item.id}</Text>
+                          <View
+                            style={[
+                              styles.badge,
+                              {
+                                backgroundColor: item.status === 'delivered' ? '#e8f8ef' : '#fff0ef',
+                                borderColor: item.status === 'delivered' ? '#b6dfc5' : '#efc1bf'
+                              }
+                            ]}
+                          >
+                            <Text
+                              style={[
+                                styles.badgeText,
+                                { color: item.status === 'delivered' ? '#0f6b3d' : '#ad2f2f' }
+                              ]}
+                            >
+                              {item.status}
+                            </Text>
+                          </View>
+                        </View>
+                        <View style={styles.bookingDetails}>
+                          <Text style={[styles.bookingMeta, themed.mutedText]}>Customer: {item.customer}</Text>
+                          <Text style={[styles.bookingMeta, themed.mutedText]}>Product: {item.product}</Text>
+                          <Text style={[styles.bookingMeta, themed.mutedText]}>Price: ₦{item.price}</Text>
+                        </View>
+                      </View>
+                    ))
+                  : null}
+
+                {key === 'Messages'
+                  ? demoMessages.map((item) => (
+                      <View key={item.id} style={[styles.bookingCard, themed.card]}>
+                        <View style={styles.bookingHeader}>
+                          <Text style={[styles.bookingTitle, { color: '#ffb347' }]}>Message #{item.id}</Text>
+                        </View>
+                        <View style={styles.bookingDetails}>
+                          <Text style={[styles.bookingMeta, themed.mutedText]}>From: {item.sender}</Text>
+                          <Text style={[styles.bookingMeta, themed.mutedText]}>Subject: {item.subject}</Text>
+                          <Text style={[styles.bookingMeta, themed.mutedText]}>{item.content}</Text>
+                        </View>
+                      </View>
+                    ))
+                  : null}
+
+                {key === 'Products' ? (
+                  <>
+                    <View style={[styles.bookingCard, themed.card, { marginBottom: 14 }]}> 
+                      <View style={styles.bookingHeader}>
+                        <Text style={[styles.bookingTitle, { color: '#2d2342' }]}>Add a product</Text>
+                      </View>
+                      <View style={styles.bookingDetails}>
+                        <Text style={[styles.bookingMeta, themed.mutedText]}>Simple React Native form preview.</Text>
+                        <Text style={[styles.bookingMeta, themed.mutedText]}>Name *</Text>
+                        <TextInput style={[styles.input, themed.input]} placeholder="Product name" placeholderTextColor={palette.textMuted} />
+                        <Text style={[styles.bookingMeta, themed.mutedText]}>Category *</Text>
+                        <TextInput style={[styles.input, themed.input]} placeholder="Category" placeholderTextColor={palette.textMuted} />
+                        <Text style={[styles.bookingMeta, themed.mutedText]}>Price *</Text>
+                        <TextInput
+                          style={[styles.input, themed.input]}
+                          placeholder="Price"
+                          placeholderTextColor={palette.textMuted}
+                          keyboardType="numeric"
+                        />
+                        <Text style={[styles.bookingMeta, themed.mutedText]}>Stock *</Text>
+                        <TextInput
+                          style={[styles.input, themed.input]}
+                          placeholder="Stock"
+                          placeholderTextColor={palette.textMuted}
+                          keyboardType="numeric"
+                        />
+                        <Pressable style={({ pressed }) => [styles.actionBtn, pressed && styles.primaryBtnPressed]}>
+                          <Text style={styles.actionBtnText}>Add product</Text>
+                        </Pressable>
+                      </View>
+                    </View>
+
+                    {demoProducts.map((item) => (
+                      <View key={item.id} style={[styles.bookingCard, themed.card]}>
+                        <View style={styles.bookingHeader}>
+                          <Text style={[styles.bookingTitle, { color: '#2d2342' }]}>{item.name}</Text>
+                          <Text style={[styles.badgeText, { color: '#7c46e8' }]}>₦{item.price}</Text>
+                        </View>
+                        <View style={styles.bookingDetails}>
+                          <Text style={[styles.bookingMeta, themed.mutedText]}>
+                            {item.category} | Stock: {item.stock}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </>
+                ) : null}
+              </View>
+            ) : null}
+          </View>
+        ))}
+      </ThemedScrollView>
     </SafeAreaView>
   );
 }
@@ -690,6 +933,17 @@ const styles = StyleSheet.create({
     color: '#d7e4ff',
     fontSize: MOBILE_TYPE.body,
     lineHeight: 20
+  },
+  apiBadgeText: {
+    marginTop: 8,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(255,255,255,0.16)',
+    color: '#ffffff',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    fontSize: MOBILE_TYPE.caption,
+    fontWeight: '800'
   },
   quickAccessRow: {
     flexDirection: 'row',
@@ -776,19 +1030,15 @@ const styles = StyleSheet.create({
     marginTop: 14,
     fontSize: MOBILE_TYPE.caption
   },
-  listHeaderWrap: {
-    paddingHorizontal: MOBILE_SPACE.xxl,
-    paddingTop: MOBILE_SPACE.lg
-  },
   listContent: {
     paddingHorizontal: MOBILE_SPACE.xxl,
+    paddingTop: MOBILE_SPACE.lg,
     paddingBottom: 28
   },
   center: {
-    flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
-    padding: 20
+    paddingVertical: 20
   },
   centerText: {
     marginTop: 10,
@@ -799,16 +1049,56 @@ const styles = StyleSheet.create({
     fontWeight: '900',
     fontSize: MOBILE_TYPE.heading
   },
+  dashboardBox: {
+    borderWidth: 1.5,
+    borderRadius: MOBILE_SHAPE.cardRadius,
+    marginTop: MOBILE_SPACE.lg,
+    overflow: 'hidden'
+  },
+  dashboardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: MOBILE_SPACE.lg,
+    paddingVertical: MOBILE_SPACE.md
+  },
+  dashboardTitle: {
+    fontSize: MOBILE_TYPE.body,
+    fontWeight: '900'
+  },
+  dashboardCount: {
+    minWidth: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 8
+  },
+  dashboardCountText: {
+    color: '#fff',
+    fontSize: MOBILE_TYPE.caption,
+    fontWeight: '900'
+  },
+  dashboardContent: {
+    paddingHorizontal: MOBILE_SPACE.md,
+    paddingBottom: MOBILE_SPACE.md
+  },
   bookingCard: {
     borderRadius: MOBILE_SHAPE.cardRadius,
     borderWidth: 1,
-    padding: MOBILE_SPACE.lg,
     marginTop: 12,
     shadowColor: '#09111f',
     shadowOpacity: 0.06,
     shadowOffset: { width: 0, height: 6 },
     shadowRadius: 12,
-    elevation: 2
+    elevation: 2,
+    overflow: 'hidden'
+  },
+  bookingHeader: {
+    paddingHorizontal: MOBILE_SPACE.lg,
+    paddingVertical: MOBILE_SPACE.md,
+    borderBottomWidth: 1,
+    borderBottomColor: '#00000010'
   },
   bookingTopRow: {
     flexDirection: 'row',
@@ -825,6 +1115,10 @@ const styles = StyleSheet.create({
     fontSize: MOBILE_TYPE.body,
     fontWeight: '700'
   },
+  bookingDetails: {
+    paddingHorizontal: MOBILE_SPACE.lg,
+    paddingBottom: MOBILE_SPACE.lg
+  },
   bookingMeta: {
     marginTop: 5,
     fontSize: MOBILE_TYPE.caption
@@ -837,6 +1131,47 @@ const styles = StyleSheet.create({
   },
   badgeText: {
     fontSize: MOBILE_TYPE.micro,
+    fontWeight: '900'
+  },
+  actionBtn: {
+    marginTop: 12,
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    backgroundColor: '#7c46e8',
+    paddingVertical: 12,
+    alignItems: 'center'
+  },
+  actionBtnText: {
+    color: '#fff',
+    fontWeight: '900',
+    fontSize: MOBILE_TYPE.caption
+  },
+  paginationRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 16,
+    marginBottom: 8,
+    gap: 8
+  },
+  pageBtn: {
+    borderRadius: MOBILE_SHAPE.controlRadius,
+    backgroundColor: '#46e8c6',
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    minWidth: 90,
+    alignItems: 'center'
+  },
+  pageBtnDisabled: {
+    backgroundColor: '#c7c7c7'
+  },
+  pageBtnText: {
+    color: '#fff',
+    fontWeight: '900',
+    fontSize: MOBILE_TYPE.caption
+  },
+  pageIndicator: {
+    fontSize: MOBILE_TYPE.caption,
+    color: '#7c46e8',
     fontWeight: '900'
   },
   pressed: {

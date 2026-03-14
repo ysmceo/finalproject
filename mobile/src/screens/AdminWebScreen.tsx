@@ -22,7 +22,7 @@ export default function AdminWebScreen() {
   // For PC preview, embed the admin page with an iframe.
   if (Platform.OS === 'web') {
     return (
-      <View style={{ flex: 1, backgroundColor: '#f6f8fc' }}>
+      <View style={{ flex: 1, backgroundColor: '#7c46e8', padding: 0 }}>
         {/* eslint-disable-next-line react/no-unknown-property */}
         <iframe
           title="CEO Salon Admin"
@@ -59,7 +59,11 @@ export default function AdminWebScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: '#f6f8fc' }}>
+    <View style={{ flex: 1, backgroundColor: '#f6f8fc', padding: 0 }}>
+      <View style={styles.headerWrap}>
+        <Text style={styles.headerTitle}>Admin Dashboard</Text>
+        <Text style={styles.headerSubtitle}>Manage your salon with style</Text>
+      </View>
       <NativeWebView
         source={{ uri: startUrl }}
         originWhitelist={['*']}
@@ -70,8 +74,8 @@ export default function AdminWebScreen() {
         startInLoadingState
         renderLoading={() => (
           <View style={styles.loading}>
-            <ActivityIndicator size="large" />
-            <Text style={{ marginTop: 10 }}>Loading Admin…</Text>
+            <ActivityIndicator size="large" color="#46e8c6" />
+            <Text style={{ marginTop: 10, color: '#7c46e8', fontWeight: '700' }}>Loading Admin…</Text>
           </View>
         )}
         onError={(e: any) => {
@@ -81,12 +85,38 @@ export default function AdminWebScreen() {
           const code = e?.nativeEvent?.statusCode;
           setLoadError(code ? `HTTP ${code}` : 'HTTP error');
         }}
+        style={{ borderRadius: 18, margin: 16, overflow: 'hidden', backgroundColor: '#fff', shadowColor: '#7c46e8', shadowOpacity: 0.18, shadowOffset: { width: 0, height: 8 }, shadowRadius: 24 }}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
+  headerWrap: {
+    paddingTop: 32,
+    paddingBottom: 16,
+    paddingHorizontal: 24,
+    backgroundColor: '#7c46e8',
+    borderBottomLeftRadius: 24,
+    borderBottomRightRadius: 24,
+    shadowColor: '#7c46e8',
+    shadowOpacity: 0.12,
+    shadowOffset: { width: 0, height: 8 },
+    shadowRadius: 24,
+    marginBottom: 8
+  },
+  headerTitle: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: '#fff',
+    letterSpacing: 0.5,
+    marginBottom: 4
+  },
+  headerSubtitle: {
+    fontSize: 16,
+    color: '#e0d7fa',
+    marginBottom: 2
+  },
   loading: {
     flex: 1,
     alignItems: 'center',
@@ -110,11 +140,11 @@ const styles = StyleSheet.create({
   },
   button: {
     marginTop: 14,
-    backgroundColor: '#7c46e8',
+    backgroundColor: '#46e8c6',
     borderRadius: 12,
     paddingVertical: 12,
     alignItems: 'center',
-    shadowColor: '#4f22a8',
+    shadowColor: '#46e8c6',
     shadowOpacity: 0.22,
     shadowOffset: { width: 0, height: 6 },
     shadowRadius: 12,
@@ -127,9 +157,9 @@ const styles = StyleSheet.create({
   buttonAlt: {
     backgroundColor: '#fff',
     borderWidth: 1,
-    borderColor: '#d8cfee'
+    borderColor: '#46e8c6'
   },
   buttonAltText: {
-    color: '#4b3f69'
+    color: '#7c46e8'
   }
 });

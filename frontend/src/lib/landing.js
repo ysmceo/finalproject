@@ -12,6 +12,7 @@ export const salonContact = {
 export const landingNav = [
   { label: "Services", href: "#services" },
   { label: "Products", href: "#products" },
+  { label: "Complaints", href: "#complaints" },
   { label: "Gallery", href: "#gallery" },
   { label: "Team", href: "#team" },
   { label: "Contact", href: "#contact" }

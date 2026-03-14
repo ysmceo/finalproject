@@ -18,6 +18,7 @@ function BookingHeroAside({ serviceCount, productCount }) {
         <p className="text-xs font-semibold uppercase tracking-[0.25em] text-brand-soft">What to expect</p>
         <ul className="mt-4 space-y-3 text-sm leading-6 text-white/80">
           <li>Pick one or more services.</li>
+          <li>Select your preferred staff member.</li>
           <li>Choose an available date and time slot.</li>
           <li>Add salon products or upload a style reference before submitting.</li>
         </ul>
@@ -42,6 +43,7 @@ export default function Book() {
   const [loading, setLoading] = useState(true);
   const [catalogNotice, setCatalogNotice] = useState(null);
   const [slots, setSlots] = useState([]);
+  const [staffOptions, setStaffOptions] = useState([]);
 
   const [booking, setBooking] = useState({
     name: "",
@@ -49,6 +51,7 @@ export default function Book() {
     phone: "",
     date: "",
     time: "",
+    selectedStaff: "",
     paymentMethod: "Bank Transfer",
     paymentPlan: "deposit_50",
     serviceIds: [],
@@ -61,14 +64,18 @@ export default function Book() {
   useEffect(() => {
     let active = true;
 
-    loadCatalog()
-      .then((data) => {
+    Promise.all([
+      loadCatalog(),
+      apiGet("/api/bookings/staff").catch(() => ({ staff: [] }))
+    ])
+      .then(([data, staffResponse]) => {
         if (!active) {
           return;
         }
 
         setServices(data.services);
         setProducts(data.products);
+        setStaffOptions(Array.isArray(staffResponse && staffResponse.staff) ? staffResponse.staff : []);
       })
       .catch((error) => {
         if (active) {
@@ -89,13 +96,13 @@ export default function Book() {
   useEffect(() => {
     let active = true;
 
-    if (!booking.date) {
+    if (!booking.date || !booking.selectedStaff) {
       return () => {
         active = false;
       };
     }
 
-    apiGet(`/api/bookings/available-slots?date=${encodeURIComponent(booking.date)}`)
+    apiGet(`/api/bookings/available-slots?date=${encodeURIComponent(booking.date)}&staff=${encodeURIComponent(booking.selectedStaff)}`)
       .then((data) => {
         if (active) {
           setSlots(Array.isArray(data.slots) ? data.slots : []);
@@ -110,7 +117,7 @@ export default function Book() {
     return () => {
       active = false;
     };
-  }, [booking.date]);
+  }, [booking.date, booking.selectedStaff]);
 
   const selectedServices = services.filter((service) => booking.serviceIds.includes(Number(service.id)));
   const serviceSubtotal = selectedServices.reduce((sum, service) => sum + Number(service.price || 0), 0);
@@ -131,6 +138,7 @@ export default function Book() {
     payload.append("serviceIds", JSON.stringify(booking.serviceIds));
     payload.append("date", booking.date);
     payload.append("time", booking.time);
+    payload.append("selectedStaff", booking.selectedStaff);
     payload.append("paymentMethod", booking.paymentMethod);
     payload.append("paymentPlan", booking.paymentPlan);
     payload.append("productSelections", JSON.stringify(buildSelectedItems(products, bookingProducts)));
@@ -186,7 +194,7 @@ export default function Book() {
             return (
               <Surface
                 key={service.id}
-                className={active ? "border-brand bg-brand/5 shadow-[0_18px_44px_hsl(var(--brand)_/_0.16)]" : undefined}
+                className={active ? "border-brand bg-brand/5 shadow-[0_18px_44px_hsl(var(--brand)/0.16)]" : undefined}
               >
                 <div className="flex h-full flex-col justify-between gap-4">
                   <div className="space-y-2">
@@ -261,8 +269,23 @@ export default function Book() {
                 value={booking.date}
               />
               <SelectField
+                id="booking-staff"
+                label="Preferred staff"
+                onChange={(event) => setBooking((current) => ({ ...current, selectedStaff: event.target.value, time: "" }))}
+                required
+                value={booking.selectedStaff}
+              >
+                <option value="">Select preferred staff</option>
+                {staffOptions.map((staffName) => (
+                  <option key={staffName} value={staffName}>
+                    {staffName}
+                  </option>
+                ))}
+              </SelectField>
+              <SelectField
                 id="booking-time"
                 label="Time slot"
+                help={booking.selectedStaff ? undefined : "Select staff first to view available slots."}
                 onChange={(event) => setBooking((current) => ({ ...current, time: event.target.value }))}
                 required
                 value={booking.time}
@@ -312,7 +335,7 @@ export default function Book() {
               <ProductPicker onChange={(id, value) => setBookingProducts((current) => ({ ...current, [id]: value }))} products={products} quantities={bookingProducts} />
             </Field>
 
-            <Button className="w-full sm:w-auto" disabled={!booking.serviceIds.length} type="submit">
+            <Button className="w-full sm:w-auto" disabled={!booking.serviceIds.length || !booking.selectedStaff} type="submit">
               Create booking
             </Button>
           </form>
@@ -325,8 +348,9 @@ export default function Book() {
               eyebrow="Summary"
               title="Booking estimate"
             />
-            <div className="space-y-3 rounded-[1.5rem] border border-line/70 bg-panel/92 px-5 py-4">
+            <div className="space-y-3 rounded-3xl border border-line/70 bg-panel/92 px-5 py-4">
               <DetailRow label="Selected services" value={String(selectedServices.length)} />
+              <DetailRow label="Preferred staff" value={booking.selectedStaff || "Not selected"} />
               <DetailRow label="Service subtotal" value={formatCurrency(serviceSubtotal)} />
               <DetailRow label="Product add-ons" value={formatCurrency(addonsSubtotal)} />
               <DetailRow label="Due now" value={formatCurrency(dueNow)} />
@@ -356,7 +380,7 @@ export default function Book() {
               </p>
             </div>
             {bookingResult?.trackingCode ? (
-              <div className="rounded-[1.5rem] border border-white/14 bg-white/8 px-5 py-4">
+              <div className="rounded-3xl border border-white/14 bg-white/8 px-5 py-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/60">Booking code</p>
                 <p className="mt-3 text-3xl font-semibold">{bookingResult.trackingCode}</p>
               </div>

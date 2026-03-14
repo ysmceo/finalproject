@@ -10,6 +10,25 @@ export class ApiError extends Error {
 const RAW_API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL || "").trim();
 const API_BASE_URL = RAW_API_BASE_URL.replace(/\/+$/, "");
 
+function canUseWindow() {
+  return typeof window !== "undefined" && Boolean(window.location);
+}
+
+function buildLocalApiFallbackUrls(pathname) {
+  if (API_BASE_URL || !canUseWindow()) {
+    return [];
+  }
+
+  const host = String(window.location.hostname || "").toLowerCase();
+  const isLocalHost = host === "localhost" || host === "127.0.0.1";
+
+  if (!isLocalHost || !String(pathname || "").startsWith("/api")) {
+    return [];
+  }
+
+  return [3000, 3002, 3001, 3100].map((port) => `http://localhost:${port}${pathname}`);
+}
+
 export function resolveApiUrl(pathname) {
   const value = String(pathname || "").trim();
 
@@ -78,8 +97,42 @@ export async function apiRequest(pathname, options = {}) {
     }
   }
 
-  const response = await fetch(resolveApiUrl(pathname), config);
-  const payload = await readPayload(response);
+  const primaryUrl = resolveApiUrl(pathname);
+  const fallbackUrls = buildLocalApiFallbackUrls(pathname);
+
+  let response;
+  let payload;
+  let fetchError = null;
+
+  try {
+    response = await fetch(primaryUrl, config);
+    payload = await readPayload(response);
+  } catch (error) {
+    fetchError = error;
+  }
+
+  if (!response && fallbackUrls.length > 0) {
+    for (const candidate of fallbackUrls) {
+      if (candidate === primaryUrl) {
+        continue;
+      }
+
+      try {
+        response = await fetch(candidate, config);
+        payload = await readPayload(response);
+
+        if (response.ok) {
+          return payload;
+        }
+      } catch {
+        // Try the next fallback URL.
+      }
+    }
+  }
+
+  if (!response) {
+    throw fetchError instanceof Error ? fetchError : new Error("Failed to fetch");
+  }
 
   if (!response.ok) {
     const message =

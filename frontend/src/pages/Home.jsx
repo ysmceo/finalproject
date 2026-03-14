@@ -47,7 +47,7 @@ function HeroStat({ label, value }) {
 function FeatureShell({ id, title, eyebrow, description, images, children }) {
   return (
     <section
-      className="relative isolate overflow-hidden rounded-[2rem] border border-line/70 bg-panel/92 shadow-card sm:rounded-[2.25rem]"
+      className="relative isolate overflow-hidden rounded-4xl border border-line/70 bg-panel/92 shadow-card sm:rounded-[2.25rem]"
       id={id}
     >
       <AnimatedBackdrop
@@ -69,6 +69,7 @@ export default function Home() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [catalogNotice, setCatalogNotice] = useState(null);
+  const [devBackendPort, setDevBackendPort] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -84,7 +85,14 @@ export default function Home() {
       })
       .catch((error) => {
         if (active) {
-          setCatalogNotice({ tone: "error", message: getErrorMessage(error) });
+          const message = getErrorMessage(error);
+          const isNetworkFetchError = /failed to fetch|network/i.test(String(message));
+          setCatalogNotice({
+            tone: "error",
+            message: isNetworkFetchError
+              ? "Failed to fetch catalog. Please ensure the backend server is running (usually on port 3000/3001/3002/3100)."
+              : message
+          });
         }
       })
       .finally(() => {
@@ -92,6 +100,45 @@ export default function Home() {
           setLoading(false);
         }
       });
+
+    return () => {
+      active = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!import.meta.env.DEV) {
+      return undefined;
+    }
+
+    let active = true;
+    const candidatePorts = [3000, 3002, 3001, 3100];
+
+    async function detectBackendPort() {
+      for (const port of candidatePorts) {
+        try {
+          const response = await fetch(`http://localhost:${port}/api/services`, {
+            method: "GET",
+            headers: { Accept: "application/json" }
+          });
+
+          if (response.ok) {
+            if (active) {
+              setDevBackendPort(String(port));
+            }
+            return;
+          }
+        } catch {
+          // Keep probing next local candidate port.
+        }
+      }
+
+      if (active) {
+        setDevBackendPort("unreachable");
+      }
+    }
+
+    detectBackendPort();
 
     return () => {
       active = false;
@@ -153,6 +200,11 @@ export default function Home() {
                     {item}
                   </span>
                 ))}
+                {import.meta.env.DEV ? (
+                  <span className="rounded-full border border-brand-soft/45 bg-brand-soft/15 px-4 py-2 text-sm text-brand-soft">
+                    Dev backend: {devBackendPort ? (devBackendPort === "unreachable" ? "not detected" : `:${devBackendPort}`) : "probing..."}
+                  </span>
+                ) : null}
               </div>
             </div>
 
@@ -163,7 +215,7 @@ export default function Home() {
                 ))}
               </div>
 
-              <div className="rounded-[2rem] border border-white/14 bg-white/10 p-6 backdrop-blur">
+              <div className="rounded-4xl border border-white/14 bg-white/10 p-6 backdrop-blur">
                 <p className="text-xs font-semibold uppercase tracking-[0.25em] text-brand-soft">Guest services</p>
                 <div className="mt-5 grid gap-3">
                   <div className="flex items-start gap-3 rounded-[1.4rem] border border-white/10 bg-black/10 px-4 py-4">
@@ -251,9 +303,16 @@ export default function Home() {
               </div>
             ) : null}
             <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-              {featuredServices.map((service) => (
+              {featuredServices.map((service, index) => (
                 <Surface key={service.id} className="bg-panel/92">
                   <div className="space-y-4">
+                    <div className="h-44 overflow-hidden rounded-3xl border border-line/70 bg-canvas/40">
+                      <img
+                        alt={service.name}
+                        className="h-full w-full object-cover transition duration-700 hover:scale-105"
+                        src={resolveMediaSrc(service.image) || sectionBackdrops.services[index % sectionBackdrops.services.length]}
+                      />
+                    </div>
                     <div className="space-y-2">
                       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-brand-deep/75">Premium service</p>
                       <h3 className="text-2xl font-semibold text-ink">{service.name}</h3>
@@ -331,6 +390,59 @@ export default function Home() {
               </Surface>
             ))}
           </section>
+
+          <FeatureShell
+            description="Found an issue with service, payment, product delivery, or appointment handling? Report it directly so the team can follow up fast."
+            eyebrow="Complaint desk"
+            id="complaints"
+            images={sectionBackdrops.contact}
+            title="Complaints & support"
+          >
+            <div className="grid gap-5 lg:grid-cols-[1.05fr_0.95fr]">
+              <Surface className="space-y-4 bg-panel/92">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-brand-deep/75">Report an issue</p>
+                <h3 className="text-3xl font-semibold text-ink">We take complaints seriously</h3>
+                <p className="text-sm leading-7 text-ink-soft">
+                  Submit a formal complaint, attach evidence (image/document), and receive a reference ID for follow-up.
+                  You can also use WhatsApp or phone support for urgent matters.
+                </p>
+                <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
+                  <Button asChild className="w-full sm:w-auto">
+                    <Link to="/contact?reportType=complaint">Report a complaint</Link>
+                  </Button>
+                  <Button asChild className="w-full sm:w-auto" variant="outline">
+                    <Link to="/contact">General support</Link>
+                  </Button>
+                </div>
+              </Surface>
+
+              <Surface className="space-y-4 bg-night text-white">
+                <p className="text-xs font-semibold uppercase tracking-[0.22em] text-brand-soft">Fast help channels</p>
+                <a
+                  className="flex items-center justify-between rounded-[1.4rem] border border-white/12 bg-white/8 px-4 py-4 text-sm transition hover:bg-white/12"
+                  href={salonContact.whatsapp}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  <span className="flex items-center gap-3">
+                    <MessageCircle className="h-5 w-5 text-brand-soft" />
+                    WhatsApp support
+                  </span>
+                  <ArrowRight className="h-4 w-4" />
+                </a>
+                <a
+                  className="flex items-center justify-between rounded-[1.4rem] border border-white/12 bg-white/8 px-4 py-4 text-sm transition hover:bg-white/12"
+                  href={`mailto:${salonContact.email}`}
+                >
+                  <span className="flex items-center gap-3">
+                    <Mail className="h-5 w-5 text-brand-soft" />
+                    Email support
+                  </span>
+                  <ArrowRight className="h-4 w-4" />
+                </a>
+              </Surface>
+            </div>
+          </FeatureShell>
 
           <FeatureShell
             description="The original image-led showcase remains, now framed with softer spacing and cleaner cards."
@@ -491,6 +603,9 @@ export default function Home() {
             </a>
             <a className="transition hover:text-white" href="#products">
               Products
+            </a>
+            <a className="transition hover:text-white" href="#complaints">
+              Complaints
             </a>
             <a className="transition hover:text-white" href="#gallery">
               Gallery

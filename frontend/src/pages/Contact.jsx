@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,12 +28,18 @@ function ContactHeroAside() {
 }
 
 export default function Contact() {
+  const [searchParams] = useSearchParams();
+  const initialReportType = String(searchParams.get("reportType") || "").trim().toLowerCase();
+  const normalizedInitialReportType = ["service_feedback", "complaint", "suggestion", "experience"].includes(initialReportType)
+    ? initialReportType
+    : "";
+
   const [form, setForm] = useState({
     name: "",
     email: "",
     subject: "",
     message: "",
-    reportType: ""
+    reportType: normalizedInitialReportType
   });
   const [reportFile, setReportFile] = useState(null);
   const [notice, setNotice] = useState(null);
@@ -144,7 +151,7 @@ export default function Contact() {
               eyebrow="Contact details"
               title="Reach us directly"
             />
-            <div className="space-y-3 rounded-[1.5rem] border border-line/70 bg-panel/92 px-5 py-4">
+            <div className="space-y-3 rounded-3xl border border-line/70 bg-panel/92 px-5 py-4">
               <DetailRow label="Address" value={salonContact.address} />
               <DetailRow label="Phone" value={salonContact.phone} />
               <DetailRow label="Email" value={salonContact.email} />
@@ -166,7 +173,7 @@ export default function Contact() {
 
           <Surface className="space-y-5">
             <SectionHeading eyebrow="Hours" title="Business schedule" />
-            <div className="space-y-3 rounded-[1.5rem] border border-line/70 bg-panel/92 px-5 py-4 text-sm text-ink-soft">
+            <div className="space-y-3 rounded-3xl border border-line/70 bg-panel/92 px-5 py-4 text-sm text-ink-soft">
               {businessHours.map((item) => (
                 <p key={item}>{item}</p>
               ))}
