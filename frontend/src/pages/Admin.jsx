@@ -1442,6 +1442,39 @@ export default function Admin() {
         { token }
       );
 
+      const responseAssignment = response && typeof response.assignment === "object"
+        ? response.assignment
+        : null;
+      const assignmentDate = String(responseAssignment?.date || date || String(item?.date || operationsDate || "")).trim();
+      const assignmentTime = String(responseAssignment?.time || time || String(item?.time || "")).trim();
+      const assignmentStaff = String(responseAssignment?.staff || staff).trim();
+      const assignmentChair = String(responseAssignment?.chair || chair).trim();
+      const responseStatus = String(response?.bookingStatus || "").trim().toLowerCase();
+      const currentStatus = String(item?.status || "").trim().toLowerCase();
+      const nextStatus = responseStatus || (["pending", "new"].includes(currentStatus) ? "approved" : currentStatus || "pending");
+      const nowIso = new Date().toISOString();
+
+      setDashboard((prev) => ({
+        ...prev,
+        bookings: Array.isArray(prev.bookings)
+          ? prev.bookings.map((booking) => {
+            if (String(booking?.id || "") !== bookingId) return booking;
+            return {
+              ...booking,
+              status: nextStatus,
+              updatedAt: nowIso,
+              lastAssignment: {
+                staff: assignmentStaff,
+                chair: assignmentChair,
+                date: assignmentDate,
+                time: assignmentTime,
+                notifiedAt: nowIso
+              }
+            };
+          })
+          : prev.bookings
+      }));
+
       const smsNotice = response?.notifications?.sms?.sent
         ? "SMS sent"
         : `SMS: ${String(response?.notifications?.sms?.reason || "not sent")}`;
@@ -1795,6 +1828,7 @@ export default function Admin() {
                     const assignment = bookingAssignments[String(item.id) || ""] || {};
                     const bookingIssues = operationsAssignmentValidation.issuesByBookingId[String(item.id) || ""] || [];
                     const notifyBusy = Boolean(assignmentNotifyBusyByBookingId[String(item.id) || ""]);
+                    const bookingStatus = String(item?.status || "").trim().toLowerCase();
                     return (
                       <div key={`ops-booking-${item.id}`} className="rounded-xl border border-line/70 bg-panel/92 p-3">
                         <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1842,7 +1876,11 @@ export default function Admin() {
                             disabled={notifyBusy || !assignment.staff || !assignment.chair}
                             onClick={() => notifyBookingAssignment(item)}
                           >
-                            {notifyBusy ? "Sending notice..." : "Notify customer"}
+                            {notifyBusy
+                              ? "Sending notice..."
+                              : ["pending", "new"].includes(bookingStatus)
+                                ? "Notify + Approve"
+                                : "Notify customer"}
                           </Button>
                         </div>
                       </div>
