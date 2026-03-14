@@ -1184,7 +1184,7 @@ const MONNIFY_ENV = String(process.env.MONNIFY_ENV || 'live').trim().toLowerCase
 const MONNIFY_BASE_URL = process.env.MONNIFY_BASE_URL || (MONNIFY_ENV === 'sandbox' ? 'https://sandbox.monnify.com' : 'https://api.monnify.com');
 
 const SALON_BANK_ACCOUNT_NUMBER = process.env.SALON_BANK_ACCOUNT_NUMBER || '0204661552';
-const SALON_BANK_NAME = process.env.SALON_BANK_NAME || 'GTB Bank';
+const SALON_BANK_NAME = process.env.SALON_BANK_NAME || 'GTB';
 const SALON_BANK_ACCOUNT_NAME = process.env.SALON_BANK_ACCOUNT_NAME || 'Okonta Victor Chidiebere';
 const PRODUCT_STANDARD_DELIVERY_FEE = Math.max(0, Number(process.env.PRODUCT_STANDARD_DELIVERY_FEE || 0));
 const PRODUCT_EXPRESS_DELIVERY_FEE = Math.max(0, Number(process.env.PRODUCT_EXPRESS_DELIVERY_FEE || 1500));
