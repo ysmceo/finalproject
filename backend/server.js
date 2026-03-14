@@ -44,7 +44,6 @@ const FRONTEND_UPLOADS_DIR = path.join(FRONTEND_ASSETS_DIR, 'uploads');
 const app = express();
 const PORT = Number(process.env.PORT) || 3000;
 const ADMIN_SECRET_PASSCODE = process.env.ADMIN_SECRET_PASSCODE || 'CHANGE_ME_ADMIN_PASSCODE';
-const ALLOW_ADMIN_PASSWORD_ONLY_LOGIN = String(process.env.ALLOW_ADMIN_PASSWORD_ONLY_LOGIN || 'true').trim().toLowerCase() === 'true';
 const ONE_TIME_CODE_TTL_MS = 10 * 60 * 1000;
 const PAYSTACK_SECRET_KEY = process.env.PAYSTACK_SECRET_KEY || '';
 const PAYSTACK_PAYMENT_PAGE_URL = process.env.PAYSTACK_PAYMENT_PAGE_URL || '';
@@ -6134,15 +6133,14 @@ app.get('/api/admin/audit-logs', requireAdminAuth, requireAdminRole(['super-admi
 
 // Admin Authentication Routes
 
-// Request one-time admin login access code (requires secret passcode)
+// Request one-time admin login access code (email/SMS delivery)
 app.post('/api/admin/request-login-access', async (req, res) => {
-  const { email, secretPasscode, phone } = req.body;
+  const { email, phone } = req.body;
   const normalizedEmail = normalizeEmail(email);
-  const normalizedSecretPasscode = String(secretPasscode || '').trim();
   const normalizedPhone = normalizePhone(phone);
 
-  if (!normalizedEmail || !normalizedSecretPasscode) {
-    return res.status(400).json({ error: 'Email and secret passcode are required' });
+  if (!normalizedEmail) {
+    return res.status(400).json({ error: 'Email is required' });
   }
 
   if (!isValidEmail(normalizedEmail)) {
@@ -6161,11 +6159,8 @@ app.post('/api/admin/request-login-access', async (req, res) => {
     return res.status(401).json({ error: 'Admin account not found for this email' });
   }
 
-  if (normalizedSecretPasscode !== ADMIN_SECRET_PASSCODE) {
-    return res.status(401).json({ error: 'Invalid secret passcode' });
-  }
-
   const now = Date.now();
+  db.adminAccessCodes = Array.isArray(db.adminAccessCodes) ? db.adminAccessCodes : [];
 
   // Cleanup stale/used codes
   db.adminAccessCodes = db.adminAccessCodes.filter(code => {
@@ -6486,11 +6481,10 @@ app.post('/api/admin/register', (req, res) => {
 
 // Admin Login
 app.post('/api/admin/login', (req, res) => {
-  const { email, password, oneTimeCode, secretPasscode } = req.body;
+  const { email, password, oneTimeCode } = req.body;
   const normalizedEmail = normalizeEmail(email);
   const normalizedPassword = String(password || '').trim();
   const normalizedOneTimeCode = normalizeOneTimeCode(oneTimeCode);
-  const normalizedSecretPasscode = String(secretPasscode || '').trim();
 
   if (!normalizedEmail || !normalizedPassword) {
     return res.status(400).json({ error: 'Email and password are required' });
@@ -6515,35 +6509,12 @@ app.post('/api/admin/login', (req, res) => {
     return res.status(401).json({ error: 'Invalid email or password' });
   }
 
-  const usedSecretPasscodeForLogin = normalizedSecretPasscode === ADMIN_SECRET_PASSCODE;
-
-  if (!usedSecretPasscodeForLogin && !normalizedOneTimeCode && !ALLOW_ADMIN_PASSWORD_ONLY_LOGIN) {
-    return res.status(400).json({
-      error: 'Provide either a valid secret passcode or a one-time access code'
-    });
-  }
-
-  if (!usedSecretPasscodeForLogin && normalizedSecretPasscode && normalizedSecretPasscode !== ADMIN_SECRET_PASSCODE) {
-    return res.status(401).json({ error: 'Invalid secret passcode' });
-  }
-
-  if (usedSecretPasscodeForLogin) {
-    return res.json({ 
-      message: 'Login successful',
-      admin: toPublicAdmin(admin),
-      token: Buffer.from(`${admin.email}:${admin.id}`).toString('base64')
-    });
-  }
-
-  if (ALLOW_ADMIN_PASSWORD_ONLY_LOGIN && !normalizedSecretPasscode && !normalizedOneTimeCode) {
-    return res.json({
-      message: 'Login successful',
-      admin: toPublicAdmin(admin),
-      token: Buffer.from(`${admin.email}:${admin.id}`).toString('base64')
-    });
+  if (!normalizedOneTimeCode) {
+    return res.status(400).json({ error: 'One-time access code is required. Request OTP before login.' });
   }
 
   const now = Date.now();
+  db.adminAccessCodes = Array.isArray(db.adminAccessCodes) ? db.adminAccessCodes : [];
   const validAccessCode = db.adminAccessCodes.find(code => {
     return (
       normalizeEmail(code.email) === normalizeEmail(admin.email) &&
@@ -6559,6 +6530,10 @@ app.post('/api/admin/login', (req, res) => {
 
   validAccessCode.used = true;
   validAccessCode.usedAt = new Date().toISOString();
+  validAccessCode.usedFor = 'admin_login';
+
+  admin.lastLoginAt = new Date().toISOString();
+  admin.updatedAt = admin.lastLoginAt;
 
   // Cleanup stale/used codes to keep DB tidy
   db.adminAccessCodes = db.adminAccessCodes.filter(code => {

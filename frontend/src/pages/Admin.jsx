@@ -164,9 +164,9 @@ export default function Admin() {
   const [loadingDashboard, setLoadingDashboard] = useState(false);
   const [savingFees, setSavingFees] = useState(false);
   const [dashboard, setDashboard] = useState({ bookings: [], orders: [], messages: [], products: [], fees: { standard: 0, express: 0 } });
-  const [login, setLogin] = useState({ email: "", password: "", secretPasscode: "" });
+  const [login, setLogin] = useState({ email: "", password: "", oneTimeCode: "" });
   const [showLoginPassword, setShowLoginPassword] = useState(false);
-  const [showLoginPasscode, setShowLoginPasscode] = useState(false);
+  const [requestingLoginOtp, setRequestingLoginOtp] = useState(false);
   const [register, setRegister] = useState({ name: "", email: "", password: "", secretPasscode: "" });
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
   const [showRegisterPasscode, setShowRegisterPasscode] = useState(false);
@@ -365,6 +365,12 @@ export default function Admin() {
 
   async function handleLogin(event) {
     event.preventDefault();
+
+    if (!String(login.oneTimeCode || "").trim()) {
+      setAuthNotice({ tone: "error", message: "Enter the one-time code sent to your admin email before logging in." });
+      return;
+    }
+
     try {
       const data = await apiPost("/api/admin/login", login);
       setToken(data.token || "");
@@ -382,13 +388,35 @@ export default function Admin() {
     }
   }
 
+  async function handleRequestLoginOtp() {
+    const email = String(login.email || "").trim();
+
+    if (!email) {
+      setAuthNotice({ tone: "error", message: "Enter admin email first to request one-time code." });
+      return;
+    }
+
+    try {
+      setRequestingLoginOtp(true);
+      const data = await apiPost("/api/admin/request-login-access", { email });
+      setAuthNotice({
+        tone: "success",
+        message: data.message || "One-time code sent. Check admin email and continue login."
+      });
+    } catch (error) {
+      setAuthNotice({ tone: "error", message: getErrorMessage(error) });
+    } finally {
+      setRequestingLoginOtp(false);
+    }
+  }
+
   async function handleRegister(event) {
     event.preventDefault();
     try {
       const data = await apiPost("/api/admin/register", register);
       setAuthNotice({ tone: "success", message: data.message || "Admin registered." });
       setRegistrationOpen(false);
-      setLogin({ email: register.email, password: register.password, secretPasscode: register.secretPasscode });
+      setLogin({ email: register.email, password: register.password, oneTimeCode: "" });
     } catch (error) {
       setAuthNotice({ tone: "error", message: getErrorMessage(error) });
     }
@@ -1619,28 +1647,26 @@ export default function Admin() {
                 </div>
 
                 <div className="space-y-2">
-                  <label htmlFor="login-passcode" className="text-sm font-semibold text-ink">Secret passcode</label>
-                  <div className="relative">
-                    <input
-                      id="login-passcode"
-                      type={showLoginPasscode ? "text" : "password"}
-                      value={login.secretPasscode}
-                      onChange={(event) => setLogin((prev) => ({ ...prev, secretPasscode: event.target.value }))}
-                      className="h-11 w-full rounded-[1.35rem] border border-line bg-panel/88 px-4 pr-12 text-sm text-ink shadow-sm backdrop-blur-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowLoginPasscode((prev) => !prev)}
-                      className="absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center text-ink-soft transition hover:text-ink"
-                      aria-label={showLoginPasscode ? "Hide secret passcode" : "Show secret passcode"}
-                      title={showLoginPasscode ? "Hide secret passcode" : "Show secret passcode"}
-                    >
-                      {showLoginPasscode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
-                  </div>
-                  <p className="text-xs leading-5 text-ink-soft">Optional if password-only login is enabled.</p>
+                  <label htmlFor="login-otp" className="text-sm font-semibold text-ink">One-time code *</label>
+                  <input
+                    id="login-otp"
+                    type="text"
+                    required
+                    value={login.oneTimeCode}
+                    onChange={(event) => setLogin((prev) => ({ ...prev, oneTimeCode: event.target.value }))}
+                    className="h-11 w-full rounded-[1.35rem] border border-line bg-panel/88 px-4 text-sm text-ink shadow-sm backdrop-blur-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                    placeholder="Enter OTP from admin email"
+                    inputMode="numeric"
+                    autoComplete="one-time-code"
+                  />
+                  <p className="text-xs leading-5 text-ink-soft">Click “Send one-time code” to receive OTP before login.</p>
                 </div>
-                <Button className="w-full sm:w-auto" type="submit">Login</Button>
+                <div className="flex flex-wrap gap-2">
+                  <Button className="w-full sm:w-auto" type="button" variant="outline" onClick={handleRequestLoginOtp} disabled={requestingLoginOtp}>
+                    {requestingLoginOtp ? "Sending code..." : "Send one-time code"}
+                  </Button>
+                  <Button className="w-full sm:w-auto" type="submit">Login</Button>
+                </div>
               </form>
             </Surface>
             <Surface className="space-y-5">
