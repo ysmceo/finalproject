@@ -120,16 +120,6 @@ function downloadCsv(filename, rows) {
   URL.revokeObjectURL(url);
 }
 
-function extractPortFromUrl(urlValue) {
-  try {
-    const parsed = new URL(String(urlValue || ""));
-    if (parsed.port) return parsed.port;
-    return parsed.protocol === "https:" ? "443" : "80";
-  } catch {
-    return "";
-  }
-}
-
 async function loadDashboard(token) {
   const options = { token };
   const [bookings, orders, messages, products, deliveryFees] = await Promise.all([
@@ -220,7 +210,6 @@ export default function Admin() {
     return saved && typeof saved === "object" ? saved : {};
   });
   const [assignmentNotifyBusyByBookingId, setAssignmentNotifyBusyByBookingId] = useState({});
-  const [devApiConnectionLabel, setDevApiConnectionLabel] = useState("probing...");
 
   useEffect(() => {
     apiGet("/api/admin/registration-status")
@@ -331,45 +320,6 @@ export default function Admin() {
     return () => {
       active = false;
       clearInterval(refreshTimerId);
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV) return;
-
-    let active = true;
-    const candidates = [
-      "http://localhost:3000",
-      "http://localhost:3002",
-      "http://localhost:3001",
-      "http://localhost:3100"
-    ];
-
-    async function detectApiPort() {
-      for (const base of candidates) {
-        try {
-          const response = await fetch(`${base}/api/services`, { method: "GET", headers: { Accept: "application/json" } });
-          if (response.ok) {
-            if (active) {
-              const port = extractPortFromUrl(base);
-              setDevApiConnectionLabel(port ? `:${port}` : base);
-            }
-            return;
-          }
-        } catch {
-          // keep probing next candidate
-        }
-      }
-
-      if (active) {
-        setDevApiConnectionLabel("not detected");
-      }
-    }
-
-    detectApiPort();
-
-    return () => {
-      active = false;
     };
   }, []);
 
@@ -1521,11 +1471,6 @@ export default function Admin() {
             <div>
               <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-deep/75">Admin</p>
               <h1 className="font-display text-4xl text-ink sm:text-5xl">Admin command center</h1>
-              {import.meta.env.DEV ? (
-                <p className="mt-2 inline-flex rounded-full border border-brand/40 bg-brand-light/25 px-3 py-1 text-xs font-semibold text-brand-deep">
-                  Dev API: {devApiConnectionLabel}
-                </p>
-              ) : null}
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <ThemeToggle />
@@ -1665,11 +1610,6 @@ export default function Admin() {
             <p className="text-xs font-semibold uppercase tracking-[0.35em] text-brand-deep/75">Admin</p>
             <h1 className="font-display text-4xl text-ink sm:text-5xl">Salon operations</h1>
             <p className="mt-2 text-sm text-ink-soft">Monitor bookings, fulfil orders, and keep every customer touchpoint polished from one professional workspace.</p>
-            {import.meta.env.DEV ? (
-              <p className="mt-2 inline-flex rounded-full border border-brand/40 bg-brand-light/25 px-3 py-1 text-xs font-semibold text-brand-deep">
-                Dev API: {devApiConnectionLabel}
-              </p>
-            ) : null}
           </div>
           <div className="flex flex-wrap gap-3">
             <ThemeToggle />

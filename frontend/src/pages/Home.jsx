@@ -69,7 +69,6 @@ export default function Home() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [catalogNotice, setCatalogNotice] = useState(null);
-  const [devBackendPort, setDevBackendPort] = useState("");
 
   useEffect(() => {
     let active = true;
@@ -100,45 +99,6 @@ export default function Home() {
           setLoading(false);
         }
       });
-
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!import.meta.env.DEV) {
-      return undefined;
-    }
-
-    let active = true;
-    const candidatePorts = [3000, 3002, 3001, 3100];
-
-    async function detectBackendPort() {
-      for (const port of candidatePorts) {
-        try {
-          const response = await fetch(`http://localhost:${port}/api/services`, {
-            method: "GET",
-            headers: { Accept: "application/json" }
-          });
-
-          if (response.ok) {
-            if (active) {
-              setDevBackendPort(String(port));
-            }
-            return;
-          }
-        } catch {
-          // Keep probing next local candidate port.
-        }
-      }
-
-      if (active) {
-        setDevBackendPort("unreachable");
-      }
-    }
-
-    detectBackendPort();
 
     return () => {
       active = false;
@@ -200,11 +160,6 @@ export default function Home() {
                     {item}
                   </span>
                 ))}
-                {import.meta.env.DEV ? (
-                  <span className="rounded-full border border-brand-soft/45 bg-brand-soft/15 px-4 py-2 text-sm text-brand-soft">
-                    Dev backend: {devBackendPort ? (devBackendPort === "unreachable" ? "not detected" : `:${devBackendPort}`) : "probing..."}
-                  </span>
-                ) : null}
               </div>
             </div>
 
