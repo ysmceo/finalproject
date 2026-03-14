@@ -1855,7 +1855,53 @@ export default function Admin() {
               <p className="text-sm font-semibold text-ink">Order fulfilment timeline</p>
               <div className="mt-3 space-y-2">
                 {operationsDateOrders.length === 0 ? (
-                  <EmptyState title="No orders on this date" description="Orders created on this date will appear in dispatch sequence." />
+                  <div className="rounded-xl border border-line/70 bg-panel/92 p-4">
+                    <p className="text-sm font-semibold text-ink">No orders found for this date</p>
+                    <p className="mt-1 text-xs text-ink-soft">{new Date(`${operationsDate}T00:00:00`).toLocaleDateString()} · Orders created on this date will appear here in dispatch sequence.</p>
+
+                    <div className="mt-3 grid gap-2 sm:grid-cols-3">
+                      <div className="rounded-lg border border-line/70 bg-panel px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-soft">Orders (date)</p>
+                        <p className="mt-1 text-sm font-semibold text-ink">0</p>
+                      </div>
+                      <div className="rounded-lg border border-line/70 bg-panel px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-soft">Pending dispatch</p>
+                        <p className="mt-1 text-sm font-semibold text-ink">0</p>
+                      </div>
+                      <div className="rounded-lg border border-line/70 bg-panel px-3 py-2">
+                        <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-ink-soft">Revenue (date)</p>
+                        <p className="mt-1 text-sm font-semibold text-ink">{formatCurrency(0)}</p>
+                      </div>
+                    </div>
+
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      <Button type="button" variant="outline" onClick={() => setOperationsDate(todayDateKey())}>View today</Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setActivePanel("orders");
+                          setOrderStatusFilter("pending");
+                          setOrderDateFilter(operationsDate);
+                          setOrdersPage(1);
+                        }}
+                      >
+                        Open pending orders
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => {
+                          setActivePanel("orders");
+                          setOrderStatusFilter("all");
+                          setOrderDateFilter("");
+                          setOrdersPage(1);
+                        }}
+                      >
+                        Clear filters
+                      </Button>
+                    </div>
+                  </div>
                 ) : (
                   operationsDateOrders.map((item) => (
                     <div key={`ops-order-${item.id}`} className="rounded-xl border border-line/70 bg-panel/92 p-3">
