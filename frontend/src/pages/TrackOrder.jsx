@@ -32,6 +32,26 @@ function isStepComplete(step, status) {
   return step.statuses.includes(String(status || "").toLowerCase());
 }
 
+function formatOrderLookupError(error) {
+  const raw = getErrorMessage(error);
+  const message = String(raw || "").trim();
+  const lowered = message.toLowerCase();
+
+  if (lowered.includes("ordercode and email are required")) {
+    return "Tracking requires both order code and the same email used during checkout.";
+  }
+
+  if (lowered.includes("email does not match this order")) {
+    return "Order code found, but the email does not match. Use the exact checkout email.";
+  }
+
+  if (lowered.includes("order not found")) {
+    return "Order not found. Use your ORD- code from product checkout (booking codes start with BOOK- and won't work here).";
+  }
+
+  return message || "Unable to load order right now.";
+}
+
 function TrackingHeroAside() {
   return (
     <div className="grid gap-4">
@@ -77,7 +97,7 @@ export default function TrackOrder() {
       setNotice({ tone: "success", message: "Order loaded." });
     } catch (error) {
       setResult(null);
-      setNotice({ tone: "error", message: getErrorMessage(error) });
+      setNotice({ tone: "error", message: formatOrderLookupError(error) });
     }
   }
 
@@ -96,7 +116,7 @@ export default function TrackOrder() {
       <section className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
         <Surface className="space-y-5">
           <SectionHeading
-            description="Use the code generated after your product checkout."
+            description="Enter your ORD- code and the same email used at product checkout."
             eyebrow="Lookup"
             title="Find your order"
           />
@@ -104,6 +124,7 @@ export default function TrackOrder() {
             <TextField
               id="track-order-code"
               label="Order code"
+              help="Use product order code (starts with ORD-, not BOOK-)."
               onChange={(event) => setForm((current) => ({ ...current, orderCode: event.target.value }))}
               placeholder="e.g. ORD-MA4N7X2"
               required
@@ -112,6 +133,7 @@ export default function TrackOrder() {
             <TextField
               id="track-order-email"
               label="Order email"
+              help="Must be the same email used when placing the product order."
               onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
               required
               type="email"

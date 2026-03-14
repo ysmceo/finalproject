@@ -29,6 +29,26 @@ function isStepComplete(step, status) {
   return step.statuses.includes(String(status || "").toLowerCase());
 }
 
+function formatBookingLookupError(error) {
+  const raw = getErrorMessage(error);
+  const message = String(raw || "").trim();
+  const lowered = message.toLowerCase();
+
+  if (lowered.includes("trackingcode and email are required")) {
+    return "Tracking requires both booking code and the same email used when booking.";
+  }
+
+  if (lowered.includes("email does not match this booking")) {
+    return "This booking code was found, but the email doesn't match. Use the exact email used during booking.";
+  }
+
+  if (lowered.includes("booking not found")) {
+    return "Booking not found. Use the BOOK- code from your confirmation and check for typos.";
+  }
+
+  return message || "Unable to load booking right now.";
+}
+
 function TrackingHeroAside() {
   return (
     <div className="grid gap-4">
@@ -74,7 +94,7 @@ export default function TrackBooking() {
       setNotice({ tone: "success", message: "Booking loaded." });
     } catch (error) {
       setResult(null);
-      setNotice({ tone: "error", message: getErrorMessage(error) });
+      setNotice({ tone: "error", message: formatBookingLookupError(error) });
     }
   }
 
@@ -93,7 +113,7 @@ export default function TrackBooking() {
       <section className="grid gap-6 xl:grid-cols-[0.92fr_1.08fr]">
         <Surface className="space-y-5">
           <SectionHeading
-            description="Use the booking code from your appointment confirmation."
+            description="Enter your BOOK- code and the same booking email from your appointment confirmation."
             eyebrow="Lookup"
             title="Find your booking"
           />
@@ -101,6 +121,7 @@ export default function TrackBooking() {
             <TextField
               id="track-booking-code"
               label="Tracking code"
+              help="Use your booking code (starts with BOOK-)."
               onChange={(event) => setForm((current) => ({ ...current, trackingCode: event.target.value }))}
               placeholder="e.g. BOOK-ABC12345"
               required
@@ -109,6 +130,7 @@ export default function TrackBooking() {
             <TextField
               id="track-booking-email"
               label="Booking email"
+              help="Must be the same email used when creating the booking."
               onChange={(event) => setForm((current) => ({ ...current, email: event.target.value }))}
               required
               type="email"
