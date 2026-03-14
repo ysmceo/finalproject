@@ -9,9 +9,36 @@ export class ApiError extends Error {
 
 const RAW_API_BASE_URL = String(import.meta.env.VITE_API_BASE_URL || "").trim();
 const API_BASE_URL = RAW_API_BASE_URL.replace(/\/+$/, "");
+let LAST_SUCCESSFUL_API_ORIGIN = "";
 
 function canUseWindow() {
   return typeof window !== "undefined" && Boolean(window.location);
+}
+
+function extractOrigin(urlValue) {
+  try {
+    const raw = String(urlValue || "").trim();
+    if (!raw) return "";
+
+    if (/^https?:\/\//i.test(raw)) {
+      return new URL(raw).origin;
+    }
+
+    if (canUseWindow()) {
+      return new URL(raw, window.location.origin).origin;
+    }
+  } catch {
+    return "";
+  }
+
+  return "";
+}
+
+function rememberSuccessfulApiOrigin(urlValue) {
+  const nextOrigin = extractOrigin(urlValue);
+  if (nextOrigin) {
+    LAST_SUCCESSFUL_API_ORIGIN = nextOrigin;
+  }
 }
 
 function buildLocalApiFallbackUrls(pathname) {
@@ -49,6 +76,42 @@ export function resolveApiUrl(pathname) {
   }
 
   return `${API_BASE_URL}/${value}`;
+}
+
+export function resolveBackendAssetUrl(pathname) {
+  const value = String(pathname || "").trim();
+
+  if (!value) {
+    return value;
+  }
+
+  if (/^https?:\/\//i.test(value)) {
+    return value;
+  }
+
+  const normalizedPath = value.startsWith("/") ? value : `/${value}`;
+  const configuredApiOrigin = extractOrigin(API_BASE_URL);
+
+  if (configuredApiOrigin) {
+    return `${configuredApiOrigin}${normalizedPath}`;
+  }
+
+  if (LAST_SUCCESSFUL_API_ORIGIN) {
+    return `${LAST_SUCCESSFUL_API_ORIGIN}${normalizedPath}`;
+  }
+
+  if (canUseWindow()) {
+    const host = String(window.location.hostname || "").toLowerCase();
+    const isLocalHost = host === "localhost" || host === "127.0.0.1";
+
+    if (isLocalHost) {
+      return `http://localhost:3000${normalizedPath}`;
+    }
+
+    return `${window.location.origin}${normalizedPath}`;
+  }
+
+  return normalizedPath;
 }
 
 async function readPayload(response) {
@@ -106,6 +169,9 @@ export async function apiRequest(pathname, options = {}) {
 
   try {
     response = await fetch(primaryUrl, config);
+    if (response) {
+      rememberSuccessfulApiOrigin(primaryUrl);
+    }
     payload = await readPayload(response);
   } catch (error) {
     fetchError = error;
@@ -119,6 +185,9 @@ export async function apiRequest(pathname, options = {}) {
 
       try {
         response = await fetch(candidate, config);
+        if (response) {
+          rememberSuccessfulApiOrigin(candidate);
+        }
         payload = await readPayload(response);
 
         if (response.ok) {

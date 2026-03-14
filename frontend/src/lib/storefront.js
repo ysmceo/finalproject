@@ -1,4 +1,4 @@
-import { apiGet, resolveApiUrl } from "@/lib/api";
+import { apiGet, resolveApiUrl, resolveBackendAssetUrl } from "@/lib/api";
 
 export const PAYMENT_METHODS = ["Bank Transfer", "Credit Card", "Debit Card", "USSD", "Cash"];
 
@@ -48,7 +48,7 @@ export function resolveMediaSrc(source) {
   }
 
   if (/^\/?uploads\//i.test(value)) {
-    return encodeURI(resolveApiUrl(value.startsWith("/") ? value : `/${value}`));
+    return encodeURI(resolveBackendAssetUrl(value.startsWith("/") ? value : `/${value}`));
   }
 
   if (value.startsWith("/")) {

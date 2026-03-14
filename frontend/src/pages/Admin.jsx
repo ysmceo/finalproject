@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import CollapsibleDashboardBox from "@/components/site/shared/CollapsibleDashboardBox";
 import { Link } from "react-router-dom";
-import { CalendarCheck2, MessageSquareText, PackageSearch, ShoppingBag } from "lucide-react";
+import { CalendarCheck2, Eye, EyeOff, MessageSquareText, PackageSearch, ShoppingBag } from "lucide-react";
 
 import { ThemeToggle } from "@/components/theme/theme-toggle";
 import { Button } from "@/components/ui/button";
@@ -164,7 +164,11 @@ export default function Admin() {
   const [loadingDashboard, setLoadingDashboard] = useState(false);
   const [dashboard, setDashboard] = useState({ bookings: [], orders: [], messages: [], products: [], fees: { standard: 0, express: 0 } });
   const [login, setLogin] = useState({ email: "", password: "", secretPasscode: "" });
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showLoginPasscode, setShowLoginPasscode] = useState(false);
   const [register, setRegister] = useState({ name: "", email: "", password: "", secretPasscode: "" });
+  const [showRegisterPassword, setShowRegisterPassword] = useState(false);
+  const [showRegisterPasscode, setShowRegisterPasscode] = useState(false);
   const [productForm, setProductForm] = useState({ name: "", category: "", price: "", stock: "", image: null });
   const [productImagePreview, setProductImagePreview] = useState(null);
   const [feeForm, setFeeForm] = useState({ standard: 0, express: 0 });
@@ -395,7 +399,14 @@ export default function Admin() {
       setAuthNotice({ tone: "success", message: data.message || "Login successful." });
       if (typeof window !== "undefined" && data.token) window.localStorage.setItem(TOKEN_KEY, data.token);
     } catch (error) {
-      setAuthNotice({ tone: "error", message: getErrorMessage(error) });
+      const message = getErrorMessage(error);
+      const isNetworkFetchError = /failed to fetch|network|unable to connect/i.test(String(message));
+      setAuthNotice({
+        tone: "error",
+        message: isNetworkFetchError
+          ? "Login failed because the backend API is not reachable. Start backend server (common local ports: 3000/3001/3002/3100) and try again."
+          : message
+      });
     }
   }
 
@@ -1529,8 +1540,51 @@ export default function Admin() {
               <SectionHeading eyebrow="Login" title="Admin access" description="This replaces the old injected admin HTML view." />
               <form className="space-y-4" onSubmit={handleLogin}>
                 <TextField label="Email" id="login-email" type="email" required value={login.email} onChange={(event) => setLogin((prev) => ({ ...prev, email: event.target.value }))} />
-                <TextField label="Password" id="login-password" type="password" required value={login.password} onChange={(event) => setLogin((prev) => ({ ...prev, password: event.target.value }))} />
-                <TextField label="Secret passcode" id="login-passcode" type="password" help="Optional if password-only login is enabled." value={login.secretPasscode} onChange={(event) => setLogin((prev) => ({ ...prev, secretPasscode: event.target.value }))} />
+                <div className="space-y-2">
+                  <label htmlFor="login-password" className="text-sm font-semibold text-ink">Password *</label>
+                  <div className="relative">
+                    <input
+                      id="login-password"
+                      type={showLoginPassword ? "text" : "password"}
+                      required
+                      value={login.password}
+                      onChange={(event) => setLogin((prev) => ({ ...prev, password: event.target.value }))}
+                      className="h-11 w-full rounded-[1.35rem] border border-line bg-panel/88 px-4 pr-12 text-sm text-ink shadow-sm backdrop-blur-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPassword((prev) => !prev)}
+                      className="absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center text-ink-soft transition hover:text-ink"
+                      aria-label={showLoginPassword ? "Hide password" : "Show password"}
+                      title={showLoginPassword ? "Hide password" : "Show password"}
+                    >
+                      {showLoginPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <label htmlFor="login-passcode" className="text-sm font-semibold text-ink">Secret passcode</label>
+                  <div className="relative">
+                    <input
+                      id="login-passcode"
+                      type={showLoginPasscode ? "text" : "password"}
+                      value={login.secretPasscode}
+                      onChange={(event) => setLogin((prev) => ({ ...prev, secretPasscode: event.target.value }))}
+                      className="h-11 w-full rounded-[1.35rem] border border-line bg-panel/88 px-4 pr-12 text-sm text-ink shadow-sm backdrop-blur-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPasscode((prev) => !prev)}
+                      className="absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center text-ink-soft transition hover:text-ink"
+                      aria-label={showLoginPasscode ? "Hide secret passcode" : "Show secret passcode"}
+                      title={showLoginPasscode ? "Hide secret passcode" : "Show secret passcode"}
+                    >
+                      {showLoginPasscode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                  <p className="text-xs leading-5 text-ink-soft">Optional if password-only login is enabled.</p>
+                </div>
                 <Button className="w-full sm:w-auto" type="submit">Login</Button>
               </form>
             </Surface>
@@ -1540,8 +1594,51 @@ export default function Admin() {
                 <form className="space-y-4" onSubmit={handleRegister}>
                   <TextField label="Name" id="register-name" required value={register.name} onChange={(event) => setRegister((prev) => ({ ...prev, name: event.target.value }))} />
                   <TextField label="Email" id="register-email" type="email" required value={register.email} onChange={(event) => setRegister((prev) => ({ ...prev, email: event.target.value }))} />
-                  <TextField label="Password" id="register-password" type="password" required value={register.password} onChange={(event) => setRegister((prev) => ({ ...prev, password: event.target.value }))} />
-                  <TextField label="Secret passcode" id="register-passcode" type="password" required value={register.secretPasscode} onChange={(event) => setRegister((prev) => ({ ...prev, secretPasscode: event.target.value }))} />
+                  <div className="space-y-2">
+                    <label htmlFor="register-password" className="text-sm font-semibold text-ink">Password *</label>
+                    <div className="relative">
+                      <input
+                        id="register-password"
+                        type={showRegisterPassword ? "text" : "password"}
+                        required
+                        value={register.password}
+                        onChange={(event) => setRegister((prev) => ({ ...prev, password: event.target.value }))}
+                        className="h-11 w-full rounded-[1.35rem] border border-line bg-panel/88 px-4 pr-12 text-sm text-ink shadow-sm backdrop-blur-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowRegisterPassword((prev) => !prev)}
+                        className="absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center text-ink-soft transition hover:text-ink"
+                        aria-label={showRegisterPassword ? "Hide password" : "Show password"}
+                        title={showRegisterPassword ? "Hide password" : "Show password"}
+                      >
+                        {showRegisterPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="space-y-2">
+                    <label htmlFor="register-passcode" className="text-sm font-semibold text-ink">Secret passcode *</label>
+                    <div className="relative">
+                      <input
+                        id="register-passcode"
+                        type={showRegisterPasscode ? "text" : "password"}
+                        required
+                        value={register.secretPasscode}
+                        onChange={(event) => setRegister((prev) => ({ ...prev, secretPasscode: event.target.value }))}
+                        className="h-11 w-full rounded-[1.35rem] border border-line bg-panel/88 px-4 pr-12 text-sm text-ink shadow-sm backdrop-blur-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowRegisterPasscode((prev) => !prev)}
+                        className="absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center text-ink-soft transition hover:text-ink"
+                        aria-label={showRegisterPasscode ? "Hide secret passcode" : "Show secret passcode"}
+                        title={showRegisterPasscode ? "Hide secret passcode" : "Show secret passcode"}
+                      >
+                        {showRegisterPasscode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                      </button>
+                    </div>
+                  </div>
                   <Button className="w-full sm:w-auto" type="submit">Register admin</Button>
                 </form>
               ) : (
