@@ -4,8 +4,9 @@
   "description": "Professional Salon Booking & Management System",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js",
-    "dev": "node server.js",
+    "preflight": "node scripts/preflight.js",
+    "start": "npm run preflight && node server.js",
+    "dev": "npm run preflight && node server.js",
     "prisma:generate": "prisma generate",
     "prisma:push": "prisma db push",
     "prisma:sync-json": "node scripts/sync-json-to-prisma.js"

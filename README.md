@@ -5,6 +5,7 @@ A modern, professional salon website with customer booking system and admin dash
 ## Features
 
 ### Customer Website
+
 - Professional hero section showcasing the salon
 - Complete service catalog with Naira (₦) pricing
 - Online appointment booking system
@@ -14,6 +15,7 @@ A modern, professional salon website with customer booking system and admin dash
 - Responsive design for all devices
 
 ### Admin Dashboard
+
 - View all customer bookings
 - Accept or decline booking requests
 - Track booking status (Pending, Accepted, Declined, Completed)
@@ -40,40 +42,65 @@ All prices are in Nigerian Naira (₦):
 ## Installation
 
 ### Prerequisites
+
 - Node.js (v14 or higher)
 - npm (comes with Node.js)
 
 ### Setup
 
-1. Install backend dependencies:
+1. Install all dependencies from project root:
+
 ```bash
-cd backend
-npm install
+npm install --prefix backend
+npm install --prefix frontend
+npm install --prefix mobile
 ```
 
-2. Start the backend server:
+1. Start backend (with startup preflight checks):
+
 ```bash
-npm start
+npm run start --prefix backend
 ```
 
-3. Install frontend dependencies and run the React dev server:
+1. Start frontend:
+
 ```bash
-cd ../frontend
-npm install
-npm run dev
+npm run dev --prefix frontend
 ```
 
-4. Access the website:
-   - Customer site (dev): http://localhost:5173
-   - Admin Dashboard (dev): http://localhost:5173/admin
+1. Start mobile app (Expo):
 
-5. Production build (served by backend at `http://localhost:3000`):
+```bash
+npm run start --prefix mobile
+```
+
+1. Access the website:
+
+    - Customer site (dev): <http://localhost:5173>
+    - Admin Dashboard (dev): <http://localhost:5173/admin>
+
+1. Production build (served by backend at `http://localhost:3000`):
+
 ```bash
 cd frontend
 npm run build
 ```
 
-6. Mobile app (Expo) lives in `mobile/` (see `MOBILE_APP.md` for details).
+1. Mobile app (Expo) lives in `mobile/` (see `MOBILE_APP.md` for details).
+
+### Quick health checks
+
+Use these checks after startup to confirm local runtime is healthy:
+
+```bash
+# Backend health
+curl <http://localhost:3000/api/health>
+
+# Frontend dev server
+curl <http://localhost:5173>
+```
+
+If backend port `3000` is busy, the server auto-falls back to `3002`, then `3001`, then `3000` order based on availability.
 
 ## Runtime Data Store Modes (JSON vs Prisma)
 
@@ -135,7 +162,7 @@ Set payment/email variables as needed (`PAYSTACK_*`, `STRIPE_*`, `MONNIFY_*`, `S
 
 ## Project Structure
 
-```
+```text
 finalproject/
 ├── backend/
 │   ├── server.js                 # Express server with API endpoints
@@ -158,15 +185,18 @@ finalproject/
 ## API Endpoints
 
 ### Services
+
 - `GET /api/services` - Get all available services
 
 ### Bookings
+
 - `POST /api/bookings` - Create a new booking
 - `GET /api/admin/bookings` - Get all bookings (Admin)
 - `PUT /api/admin/bookings/:id` - Update booking status (Admin)
 - `DELETE /api/admin/bookings/:id` - Delete booking (Admin)
 
 ### Messages
+
 - `POST /api/messages` - Send a message
 - `GET /api/admin/messages` - Get all messages (Admin)
 - `PUT /api/admin/messages/:id` - Update message status (Admin)
@@ -175,6 +205,7 @@ finalproject/
 ## Technologies Used
 
 ### Backend
+
 - **Node.js** - JavaScript runtime
 - **Express.js** - Web framework
 - **CORS** - Cross-origin resource sharing
@@ -182,6 +213,7 @@ finalproject/
 - **File System** - JSON-based data persistence
 
 ### Frontend
+
 - **React** - Component-driven UI
 - **Tailwind CSS** - Utility-first styling
 - **shadcn/ui** - Clean form components
@@ -190,6 +222,7 @@ finalproject/
 ## Security Notes
 
 This is a demo application. For production use:
+
 - Add proper authentication/authorization
 - Implement password hashing
 - Use a proper database (MongoDB, PostgreSQL, etc.)
@@ -208,10 +241,11 @@ This is a demo application. For production use:
 
 ## Contact Information
 
-**CEO SALOON**
+### CEO SALOON
+
 - Address: 123 Beauty Lane, Lagos, Nigeria
 - Phone: 07036939125
-- Email: okontaysm@gmail.com
+- Email: [okontaysm@gmail.com](mailto:okontaysm@gmail.com)
 - Hours: Monday-Friday 9AM-7PM, Saturday 10AM-6PM, Sunday Closed
 
 ## License
