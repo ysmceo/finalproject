@@ -164,8 +164,9 @@ export default function Admin() {
   const [loadingDashboard, setLoadingDashboard] = useState(false);
   const [savingFees, setSavingFees] = useState(false);
   const [dashboard, setDashboard] = useState({ bookings: [], orders: [], messages: [], products: [], fees: { standard: 0, express: 0 } });
-  const [login, setLogin] = useState({ email: "", password: "", oneTimeCode: "" });
+  const [login, setLogin] = useState({ email: "", password: "", oneTimeCode: "", secretPasscode: "" });
   const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showLoginPasscode, setShowLoginPasscode] = useState(false);
   const [requestingLoginOtp, setRequestingLoginOtp] = useState(false);
   const [register, setRegister] = useState({ name: "", email: "", password: "", secretPasscode: "" });
   const [showRegisterPassword, setShowRegisterPassword] = useState(false);
@@ -390,18 +391,19 @@ export default function Admin() {
 
   async function handleRequestLoginOtp() {
     const email = String(login.email || "").trim();
+    const secretPasscode = String(login.secretPasscode || "").trim();
 
-    if (!email) {
-      setAuthNotice({ tone: "error", message: "Enter admin email first to request one-time code." });
+    if (!email || !secretPasscode) {
+      setAuthNotice({ tone: "error", message: "Enter admin email and secret code before requesting one-time code." });
       return;
     }
 
     try {
       setRequestingLoginOtp(true);
-      const data = await apiPost("/api/admin/request-login-access", { email });
+      const data = await apiPost("/api/admin/request-login-access", { email, secretPasscode });
       setAuthNotice({
         tone: "success",
-        message: data.message || "One-time code sent. Check admin email and continue login."
+        message: `${data.message || "One-time code sent."} Check ${email} inbox (and spam) and continue login.`
       });
     } catch (error) {
       setAuthNotice({ tone: "error", message: getErrorMessage(error) });
@@ -416,7 +418,7 @@ export default function Admin() {
       const data = await apiPost("/api/admin/register", register);
       setAuthNotice({ tone: "success", message: data.message || "Admin registered." });
       setRegistrationOpen(false);
-      setLogin({ email: register.email, password: register.password, oneTimeCode: "" });
+      setLogin({ email: register.email, password: register.password, oneTimeCode: "", secretPasscode: register.secretPasscode });
     } catch (error) {
       setAuthNotice({ tone: "error", message: getErrorMessage(error) });
     }
@@ -1647,6 +1649,29 @@ export default function Admin() {
                 </div>
 
                 <div className="space-y-2">
+                  <label htmlFor="login-passcode" className="text-sm font-semibold text-ink">Admin secret code *</label>
+                  <div className="relative">
+                    <input
+                      id="login-passcode"
+                      type={showLoginPasscode ? "text" : "password"}
+                      required
+                      value={login.secretPasscode}
+                      onChange={(event) => setLogin((prev) => ({ ...prev, secretPasscode: event.target.value }))}
+                      className="h-11 w-full rounded-[1.35rem] border border-line bg-panel/88 px-4 pr-12 text-sm text-ink shadow-sm backdrop-blur-sm transition focus:border-brand focus:outline-none focus:ring-4 focus:ring-brand/15"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowLoginPasscode((prev) => !prev)}
+                      className="absolute inset-y-0 right-0 inline-flex w-11 items-center justify-center text-ink-soft transition hover:text-ink"
+                      aria-label={showLoginPasscode ? "Hide secret code" : "Show secret code"}
+                      title={showLoginPasscode ? "Hide secret code" : "Show secret code"}
+                    >
+                      {showLoginPasscode ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                <div className="space-y-2">
                   <label htmlFor="login-otp" className="text-sm font-semibold text-ink">One-time code *</label>
                   <input
                     id="login-otp"
@@ -1659,7 +1684,7 @@ export default function Admin() {
                     inputMode="numeric"
                     autoComplete="one-time-code"
                   />
-                  <p className="text-xs leading-5 text-ink-soft">Click “Send one-time code” to receive OTP before login.</p>
+                  <p className="text-xs leading-5 text-ink-soft">Step 1: enter admin secret code + click “Send one-time code”. Step 2: check the same email inbox and login with OTP.</p>
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Button className="w-full sm:w-auto" type="button" variant="outline" onClick={handleRequestLoginOtp} disabled={requestingLoginOtp}>

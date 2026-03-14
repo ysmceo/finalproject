@@ -6135,12 +6135,13 @@ app.get('/api/admin/audit-logs', requireAdminAuth, requireAdminRole(['super-admi
 
 // Request one-time admin login access code (email/SMS delivery)
 app.post('/api/admin/request-login-access', async (req, res) => {
-  const { email, phone } = req.body;
+  const { email, secretPasscode, phone } = req.body;
   const normalizedEmail = normalizeEmail(email);
+  const normalizedSecretPasscode = String(secretPasscode || '').trim();
   const normalizedPhone = normalizePhone(phone);
 
-  if (!normalizedEmail) {
-    return res.status(400).json({ error: 'Email is required' });
+  if (!normalizedEmail || !normalizedSecretPasscode) {
+    return res.status(400).json({ error: 'Email and secret passcode are required' });
   }
 
   if (!isValidEmail(normalizedEmail)) {
@@ -6157,6 +6158,10 @@ app.post('/api/admin/request-login-access', async (req, res) => {
 
   if (!admin) {
     return res.status(401).json({ error: 'Admin account not found for this email' });
+  }
+
+  if (normalizedSecretPasscode !== ADMIN_SECRET_PASSCODE) {
+    return res.status(401).json({ error: 'Invalid secret passcode' });
   }
 
   const now = Date.now();
@@ -6481,13 +6486,14 @@ app.post('/api/admin/register', (req, res) => {
 
 // Admin Login
 app.post('/api/admin/login', (req, res) => {
-  const { email, password, oneTimeCode } = req.body;
+  const { email, password, oneTimeCode, secretPasscode } = req.body;
   const normalizedEmail = normalizeEmail(email);
   const normalizedPassword = String(password || '').trim();
   const normalizedOneTimeCode = normalizeOneTimeCode(oneTimeCode);
+  const normalizedSecretPasscode = String(secretPasscode || '').trim();
 
-  if (!normalizedEmail || !normalizedPassword) {
-    return res.status(400).json({ error: 'Email and password are required' });
+  if (!normalizedEmail || !normalizedPassword || !normalizedSecretPasscode) {
+    return res.status(400).json({ error: 'Email, password, and admin secret passcode are required' });
   }
 
   if (!isValidEmail(normalizedEmail)) {
@@ -6507,6 +6513,10 @@ app.post('/api/admin/login', (req, res) => {
 
   if (!admin) {
     return res.status(401).json({ error: 'Invalid email or password' });
+  }
+
+  if (normalizedSecretPasscode !== ADMIN_SECRET_PASSCODE) {
+    return res.status(401).json({ error: 'Invalid admin secret passcode' });
   }
 
   if (!normalizedOneTimeCode) {
