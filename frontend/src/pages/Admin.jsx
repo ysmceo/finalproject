@@ -76,6 +76,15 @@ function todayDateKey() {
   return new Date().toISOString().slice(0, 10);
 }
 
+function normalizeMessageReportType(value) {
+  return String(value || "general_message").trim().toLowerCase();
+}
+
+function isComplaintReportType(value) {
+  const normalized = normalizeMessageReportType(value);
+  return normalized.includes("complaint") || normalized.includes("issue") || normalized.includes("report");
+}
+
 function readJsonFromStorage(key, fallbackValue) {
   if (typeof window === "undefined") return fallbackValue;
   try {
@@ -152,6 +161,7 @@ export default function Admin() {
   const [authNotice, setAuthNotice] = useState(null);
   const [dashboardNotice, setDashboardNotice] = useState(null);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
+  const [savingFees, setSavingFees] = useState(false);
   const [dashboard, setDashboard] = useState({ bookings: [], orders: [], messages: [], products: [], fees: { standard: 0, express: 0 } });
   const [login, setLogin] = useState({ email: "", password: "", secretPasscode: "" });
   const [showLoginPassword, setShowLoginPassword] = useState(false);
@@ -191,6 +201,7 @@ export default function Admin() {
     label: "Weather unavailable"
   });
   const [messageStatusFilter, setMessageStatusFilter] = useState("all");
+  const [messageTypeFilter, setMessageTypeFilter] = useState("all");
   const [messageSearch, setMessageSearch] = useState("");
   const [activeMessageReplyId, setActiveMessageReplyId] = useState(null);
   const [messageReplyDrafts, setMessageReplyDrafts] = useState({});
@@ -417,12 +428,48 @@ export default function Admin() {
 
   async function saveFees(event) {
     event.preventDefault();
+
+    const standard = Number(String(feeForm.standard ?? "").replace(/,/g, "").trim());
+    const express = Number(String(feeForm.express ?? "").replace(/,/g, "").trim());
+
+    if (!Number.isFinite(standard) || !Number.isFinite(express)) {
+      setDashboardNotice({ tone: "error", message: "Enter valid numbers for standard and express fees." });
+      return;
+    }
+
+    if (standard < 0 || express < 0) {
+      setDashboardNotice({ tone: "error", message: "Delivery fees cannot be negative." });
+      return;
+    }
+
     try {
-      await apiPut("/api/admin/product-orders/delivery-fees", { standard: Number(feeForm.standard), express: Number(feeForm.express) }, { token });
-      setDashboardNotice({ tone: "success", message: "Delivery fees updated." });
-      await refreshDashboard();
+      setSavingFees(true);
+      const response = await apiPut(
+        "/api/admin/product-orders/delivery-fees",
+        { standard, express },
+        { token }
+      );
+
+      const updatedFees = response && response.fees
+        ? {
+          standard: Number(response.fees.standard) || 0,
+          express: Number(response.fees.express) || 0
+        }
+        : { standard, express };
+
+      setFeeForm(updatedFees);
+      setDashboard((prev) => ({
+        ...prev,
+        fees: updatedFees
+      }));
+      setDashboardNotice({
+        tone: "success",
+        message: `Delivery fees saved. Standard: ₦${updatedFees.standard.toLocaleString()} · Express: ₦${updatedFees.express.toLocaleString()}`
+      });
     } catch (error) {
       setDashboardNotice({ tone: "error", message: getErrorMessage(error) });
+    } finally {
+      setSavingFees(false);
     }
   }
 
@@ -796,11 +843,16 @@ export default function Admin() {
     return dashboard.messages.filter((item) => {
       const statusValue = normalizeStatus(item.status);
       const statusMatch = messageStatusFilter === "all" || statusValue === messageStatusFilter;
+      const typeMatch = messageTypeFilter === "all"
+        ? true
+        : messageTypeFilter === "complaints"
+          ? isComplaintReportType(item.reportType)
+          : !isComplaintReportType(item.reportType);
       const searchable = [item.id, item.name, item.email, item.subject, item.message, item.reportType].join(" ").toLowerCase();
       const queryMatch = !query || searchable.includes(query);
-      return statusMatch && queryMatch;
+      return statusMatch && typeMatch && queryMatch;
     });
-  }, [dashboard.messages, messageSearch, messageStatusFilter]);
+  }, [dashboard.messages, messageSearch, messageStatusFilter, messageTypeFilter]);
 
   const bookingPages = Math.max(1, Math.ceil(filteredBookings.length / BOOKINGS_PER_PAGE));
   const orderPages = Math.max(1, Math.ceil(filteredOrders.length / ORDERS_PER_PAGE));
@@ -2341,18 +2393,23 @@ export default function Admin() {
             <SectionHeading eyebrow="Settings" title="Delivery fees and messages" description="Current admin essentials without the legacy panel layout." />
             <form className="space-y-4" onSubmit={saveFees}>
               <div className="grid gap-4 md:grid-cols-2">
-                <TextField label="Standard fee" id="fee-standard" type="number" required value={feeForm.standard} onChange={(event) => setFeeForm((prev) => ({ ...prev, standard: event.target.value }))} />
-                <TextField label="Express fee" id="fee-express" type="number" required value={feeForm.express} onChange={(event) => setFeeForm((prev) => ({ ...prev, express: event.target.value }))} />
+                <TextField label="Standard fee" id="fee-standard" type="number" min="0" step="100" required value={feeForm.standard} onChange={(event) => setFeeForm((prev) => ({ ...prev, standard: event.target.value }))} />
+                <TextField label="Express fee" id="fee-express" type="number" min="0" step="100" required value={feeForm.express} onChange={(event) => setFeeForm((prev) => ({ ...prev, express: event.target.value }))} />
               </div>
-              <Button className="w-full sm:w-auto" type="submit">Save fees</Button>
+              <Button className="w-full sm:w-auto" type="submit" disabled={savingFees}>{savingFees ? "Saving fees..." : "Save fees"}</Button>
             </form>
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-3">
               <input
                 className="h-11 rounded-[1.2rem] border border-line bg-panel/92 px-4 text-sm text-ink"
                 placeholder="Search complaints/messages"
                 value={messageSearch}
                 onChange={(event) => setMessageSearch(event.target.value)}
               />
+              <select className="h-11 rounded-[1.2rem] border border-line bg-panel/92 px-4 text-sm text-ink" value={messageTypeFilter} onChange={(event) => setMessageTypeFilter(event.target.value)}>
+                <option value="all">All types</option>
+                <option value="complaints">Complaints only</option>
+                <option value="messages">Messages only</option>
+              </select>
               <select className="h-11 rounded-[1.2rem] border border-line bg-panel/92 px-4 text-sm text-ink" value={messageStatusFilter} onChange={(event) => setMessageStatusFilter(event.target.value)}>
                 <option value="all">All</option>
                 <option value="unread">Unread</option>
@@ -2360,7 +2417,7 @@ export default function Admin() {
               </select>
             </div>
             <div className="space-y-3">
-              {filteredMessages.length === 0 ? <EmptyState title="Inbox clear" description="No complaints/messages match this filter." /> : null}
+              {filteredMessages.length === 0 ? <EmptyState title="Inbox clear" description="No records match this message/complaint filter." /> : null}
               {filteredMessages.map((item) => (
                 <div key={item.id} className="rounded-[1.4rem] border border-line/70 bg-panel/92 p-4">
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
