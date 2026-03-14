@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import CollapsibleDashboardBox from "@/components/site/shared/CollapsibleDashboardBox";
 import { Link } from "react-router-dom";
 import { CalendarCheck2, Eye, EyeOff, MessageSquareText, PackageSearch, ShoppingBag } from "lucide-react";
@@ -222,6 +222,8 @@ export default function Admin() {
     return saved && typeof saved === "object" ? saved : {};
   });
   const [assignmentNotifyBusyByBookingId, setAssignmentNotifyBusyByBookingId] = useState({});
+  const [recentlyApprovedBookingIds, setRecentlyApprovedBookingIds] = useState({});
+  const approvalFlashTimersRef = useRef({});
 
   useEffect(() => {
     apiGet("/api/admin/registration-status")
@@ -275,6 +277,14 @@ export default function Admin() {
     if (typeof window === "undefined") return;
     window.localStorage.setItem(ADMIN_OPS_ASSIGNMENTS_KEY, JSON.stringify(bookingAssignments));
   }, [bookingAssignments]);
+
+  useEffect(() => {
+    return () => {
+      const timers = approvalFlashTimersRef.current || {};
+      Object.values(timers).forEach((timerId) => clearTimeout(timerId));
+      approvalFlashTimersRef.current = {};
+    };
+  }, []);
 
   useEffect(() => {
     const intervalId = setInterval(() => {
@@ -1475,6 +1485,20 @@ export default function Admin() {
           : prev.bookings
       }));
 
+      setRecentlyApprovedBookingIds((prev) => ({ ...prev, [bookingId]: true }));
+      const existingTimer = approvalFlashTimersRef.current[bookingId];
+      if (existingTimer) {
+        clearTimeout(existingTimer);
+      }
+      approvalFlashTimersRef.current[bookingId] = setTimeout(() => {
+        setRecentlyApprovedBookingIds((prev) => {
+          const next = { ...prev };
+          delete next[bookingId];
+          return next;
+        });
+        delete approvalFlashTimersRef.current[bookingId];
+      }, 2200);
+
       const smsNotice = response?.notifications?.sms?.sent
         ? "SMS sent"
         : `SMS: ${String(response?.notifications?.sms?.reason || "not sent")}`;
@@ -1828,9 +1852,15 @@ export default function Admin() {
                     const assignment = bookingAssignments[String(item.id) || ""] || {};
                     const bookingIssues = operationsAssignmentValidation.issuesByBookingId[String(item.id) || ""] || [];
                     const notifyBusy = Boolean(assignmentNotifyBusyByBookingId[String(item.id) || ""]);
+                    const isRecentlyApproved = Boolean(recentlyApprovedBookingIds[String(item.id) || ""]);
                     const bookingStatus = String(item?.status || "").trim().toLowerCase();
                     return (
-                      <div key={`ops-booking-${item.id}`} className="rounded-xl border border-line/70 bg-panel/92 p-3">
+                      <div
+                        key={`ops-booking-${item.id}`}
+                        className={`rounded-xl border bg-panel/92 p-3 transition-all duration-500 ${isRecentlyApproved
+                          ? "border-success/70 ring-2 ring-success/40 shadow-lg shadow-success/20"
+                          : "border-line/70"}`}
+                      >
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <p className="text-sm font-semibold text-ink">{item.time || "--:--"} · {item.name || "Customer"}</p>
                           <StatusPill value={item.status || "pending"} />
