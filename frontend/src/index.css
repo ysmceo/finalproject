@@ -138,8 +138,6 @@ html.dark #root::before {
 html,
 body,
 * {
-  scrollbar-width: thin;
-  scrollbar-color: hsl(var(--brand)) hsl(var(--panel-strong) / 0.58);
 }
 
 *::-webkit-scrollbar {
@@ -165,12 +163,6 @@ body,
 
 *::-webkit-scrollbar-corner {
   background: transparent;
-}
-
-html.dark,
-html.dark body,
-html.dark * {
-  scrollbar-color: hsl(var(--brand)) hsl(var(--panel-strong) / 0.84);
 }
 
 html.dark *::-webkit-scrollbar-track {
@@ -274,7 +266,6 @@ html.dark .theme-toggle__icon--moon {
 }
 
 .route-rail {
-  scrollbar-width: none;
   -ms-overflow-style: none;
 }
 

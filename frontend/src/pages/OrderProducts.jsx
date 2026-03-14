@@ -210,7 +210,7 @@ export default function OrderProducts() {
               eyebrow="Summary"
               title="Cart overview"
             />
-            <div className="space-y-3 rounded-[1.5rem] border border-line/70 bg-panel/92 px-5 py-4">
+            <div className="space-y-3 rounded-3xl border border-line/70 bg-panel/92 px-5 py-4">
               <DetailRow label="Items subtotal" value={formatCurrency(subtotal)} />
               <DetailRow label="Delivery fee" value={formatCurrency(deliveryFee)} />
               <DetailRow label="Grand total" value={formatCurrency(grandTotal)} />
@@ -242,7 +242,7 @@ export default function OrderProducts() {
               </p>
             </div>
             {orderResult?.order?.orderCode ? (
-              <div className="rounded-[1.5rem] border border-white/14 bg-white/8 px-5 py-4">
+              <div className="rounded-3xl border border-white/14 bg-white/8 px-5 py-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.22em] text-white/60">Order code</p>
                 <p className="mt-3 text-3xl font-semibold">{orderResult.order.orderCode}</p>
               </div>

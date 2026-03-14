@@ -37,7 +37,7 @@ export function Surface({ className, children }) {
   return (
     <div
       className={cn(
-        "rounded-[1.75rem] border border-line/80 bg-panel/92 p-5 shadow-card backdrop-blur-sm sm:rounded-[2rem] sm:p-6",
+        "rounded-[1.75rem] border border-line/80 bg-panel/92 p-5 shadow-card backdrop-blur-sm sm:rounded-4xl sm:p-6",
         className
       )}
     >
@@ -124,7 +124,7 @@ export function Notice({ tone = "info", message, className }) {
   return (
     <div
       className={cn(
-        "flex items-start gap-3 rounded-[1.5rem] border px-4 py-3 text-sm",
+        "flex items-start gap-3 rounded-3xl border px-4 py-3 text-sm",
         noticeVariants[tone] || noticeVariants.info,
         className
       )}

@@ -205,7 +205,7 @@ export function SitePageShell({
       />
 
       <main className="mx-auto flex max-w-7xl flex-col gap-6 px-4 py-6 pb-14 sm:px-6 sm:py-8 lg:gap-8 lg:py-10">
-        <section className="relative isolate overflow-hidden rounded-[2rem] border border-line/70 bg-night text-white shadow-[0_30px_80px_rgba(31,41,55,0.18)] sm:rounded-[2.25rem]">
+        <section className="relative isolate overflow-hidden rounded-4xl border border-line/70 bg-night text-white shadow-[0_30px_80px_rgba(31,41,55,0.18)] sm:rounded-[2.25rem]">
           <AnimatedBackdrop
             images={backgroundImages}
             overlayClassName="bg-[linear-gradient(135deg,rgba(17,24,39,0.86),rgba(17,24,39,0.52)_42%,rgba(196,107,45,0.18))]"
