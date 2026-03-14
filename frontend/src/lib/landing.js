@@ -2,6 +2,15 @@ function assetPath(name) {
   return encodeURI(`/images/${name}`);
 }
 
+const PEDICURE_IMAGE_URL =
+  "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS7KSqh3Trh3iPLsCGOyHky5zn6upXln02PGw&s";
+const MANICURE_IMAGE_URL =
+  "https://cdn.shopify.com/s/files/1/0422/7999/3512/files/11_40bb3f8c-aadf-47eb-9354-3c48e765ab3a_2048x2048.png?v=1641879023";
+const WIG_REVAMPING_IMAGE_URL =
+  "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcR9iZkQMmjtbjJQmz3uwJIF6t-rXqpk7tnKrQ&s";
+const QUALITY_HAIR_IMAGE_URL =
+  "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcRtBLF2buLdpAKSfaT6M4dq4ZOlppSLPlpbCw&s";
+
 export const salonContact = {
   address: "24 Kfarm Estate, Ikeja, Lagos State",
   phone: "07036939125",
@@ -56,7 +65,7 @@ export const sectionBackdrops = {
   ceo: [assetPath("ysmceo.jpeg"), assetPath("ysmwife.jpeg"), assetPath("p6 styling.jpg")],
   services: [assetPath("p1.webp"), assetPath("p2 hair color.jpg"), assetPath("p5 relaxation services.jpg")],
   products: [assetPath("premium wig.jpeg"), assetPath("hair cream.jpeg"), assetPath("prefume.jpeg")],
-  gallery: [assetPath("p1.webp"), assetPath("p4.jpg"), assetPath("p6 styling.jpg")],
+  gallery: [assetPath("p1.webp"), MANICURE_IMAGE_URL, assetPath("p6 styling.jpg")],
   team: [
     assetPath("female sytlsit 1.jpeg"),
     assetPath("female stylsit 2.jpeg"),
@@ -114,7 +123,10 @@ export const galleryItems = [
   { title: "Professional hair cuts", image: assetPath("p1.webp") },
   { title: "Hair coloring", image: assetPath("p2 hair color.jpg") },
   { title: "Facial treatments", image: assetPath("p3.jpg") },
-  { title: "Nail services", image: assetPath("p4.jpg") },
+  { title: "Pedicure services", image: PEDICURE_IMAGE_URL },
+  { title: "Nail services", image: MANICURE_IMAGE_URL },
+  { title: "Wig revamping", image: WIG_REVAMPING_IMAGE_URL },
+  { title: "Sell quality hair", image: QUALITY_HAIR_IMAGE_URL },
   { title: "Relaxation services", image: assetPath("p5 relaxation services.jpg") },
   { title: "Professional styling", image: assetPath("p6 styling.jpg") }
 ];

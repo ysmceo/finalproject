@@ -25,7 +25,18 @@ const GALLERY_IMAGES = [
   { id: '2', title: 'Color Treatment', category: 'Color', uri: 'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?w=400' },
   { id: '3', title: 'Haircut', category: 'Cut', uri: 'https://images.unsplash.com/photo-1585747860715-2ba37e788b70?w=400' },
   { id: '4', title: 'Facial Treatment', category: 'Spa', uri: 'images/p2 hair color.jpg' },
-  { id: '5', title: 'Manicure', category: 'Nails', uri: 'images/p1.webp' },
+  {
+    id: '5',
+    title: 'Manicure',
+    category: 'Nails',
+    uri: 'https://cdn.shopify.com/s/files/1/0422/7999/3512/files/11_40bb3f8c-aadf-47eb-9354-3c48e765ab3a_2048x2048.png?v=1641879023'
+  },
+  {
+    id: '9',
+    title: 'Pedicure',
+    category: 'Nails',
+    uri: 'https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS7KSqh3Trh3iPLsCGOyHky5zn6upXln02PGw&s'
+  },
   { id: '6', title: 'Bridal Makeup', category: 'Makeup', uri: 'images/p3.jpg' },
   { id: '7', title: 'Massage', category: 'Spa', uri: 'images/p5 relaxation services.jpg' },
   { id: '8', title: 'Hair Treatment', category: 'Treatment', uri: 'images/p6 styling.jpg' },

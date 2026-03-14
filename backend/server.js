@@ -1490,16 +1490,73 @@ function arrayOf(value) {
 
 function getDefaultServices() {
   return [
-    { id: 1, name: 'Hair Cut', price: 5000, duration: 30 },
-    { id: 2, name: 'Hair Coloring', price: 15000, duration: 60 },
-    { id: 3, name: 'Facial Treatment', price: 8000, duration: 45 },
-    { id: 4, name: 'Manicure', price: 4000, duration: 30 },
-    { id: 5, name: 'Pedicure', price: 5000, duration: 40 },
-    { id: 6, name: 'Hair Spa', price: 12000, duration: 60 },
-    { id: 7, name: 'Beard Trim', price: 3000, duration: 20 },
-    { id: 8, name: 'Full Body Massage', price: 18000, duration: 60 },
-    { id: 9, name: 'Wig Revamping', price: 15000, duration: 1440 }
+    { id: 1, name: 'Hair Cut', price: 5000, duration: 30, image: '/images/p1.webp' },
+    { id: 2, name: 'Hair Coloring', price: 15000, duration: 60, image: '/images/p2 hair color.jpg' },
+    { id: 3, name: 'Facial Treatment', price: 8000, duration: 45, image: '/images/p3.jpg' },
+    { id: 4, name: 'Manicure', price: 4000, duration: 30, image: 'https://cdn.shopify.com/s/files/1/0422/7999/3512/files/11_40bb3f8c-aadf-47eb-9354-3c48e765ab3a_2048x2048.png?v=1641879023' },
+    { id: 5, name: 'Pedicure', price: 5000, duration: 40, image: '/images/p5 relaxation services.jpg' },
+    { id: 6, name: 'Spa', price: 12000, duration: 60, image: '/images/p5 relaxation services.jpg' },
+    { id: 7, name: 'Beard Trim', price: 3000, duration: 20, image: '/images/p6 styling.jpg' },
+    { id: 8, name: 'Full Body Massage', price: 18000, duration: 60, image: '/images/p5 relaxation services.jpg' },
+    { id: 9, name: 'Wig Revamping', price: 15000, duration: 1440, image: '/images/wig revamping.jpeg' }
   ];
+}
+
+function normalizeServiceRecord(service, fallbackService = null) {
+  const fallback = fallbackService || {};
+  const normalizedId = Number(service && service.id);
+  const normalizedName = String(service && service.name ? service.name : fallback.name || '').trim();
+
+  const normalized = {
+    ...service,
+    id: Number.isFinite(normalizedId) ? normalizedId : Number(fallback.id || 0),
+    name: normalizedName,
+    price: Number.isFinite(Number(service && service.price)) ? Number(service.price) : Number(fallback.price || 0),
+    duration: Number.isFinite(Number(service && service.duration)) ? Number(service.duration) : Number(fallback.duration || 0),
+    image: resolveExistingImagePath(String(service && service.image ? service.image : fallback.image || ''))
+  };
+
+  if (!normalized.image && fallback.image) {
+    normalized.image = resolveExistingImagePath(fallback.image);
+  }
+
+  // Product request: use "Spa" instead of "Hair Spa".
+  if (normalized.id === 6 || /^hair\s+spa$/i.test(normalized.name)) {
+    normalized.name = 'Spa';
+  }
+
+  return normalized;
+}
+
+function mergeServiceDefaults(existingServices) {
+  const defaultServices = getDefaultServices();
+  const mergedServices = [...(existingServices || [])];
+
+  defaultServices.forEach((defaultService) => {
+    const existingIndex = mergedServices.findIndex((service) => Number(service && service.id) === Number(defaultService.id));
+
+    if (existingIndex === -1) {
+      mergedServices.push(defaultService);
+      return;
+    }
+
+    const existingService = mergedServices[existingIndex];
+    mergedServices[existingIndex] = normalizeServiceRecord(
+      {
+        ...existingService,
+        name: Number(defaultService.id) === 6 ? 'Spa' : (existingService && existingService.name ? existingService.name : defaultService.name),
+        image: existingService && existingService.image ? existingService.image : defaultService.image
+      },
+      defaultService
+    );
+  });
+
+  return mergedServices
+    .map((service) => {
+      const defaultService = defaultServices.find((item) => Number(item.id) === Number(service && service.id));
+      return normalizeServiceRecord(service, defaultService || null);
+    })
+    .filter((service) => Number.isFinite(Number(service && service.id)));
 }
 
 function buildBaseDatabaseShape() {
@@ -1573,6 +1630,8 @@ function normalizeDatabaseObject(inputDb) {
 
   if (db.services.length === 0) {
     db.services = getDefaultServices();
+  } else {
+    db.services = mergeServiceDefaults(db.services);
   }
 
   return db;

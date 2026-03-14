@@ -64,6 +64,31 @@ function FeatureShell({ id, title, eyebrow, description, images, children }) {
   );
 }
 
+const serviceMediaOverrides = {
+  "facial treatment": "/images/p3.jpg",
+  manicure:
+    "https://cdn.shopify.com/s/files/1/0422/7999/3512/files/11_40bb3f8c-aadf-47eb-9354-3c48e765ab3a_2048x2048.png?v=1641879023",
+  pedicure:
+    "https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcS7KSqh3Trh3iPLsCGOyHky5zn6upXln02PGw&s",
+  spa: "/images/p5 relaxation services.jpg",
+  "hair spa": "/images/p5 relaxation services.jpg"
+};
+
+function getServiceDisplayName(name) {
+  const normalized = String(name || "").trim().toLowerCase();
+  if (normalized === "hair spa") {
+    return "Spa";
+  }
+
+  return String(name || "").trim();
+}
+
+function getServiceImage(service, fallbackImage) {
+  const normalizedName = String(service && service.name ? service.name : "").trim().toLowerCase();
+  const mapped = serviceMediaOverrides[normalizedName] || null;
+  return mapped || resolveMediaSrc(service.image) || fallbackImage;
+}
+
 export default function Home() {
   const [services, setServices] = useState([]);
   const [products, setProducts] = useState([]);
@@ -263,14 +288,14 @@ export default function Home() {
                   <div className="space-y-4">
                     <div className="h-44 overflow-hidden rounded-3xl border border-line/70 bg-canvas/40">
                       <img
-                        alt={service.name}
+                        alt={getServiceDisplayName(service.name)}
                         className="h-full w-full object-cover transition duration-700 hover:scale-105"
-                        src={resolveMediaSrc(service.image) || sectionBackdrops.services[index % sectionBackdrops.services.length]}
+                        src={getServiceImage(service, sectionBackdrops.services[index % sectionBackdrops.services.length])}
                       />
                     </div>
                     <div className="space-y-2">
                       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-brand-deep/75">Premium service</p>
-                      <h3 className="text-2xl font-semibold text-ink">{service.name}</h3>
+                      <h3 className="text-2xl font-semibold text-ink">{getServiceDisplayName(service.name)}</h3>
                       <p className="text-sm text-ink-soft">
                         {formatCurrency(service.price)} | {Number(service.duration || 0)} mins
                       </p>
