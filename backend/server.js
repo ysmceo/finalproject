@@ -5872,12 +5872,46 @@ app.post('/api/admin/messages/:id/reply', requireAdminAuth, async (req, res) => 
       </div>
     `;
 
-    const info = await sendEmail({
-      to: toEmail,
-      subject,
-      text: emailText,
-      html: emailHtml
-    });
+    let info = null;
+    let delivery = {
+      sent: false,
+      channel: 'smtp',
+      skipped: false,
+      reason: ''
+    };
+
+    if (!isSmtpConfigured()) {
+      delivery = {
+        sent: false,
+        channel: 'manual',
+        skipped: true,
+        reason: 'SMTP not configured. Reply saved in admin history.'
+      };
+    } else {
+      try {
+        info = await sendEmail({
+          to: toEmail,
+          subject,
+          text: emailText,
+          html: emailHtml
+        });
+
+        delivery = {
+          sent: true,
+          channel: 'smtp',
+          skipped: false,
+          reason: ''
+        };
+      } catch (sendError) {
+        delivery = {
+          sent: false,
+          channel: 'smtp',
+          skipped: false,
+          error: true,
+          reason: sendError && sendError.message ? String(sendError.message) : 'Email send failed'
+        };
+      }
+    }
 
     if (!Array.isArray(msg.replies)) {
       msg.replies = [];
@@ -5896,7 +5930,8 @@ app.post('/api/admin/messages/:id/reply', requireAdminAuth, async (req, res) => 
       transport: {
         messageId: info && info.messageId ? info.messageId : undefined,
         accepted: info && info.accepted ? info.accepted : undefined,
-        rejected: info && info.rejected ? info.rejected : undefined
+        rejected: info && info.rejected ? info.rejected : undefined,
+        reason: delivery && delivery.reason ? delivery.reason : undefined
       },
       sentAt: new Date().toISOString()
     });
@@ -5907,9 +5942,12 @@ app.post('/api/admin/messages/:id/reply', requireAdminAuth, async (req, res) => 
     writeDatabase(db);
 
     res.json({
-      message: 'Reply sent successfully',
+      message: delivery.sent
+        ? 'Reply sent successfully'
+        : 'Reply saved successfully. Email delivery unavailable.',
       replyCount: msg.replies.length,
-      to: toEmail
+      to: toEmail,
+      delivery
     });
   } catch (error) {
     const code = error && error.code ? error.code : 'REPLY_FAILED';

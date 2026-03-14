@@ -42,6 +42,8 @@ const ADMIN_BACKGROUND_VIDEO_URL = "https://cdn.dribbble.com/userupload/44652968
 const ADMIN_BACKGROUND_FALLBACK_IMAGE_URL = "/images/p1.webp";
 const ADMIN_BACKGROUND_INTERCHANGE_IMAGE_URL = "https://cdn.dribbble.com/userupload/46843023/file/c8ecfc7f661d1ee36316579ecc740df8.png?resize=1504x859&vertical=center";
 const ADMIN_BACKGROUND_INTERCHANGE_IMAGE_URL_2 = "https://cdn.dribbble.com/userupload/28418169/file/original-f7ba68fe4b600723f4f39a77f5594366.jpg?resize=1504x1128&vertical=center";
+const ADMIN_BACKGROUND_INTERCHANGE_IMAGE_URL_3 = "https://cdn.dribbble.com/userupload/46796275/file/0401c6eae53a08c15288d734455c8986.jpg?resize=752x752&vertical=center";
+const ADMIN_BACKGROUND_INTERCHANGE_IMAGE_URL_4 = "https://cdn.dribbble.com/userupload/45372165/file/97172825d6f3508c7a3d9b6d5116799e.jpg?resize=1504x1504&vertical=center";
 const ADMIN_BACKGROUND_SWAP_MS = 6200;
 const ADMIN_OPS_SETTINGS_KEY = "ceo-admin-ops-settings";
 const ADMIN_OPS_ASSIGNMENTS_KEY = "ceo-admin-ops-assignments";
@@ -178,6 +180,7 @@ export default function Admin() {
   const [authNotice, setAuthNotice] = useState(null);
   const [dashboardNotice, setDashboardNotice] = useState(null);
   const [loadingDashboard, setLoadingDashboard] = useState(false);
+  const [autoRefreshEnabled, setAutoRefreshEnabled] = useState(true);
   const [savingFees, setSavingFees] = useState(false);
   const [dashboard, setDashboard] = useState({ bookings: [], orders: [], messages: [], products: [], fees: { standard: 0, express: 0 } });
   const [login, setLogin] = useState({ email: "", password: "", oneTimeCode: "", secretPasscode: "" });
@@ -268,6 +271,23 @@ export default function Admin() {
   }, [token]);
 
   useEffect(() => {
+    if (!token || !autoRefreshEnabled) return;
+
+    const intervalId = setInterval(async () => {
+      try {
+        const data = await loadDashboard(token);
+        setDashboard(data);
+        setFeeForm({ standard: data.fees.standard || 0, express: data.fees.express || 0 });
+        setLastRefreshedAt(new Date().toISOString());
+      } catch {
+        // Keep silent for background refresh so admin can continue current task.
+      }
+    }, 60 * 1000);
+
+    return () => clearInterval(intervalId);
+  }, [token, autoRefreshEnabled]);
+
+  useEffect(() => {
     setBookingsPage(1);
     setSelectedBookingIds([]);
   }, [bookingSearch, bookingStatusFilter, bookingDateFilter]);
@@ -311,9 +331,9 @@ export default function Admin() {
       setActiveBackgroundLayer((prev) => {
         if (backgroundVideoFailed) {
           // When video is unavailable, rotate between image layers only.
-          return prev === 1 ? 2 : 1;
+          return prev === 1 ? 2 : prev === 2 ? 3 : prev === 3 ? 4 : 1;
         }
-        return (prev + 1) % 3;
+        return (prev + 1) % 5;
       });
     }, ADMIN_BACKGROUND_SWAP_MS);
 
@@ -962,8 +982,12 @@ export default function Admin() {
     }
 
     try {
-      await apiPost(`/api/admin/messages/${encodeURIComponent(messageId)}/reply`, { subject, message }, { token });
-      setDashboardNotice({ tone: "success", message: `Reply sent to ${item.email || "customer"}.` });
+      const response = await apiPost(`/api/admin/messages/${encodeURIComponent(messageId)}/reply`, { subject, message }, { token });
+      const delivery = response?.delivery;
+      const deliverySuffix = delivery?.sent
+        ? ""
+        : ` Reply saved in admin history${delivery?.reason ? ` (${String(delivery.reason)})` : ""}.`;
+      setDashboardNotice({ tone: "success", message: `Reply processed for ${item.email || "customer"}.${deliverySuffix}` });
       setActiveMessageReplyId(null);
       await refreshDashboard();
     } catch (error) {
@@ -1132,6 +1156,24 @@ export default function Admin() {
     if (!total) return 0;
     return Math.round(((completedBookings + completedOrders) / total) * 100);
   }, [operationsDateBookings, operationsDateOrders]);
+
+  const operationsBookingApprovalRate = useMemo(() => {
+    const total = operationsDateBookings.length;
+    if (!total) return 0;
+    const approvedCount = operationsDateBookings.filter((item) => ["approved", "completed"].includes(normalizeStatus(item?.status))).length;
+    return Math.round((approvedCount / total) * 100);
+  }, [operationsDateBookings]);
+
+  const averageOrderValue = useMemo(() => {
+    if (!dashboard.orders.length) return 0;
+    return Math.round(orderRevenueTotal / Math.max(1, dashboard.orders.length));
+  }, [dashboard.orders.length, orderRevenueTotal]);
+
+  const executiveHealthSignal = useMemo(() => {
+    if (overduePendingCount > 12) return { tone: "text-danger", label: "Critical" };
+    if (overduePendingCount > 4) return { tone: "text-warning", label: "Needs attention" };
+    return { tone: "text-success", label: "Healthy" };
+  }, [overduePendingCount]);
 
   const operationsStaffOptions = useMemo(() => {
     const values = String(operationsStaffInput || "")
@@ -1703,6 +1745,8 @@ export default function Admin() {
   function renderAnimatedAdminBackground() {
     const imageLayerActive = activeBackgroundLayer === 1;
     const imageLayerTwoActive = activeBackgroundLayer === 2;
+    const imageLayerThreeActive = activeBackgroundLayer === 3;
+    const imageLayerFourActive = activeBackgroundLayer === 4;
     const videoLayerActive = activeBackgroundLayer === 0;
 
     return (
@@ -1727,6 +1771,24 @@ export default function Admin() {
           style={{
             backgroundImage: `url('${ADMIN_BACKGROUND_INTERCHANGE_IMAGE_URL_2}')`,
             transform: imageLayerTwoActive ? "scale(1.03)" : "scale(1.06)"
+          }}
+          aria-hidden="true"
+        />
+
+        <div
+          className={`pointer-events-none absolute inset-0 bg-cover bg-center transition-all duration-1000 ease-in-out ${imageLayerThreeActive ? "opacity-100" : "opacity-0"}`}
+          style={{
+            backgroundImage: `url('${ADMIN_BACKGROUND_INTERCHANGE_IMAGE_URL_3}')`,
+            transform: imageLayerThreeActive ? "scale(1.03)" : "scale(1.06)"
+          }}
+          aria-hidden="true"
+        />
+
+        <div
+          className={`pointer-events-none absolute inset-0 bg-cover bg-center transition-all duration-1000 ease-in-out ${imageLayerFourActive ? "opacity-100" : "opacity-0"}`}
+          style={{
+            backgroundImage: `url('${ADMIN_BACKGROUND_INTERCHANGE_IMAGE_URL_4}')`,
+            transform: imageLayerFourActive ? "scale(1.03)" : "scale(1.06)"
           }}
           aria-hidden="true"
         />
@@ -1930,6 +1992,13 @@ export default function Admin() {
             <Button type="button" variant="outline" onClick={refreshDashboard}>
               {loadingDashboard ? "Refreshing..." : "Refresh data"}
             </Button>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setAutoRefreshEnabled((prev) => !prev)}
+            >
+              Auto refresh: {autoRefreshEnabled ? "On" : "Off"}
+            </Button>
             <Button asChild variant="outline">
               <Link to="/">Back to site</Link>
             </Button>
@@ -1979,6 +2048,32 @@ export default function Admin() {
             <span>Overdue pending items (&gt;24h): <strong className={overduePendingCount > 0 ? "text-warning" : "text-success"}>{overduePendingCount}</strong></span>
             <span className="hidden h-1 w-1 rounded-full bg-ink-soft/60 sm:inline-block" />
             <span>Queue now: <strong className="text-ink">{pendingBookings.length + pendingOrders.length}</strong></span>
+          </div>
+        </Surface>
+
+        <Surface className="space-y-4 border-white/30 bg-panel/88 shadow-xl backdrop-blur-md">
+          <SectionHeading
+            eyebrow="Executive control strip"
+            title="Operational quality indicators"
+            description="A standard management layer to track approval speed, revenue quality, and queue pressure at a glance."
+          />
+          <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-xl border border-line/70 bg-panel/92 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-soft">Booking approval rate (day)</p>
+              <p className="mt-1 text-lg font-semibold text-ink">{operationsBookingApprovalRate}%</p>
+            </div>
+            <div className="rounded-xl border border-line/70 bg-panel/92 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-soft">Average order value</p>
+              <p className="mt-1 text-lg font-semibold text-ink">{formatCurrency(averageOrderValue)}</p>
+            </div>
+            <div className="rounded-xl border border-line/70 bg-panel/92 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-soft">Queue health</p>
+              <p className={`mt-1 text-lg font-semibold ${executiveHealthSignal.tone}`}>{executiveHealthSignal.label}</p>
+            </div>
+            <div className="rounded-xl border border-line/70 bg-panel/92 p-3">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-ink-soft">Automation</p>
+              <p className="mt-1 text-lg font-semibold text-ink">{autoRefreshEnabled ? "Auto-refreshing" : "Manual refresh"}</p>
+            </div>
           </div>
         </Surface>
 
@@ -2584,7 +2679,7 @@ export default function Admin() {
               />
               <select className="h-11 rounded-[1.2rem] border border-line bg-panel/92 px-4 text-sm text-ink" value={bookingStatusFilter} onChange={(event) => setBookingStatusFilter(event.target.value)}>
                 <option value="all">All statuses</option>
-                {BOOKING_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                {BOOKING_STATUSES.map((status) => <option key={status} value={status}>{BOOKING_STATUS_LABELS[status] || status}</option>)}
               </select>
               <input
                 type="date"
@@ -2592,6 +2687,24 @@ export default function Admin() {
                 value={bookingDateFilter}
                 onChange={(event) => setBookingDateFilter(event.target.value)}
               />
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs text-ink-soft">
+              <span className="inline-flex rounded-full bg-panel px-3 py-1 font-semibold tracking-[0.15em] text-ink-soft">Quick filters</span>
+              <Button type="button" variant="outline" onClick={() => { setBookingStatusFilter("pending"); setBookingsPage(1); }}>Pending</Button>
+              <Button type="button" variant="outline" onClick={() => { setBookingStatusFilter("approved"); setBookingsPage(1); }}>Approved</Button>
+              <Button type="button" variant="outline" onClick={() => { setBookingStatusFilter("completed"); setBookingsPage(1); }}>Completed</Button>
+              <Button
+                type="button"
+                variant="outline"
+                onClick={() => {
+                  setBookingStatusFilter("all");
+                  setBookingDateFilter("");
+                  setBookingSearch("");
+                  setBookingsPage(1);
+                }}
+              >
+                Reset filters
+              </Button>
             </div>
             <div className="mt-3 flex flex-wrap items-center gap-3">
               <Button
@@ -2606,7 +2719,7 @@ export default function Admin() {
                 {bookingSlice.some((item) => !selectedBookingIds.includes(item.id)) ? "Select page" : "Unselect page"}
               </Button>
               <select className="h-11 rounded-[1.2rem] border border-line bg-panel/92 px-4 text-sm text-ink" value={bulkBookingStatus} onChange={(event) => setBulkBookingStatus(event.target.value)}>
-                {BOOKING_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                {BOOKING_STATUSES.map((status) => <option key={status} value={status}>{BOOKING_STATUS_LABELS[status] || status}</option>)}
               </select>
               <Button type="button" onClick={applyBulkBookingStatus} disabled={loadingDashboard || !selectedBookingCount}>
                 Apply to {selectedBookingCount || 0} booking(s)
@@ -2631,7 +2744,7 @@ export default function Admin() {
                 </div>
                 <div className="mt-4 flex gap-3">
                   <select className="h-11 flex-1 rounded-[1.4rem] border border-line bg-panel/92 px-4 text-ink" value={item.status} onChange={(event) => saveBooking(item.id, event.target.value)}>
-                    {BOOKING_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                    {BOOKING_STATUSES.map((status) => <option key={status} value={status}>{BOOKING_STATUS_LABELS[status] || status}</option>)}
                   </select>
                 </div>
                 {renderBookingReplyComposer(item)}
@@ -2648,7 +2761,7 @@ export default function Admin() {
                     </div>
                     <StatusPill value={item.status} />
                     <select className="h-10 rounded-[0.9rem] border border-line bg-panel/92 px-3 text-sm text-ink" value={item.status} onChange={(event) => saveBooking(item.id, event.target.value)}>
-                      {BOOKING_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                      {BOOKING_STATUSES.map((status) => <option key={status} value={status}>{BOOKING_STATUS_LABELS[status] || status}</option>)}
                     </select>
                     <div className="md:col-span-4">
                       {renderBookingReplyComposer(item)}
@@ -2682,7 +2795,7 @@ export default function Admin() {
               />
               <select className="h-11 rounded-[1.2rem] border border-line bg-panel/92 px-4 text-sm text-ink" value={orderStatusFilter} onChange={(event) => setOrderStatusFilter(event.target.value)}>
                 <option value="all">All statuses</option>
-                {ORDER_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                {ORDER_STATUSES.map((status) => <option key={status} value={status}>{getOrderStatusLabel(status)}</option>)}
               </select>
               <input
                 type="date"
@@ -2704,7 +2817,7 @@ export default function Admin() {
                 {orderSlice.some((item) => !selectedOrderIds.includes(item.id)) ? "Select page" : "Unselect page"}
               </Button>
               <select className="h-11 rounded-[1.2rem] border border-line bg-panel/92 px-4 text-sm text-ink" value={bulkOrderStatus} onChange={(event) => setBulkOrderStatus(event.target.value)}>
-                {ORDER_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                {ORDER_STATUSES.map((status) => <option key={status} value={status}>{getOrderStatusLabel(status)}</option>)}
               </select>
               <Button type="button" onClick={applyBulkOrderStatus} disabled={loadingDashboard || !selectedOrderCount}>
                 Apply to {selectedOrderCount || 0} order(s)
@@ -2729,7 +2842,7 @@ export default function Admin() {
                 </div>
                 <div className="mt-4 flex gap-3">
                   <select className="h-11 flex-1 rounded-[1.4rem] border border-line bg-panel/92 px-4 text-ink" value={item.status} onChange={(event) => saveOrder(item.id, event.target.value, { source: "orders-panel" })}>
-                    {ORDER_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                    {ORDER_STATUSES.map((status) => <option key={status} value={status}>{getOrderStatusLabel(status)}</option>)}
                   </select>
                 </div>
                 {renderOrderContactActions(item)}
@@ -2747,7 +2860,7 @@ export default function Admin() {
                     </div>
                     <StatusPill value={item.status} />
                     <select className="h-10 rounded-[0.9rem] border border-line bg-panel/92 px-3 text-sm text-ink" value={item.status} onChange={(event) => saveOrder(item.id, event.target.value, { source: "orders-panel" })}>
-                      {ORDER_STATUSES.map((status) => <option key={status} value={status}>{status}</option>)}
+                      {ORDER_STATUSES.map((status) => <option key={status} value={status}>{getOrderStatusLabel(status)}</option>)}
                     </select>
                     <div className="md:col-span-4">
                       {renderOrderContactActions(item)}
